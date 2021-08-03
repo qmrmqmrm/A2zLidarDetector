@@ -10,6 +10,7 @@ from model.matcher import Matcher
 from model.box_regression import Box2BoxTransform
 from config import Config as cfg
 from train.loss_pool import RPNOutputs
+from utils.util_function import pairwise_iou, retry_if_cuda_oom
 
 
 class StandardRPNHead(nn.Module):
@@ -93,7 +94,7 @@ class RPN(nn.Module):
             True: cfg.Model.RPN.POST_NMS_TOPK_TRAIN,
             False: cfg.Model.RPN.POST_NMS_TOPK_TEST,
         }
-        self.boundary_threshold = cfg.Model.RPN.BOUNDARY_THRESH # del
+        self.boundary_threshold = cfg.Model.RPN.BOUNDARY_THRESH  # del
 
         self.anchor_generator = DefaultAnchorGenerator(
             [input_shape[f] for f in self.in_features]
@@ -103,7 +104,6 @@ class RPN(nn.Module):
             cfg.Model.RPN.IOU_THRESHOLDS, cfg.Model.RPN.IOU_LABELS, allow_low_quality_matches=True
         )
         self.rpn_head = StandardRPNHead([input_shape[f] for f in self.in_features])
-
 
     def _subsample_labels(self, label):
         """
@@ -125,9 +125,7 @@ class RPN(nn.Module):
 
     @torch.jit.unused
     @torch.no_grad()
-    def label_and_sample_anchors(
-            self, anchors: List[Boxes], gt_instances: List[Instances]
-    ) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
+    def label_and_sample_anchors(self, anchors, gt_instances):
         """
         Args:
             anchors (list[Boxes]): anchors for each feature map.
@@ -143,10 +141,11 @@ class RPN(nn.Module):
                 i-th element is a Rx4 tensor. The values are the matched gt boxes for each
                 anchor. Values are undefined for those anchors not labeled as 1.
         """
-        anchors = Boxes.cat(anchors)
-
-        gt_boxes = [x.gt_boxes for x in gt_instances]
-        image_sizes = [x.image_size for x in gt_instances]
+        print("gt_instances type : ", type(gt_instances))
+        print("gt_instances type : ", len(gt_instances))
+        print("gt_instances keys : ", gt_instances[0].keys())
+        gt_boxes = [x["bbox2D"] for x in gt_instances]
+        image_sizes = [x["image"].shape for x in gt_instances]
         del gt_instances
 
         gt_labels = []
@@ -156,7 +155,10 @@ class RPN(nn.Module):
             image_size_i: (h, w) for the i-th image
             gt_boxes_i: ground-truth boxes for i-th image
             """
-            match_quality_matrix = retry_if_cuda_oom(pairwise_iou)(gt_boxes_i, anchors)
+            print("gt_boxes_i, anchors type")
+            print(type(gt_boxes_i))
+            print(type(anchors))
+            match_quality_mat1488rix = pairwise_iou(gt_boxes_i, anchors)
 
             matched_idxs, gt_labels_i = retry_if_cuda_oom(self.anchor_matcher)(match_quality_matrix)
             # Matching is memory-expensive and may result in CPU tensors. But the result is small
@@ -167,7 +169,7 @@ class RPN(nn.Module):
                 # Discard anchors that go out of the boundaries of the image
                 # NOTE: This is legacy functionality that is turned off by default in Detectron2
                 anchors_inside_image = anchors.inside_box(image_size_i, self.anchor_boundary_thresh)
-                print("anchors_inside_image : ",anchors_inside_image)
+                print("anchors_inside_image : ", anchors_inside_image)
                 gt_labels_i[~anchors_inside_image] = -1
 
             # A vector of labels (-1, 0, 1) for each anchor
@@ -184,14 +186,7 @@ class RPN(nn.Module):
         return gt_labels, matched_gt_boxes
 
     @torch.jit.unused
-    def losses(
-            self,
-            anchors: List[Boxes],
-            pred_objectness_logits: List[torch.Tensor],
-            gt_labels: List[torch.Tensor],
-            pred_anchor_deltas: List[torch.Tensor],
-            gt_boxes: List[torch.Tensor],
-    ) -> Dict[str, torch.Tensor]:
+    def losses(self, anchors, pred_objectness_logits, gt_labels, pred_anchor_deltas, gt_boxes):
         """
         Return the losses from a set of RPN predictions and their associated ground-truth.
 
@@ -296,13 +291,7 @@ class RPN(nn.Module):
         )
         return proposals, losses
 
-    def predict_proposals(
-            self,
-            anchors: List[Boxes],
-            pred_objectness_logits: List[torch.Tensor],
-            pred_anchor_deltas: List[torch.Tensor],
-            image_sizes: List[Tuple[int, int]],
-    ):
+    def predict_proposals(self, anchors, pred_objectness_logits, pred_anchor_deltas, image_sizes):
         """
         Decode all the predicted box regression deltas to proposals. Find the top proposals
         by applying NMS and removing boxes that are too small.
@@ -328,7 +317,7 @@ class RPN(nn.Module):
                 self.training,
             )
 
-    def _decode_proposals(self, anchors: List[Boxes], pred_anchor_deltas: List[torch.Tensor]):
+    def _decode_proposals(self, anchors, pred_anchor_deltas):
         """
         Transform anchors into proposals by applying the predicted anchor deltas.
 
@@ -348,7 +337,6 @@ class RPN(nn.Module):
             # Append feature map proposals with shape (N, Hi*Wi*A, B)
             proposals.append(proposals_i.view(N, -1, B))
         return proposals
-
 
 
 def find_top_rpn_proposals(

@@ -6,7 +6,7 @@ import math
 
 import torch
 
-from dataloader.loader_base import Dataset_Base
+from dataloader.loader_base import DatasetBase
 from dataloader.get_calibration_form import get_calibration
 from config import Config
 from utils.util_function import print_progress
@@ -15,7 +15,7 @@ from dataloader.anchor import Anchor
 max_box = 512
 
 
-class A2D2_Loader(Dataset_Base):
+class A2D2Loader(DatasetBase):
     def __init__(self, path):
         self.max_box = max_box
         self.calib_path = path
@@ -246,6 +246,39 @@ def obtain_bvbox(obj, bv_img, pv, bvres=0.05):
     return x1, y1, x2, y2, x, y
 
 
+
+def drow_box(img, bboxes_2d):
+    # print(bboxes_2d)
+    img = img.permute(1, 2, 0)
+    drow_img = img.numpy()
+    # bboxes_2d = bboxes_2d.numpy()
+    bboxes_2d = bboxes_2d[np.where(bboxes_2d > 0)].reshape(-1, 4)
+    shape = bboxes_2d.shape
+    for i in range(shape[0]):
+        bbox = bboxes_2d[i, :]
+        x0 = int(bbox[0] - bbox[2] / 2)
+        x1 = int(bbox[0] + bbox[2] / 2)
+        y0 = int(bbox[1] - bbox[3] / 2)
+        y1 = int(bbox[1] + bbox[3] / 2)
+
+        drow_img = cv2.rectangle(drow_img, (x0, y0), (x1, y1), (255, 255, 255), 2)
+    cv2.imshow("drow_img", drow_img)
+    cv2.waitKey()
+
+
+def test_():
+    path = "/media/dolphin/intHDD/birdnet_data/my_a2d2"
+    train_loader = get_dataset(path, 2)
+    train_loader_iter = iter(train_loader)
+    for i in range(3):
+        batch = next(train_loader_iter)
+        img = batch[0].get("image")
+        drow_box(img, batch[0].get('bbox2D'))
+        # cv2.imshow("img",img)
+        # cv2.waitKey()
+
+
+
 if __name__ == '__main__':
     path = "/media/dolphin/intHDD/birdnet_data/my_a2d2"
-    a = A2D2_Loader(path)
+    a = test_(path)

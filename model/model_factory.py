@@ -19,7 +19,7 @@ class GeneralizedRCNN(nn.Module):
     3. Per-region feature extraction and prediction
     """
 
-    def __init__(self, input_shape):
+    def __init__(self):
         super().__init__()
 
         self.device = torch.device("cuda")
@@ -64,11 +64,11 @@ class GeneralizedRCNN(nn.Module):
 
         images = self.preprocess_image(batched_inputs)
         gt_instances = batched_inputs.copy()
-        gt = list()
-        for gt_instance in gt_instances:
-            x = gt_instance
-            x.pop('image')
-            gt.append(x)
+        # gt = list()
+        # for gt_instance in gt_instances:
+        #     x = gt_instance
+        #     x.pop('image')
+        #     gt.append(x)
         features = self.backbone(images.tensor)
 
         if self.proposal_generator:

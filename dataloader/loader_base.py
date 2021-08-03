@@ -21,13 +21,13 @@ for feature in dataloader:
 from torch.utils.data import Dataset
 
 
-class Dataset_Base(Dataset):
+class DatasetBase(Dataset):
     """ Diabetes dataset."""
 
     # Initialize your data, download, etc.
     def __init__(self, anns_dict):
         self.anns_dict = anns_dict
-        self.anns_list = self.anns_list.get("annotations")
+        self.anns_list = self.anns_dict.get("annotations")
         self.len = len(self.anns_list)
 
     def get_anno_data(self, img_file):
