@@ -4,7 +4,11 @@ import torch
 
 from config import Config as cfg
 import settings
-
+# from model.model_factory import GeneralizedRCNN
+from model_temp.model_factory import build_model
+from dataloader.loader_factory import get_dataset
+from train.train_val import get_train_val
+from train.loss_factory import IntegratedLoss
 
 
 def train_main():
@@ -16,27 +20,27 @@ def train_main():
 
 def train_by_plan(dataset_name, end_epoch, learning_rate, loss_weights, model_save):
     batch_size, train_mode = cfg.Train.BATCH_SIZE, cfg.Train.MODE
-    path, ckpt_path = cfg.Datasets.A2D2.PATH, op.join(cfg.Paths.CHECK_POINT, cfg.Train.CKPT_NAME)
+    ckpt_path = op.join(cfg.Paths.CHECK_POINT, cfg.Train.CKPT_NAME)
+    valid_category = cfg.get_valid_category_mask(dataset_name)
     start_epoch = read_previous_epoch(ckpt_path)
     if end_epoch <= start_epoch:
         print(f"!! end_epoch {end_epoch} <= start_epoch {start_epoch}, no need to train")
         return
 
-    data_loader = get_dataset(path, batch_size)
-    model = build_model()
-    loss_object = IntegratedLoss()
-
+    data_loader = get_dataset(dataset_name, batch_size)
+    model = build_model(*cfg.Model.Structure.NAMES)
+    loss_object = IntegratedLoss(loss_weights, valid_category)
     optimizer = build_optimizer(model, learning_rate)
-    trainer, validater = get_train_val(model, loss_object, optimizer)
+    trainer, validator = get_train_val(model, data_loader, loss_object, optimizer)
 
     for epoch in range(start_epoch, end_epoch):
         print(f"========== Start dataset : {dataset_name} epoch: {epoch + 1}/{end_epoch} ==========")
         train_result = trainer.run_epoch()
-        print(train_result)
-        val_result = validater.run_epoch()
+        val_result = validator.run_epoch()
+        # val_result = validator.run_epoch()
 
-    if model_save:
-        save_model_ckpt(ckpt_path, model, f"ep{end_epoch:02d}")
+    # if model_save:
+    #     save_model_ckpt(ckpt_path, model, f"ep{end_epoch:02d}")
 
 
 def read_previous_epoch(ckpt_path):
@@ -86,7 +90,7 @@ def build_optimizer(model: torch.nn.Module, learning_rate) -> torch.optim.Optimi
 
     optimizer = torch.optim.SGD(params, lr, momentum=cfg.Model.Output.MOMENTUM)
     return optimizer
-5
+
 
 if __name__ == '__main__':
-    test_()
+    train_main()

@@ -46,13 +46,6 @@ def pairwise_intersection(boxes1, boxes2) -> torch.Tensor:
     Returns:
         Tensor: intersection, sized [N,M].
     """
-    print("pairwise_intersection")
-    print(boxes1.shape)
-    print(boxes1)
-    print(boxes1[:, None, 2:].shape)
-    print(boxes2.shape)
-    print(boxes2)
-    print(boxes2[:, 2:].shape)
     width_height = torch.min(boxes1[:, None, 2:], boxes2[:, 2:]) - torch.max(
         boxes1[:, None, :2], boxes2[:, :2]
     )  # [N,M,2]
@@ -63,15 +56,11 @@ def pairwise_intersection(boxes1, boxes2) -> torch.Tensor:
 
 
 def pairwise_iou(boxes1, boxes2):
-    print("pairwise_iou")
-
-    print(boxes1[0, :])
-    area1 = (boxes1[:, 2] * boxes1[:, 3])
+    boxes1 = boxes1.to('cuda')
+    area1 = (boxes1[:, 2] - boxes1[:, 0]) * (boxes1[:, 3] - boxes1[:, 1])
     area2 = (boxes2[:, 2] - boxes2[:, 0]) * (boxes2[:, 3] - boxes2[:, 1])
-    print("area1.shape, area2.shape")
-    print(area1.shape, area2.shape)
     inter = pairwise_intersection(boxes1, boxes2)
-    print(inter)
+
     iou = torch.where(inter > 0, inter / (area1[:, None] + area2 - inter),
                       torch.zeros(1, dtype=inter.dtype, device=inter.device),
                       )

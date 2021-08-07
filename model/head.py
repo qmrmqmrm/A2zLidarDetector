@@ -12,7 +12,7 @@ from model.model_util import Conv2d
 from model.poolers import ROIPooler
 from model.box_regression import Box2BoxTransform
 from utils.batch_norm import get_norm
-from train.loss_pool import FastRCNNOutputLayers
+# from train.loss_pool import FastRCNNOutputLayers
 
 
 class ROIHeads(torch.nn.Module):
@@ -406,6 +406,7 @@ class FastRCNNConvFCHead(nn.Module):
         #     weight_init.c2_xavier_fill(layer)
 
     def forward(self, x):
+        print('FastRCNNConvFCHead forward')
         for layer in self.conv_norm_relus:
             x = layer(x)
         if len(self.fcs):

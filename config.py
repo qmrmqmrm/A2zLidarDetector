@@ -27,8 +27,8 @@ class Config:
             INPUT_RESOLUTION = (256, 832)  # (4,13) * 64
             CROP_TLBR = [0, 0, 0, 0]  # crop [top, left, bottom, right] or [y1 x1 y2 x2]
 
-        DATASET_CONFIGS = {"kitti": Kitti}
-        TARGET_DATASET = "kitti"
+        DATASET_CONFIGS = {"kitti": Kitti,'a2d2': A2D2}
+        TARGET_DATASET = "a2d2"
 
         @classmethod
         def get_dataset_config(cls, dataset):
@@ -72,8 +72,14 @@ class Config:
                 Config.Model.Output.OUT_CHANNELS = sum([val for key, val in Config.Model.Output.OUT_COMPOSITION])
 
         class Structure:
-            BACKBONE = "Darknet53"
-            HEAD = "FPN"
+            class NAME:
+                MODEL_NAME = 'RCNN'
+                BACKBONE_NAME = "ResNet"
+                NECK_NAME = "FPN"
+                RPN_NAME = 'RPN'
+                HEAD_NAME = 'ROI'
+
+            NAMES = [NAME.MODEL_NAME, NAME.BACKBONE_NAME, NAME.NECK_NAME, NAME.RPN_NAME, NAME.HEAD_NAME]
             VP_BINS = 12
             VIEWPOINT = 'true'
             VIEWPOINT_RESIDUAL = 'true'
@@ -149,7 +155,7 @@ class Config:
     class Train:
         CKPT_NAME = "birdnet"
         MODE = ["eager", "graph"][1]
-        BATCH_SIZE = 4
+        BATCH_SIZE = 2
         TRAINING_PLAN = params.TrainingPlan.A2D2_SIMPLE
 
     @classmethod
@@ -198,7 +204,6 @@ class Config:
                 index = cls.Tfrdata.CATEGORY_NAMES.index(categ)
                 mask[index] = 1
         return mask
-
 
 # Config.Tfrdata.set_anchors()
 # Config.Model.Output.set_out_channel()

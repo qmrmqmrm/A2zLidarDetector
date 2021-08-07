@@ -174,7 +174,7 @@ class FPN(Backbone):
         }
 
 
-def build_resnet_fpn_backbone(input_shape=None):
+def build_resnet_fpn_backbone():
     """
     Args:
         cfg: a detectron2 CfgNode
@@ -182,6 +182,7 @@ def build_resnet_fpn_backbone(input_shape=None):
     Returns:
         backbone (Backbone): backbone module, must be a subclass of :class:`Backbone`.
     """
+    input_shape = ShapeSpec(channels=len(cfg.Model.Structure.PIXEL_MEAN))
     bottom_up = build_resnet_backbone(input_shape)
     in_features = cfg.Model.RESNET.OUT_FEATURES
     out_channels = cfg.Model.FPN.OUTPUT_CHANNELS

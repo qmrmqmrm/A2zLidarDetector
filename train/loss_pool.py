@@ -26,413 +26,379 @@ def smooth_l1(feature, prediction, objectness)
 """
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 import numpy as np
+import math
+
 from config import Config as cfg
+from model_temp.submodules.box_regression import Box2BoxTransform
+from model_temp.submodules.matcher import Matcher
+from model_temp.submodules.sampling import subsample_labels
 from utils.util_function import pairwise_iou
 
+
 class LossBase:
-    def __call__(self, grtr, pred, auxi):
+    def __init__(self):
+        self.box2box_transform = Box2BoxTransform(weights=cfg.Model.RPN.BBOX_REG_WEIGHTS)
+        self.anchor_matcher = Matcher(
+            cfg.Model.RPN.IOU_THRESHOLDS, cfg.Model.RPN.IOU_LABELS, allow_low_quality_matches=True
+        )
+        self.batch_size_per_image = cfg.Model.RPN.BATCH_SIZE_PER_IMAGE
+        self.positive_fraction = cfg.Model.RPN.POSITIVE_FRACTION
+        self.vp_bins = cfg.Model.Structure.VP_BINS
+        self.rotated_box_training = cfg.Model.Structure.ROTATED_BOX_TRAINING
+
+        self.weights_height = cfg.Model.Structure.WEIGHTS_HEIGHT
+
+
+
+    def __call__(self, pred):
         raise NotImplementedError()
 
-
-class SmoothL1(LossBase):
-    def __call__(self, grtr, pred, auxi):
-        raise NotImplementedError()
-
-    def smooth_l1(self, foo, bar):
-        pass
-
-
-class Box2dRegression(SmoothL1):
-    def __call__(self, grtr, pred, auxi):
-        raise NotImplementedError()
-
-
-class Box3dRegression(SmoothL1):
-    def __call__(self, grtr, pred, auxi):
-        raise NotImplementedError()
-
-
-class YawRegression(SmoothL1):
-    def __call__(self, grtr, pred, auxi):
-        raise NotImplementedError()
-
-
-class CrossEntropy(LossBase):
-    def __call__(self, grtr, pred, auxi):
-        raise NotImplementedError()
-
-    def smooth_l1(self, foo, bar):
-        pass
-
-
-class CategoryClassification(CrossEntropy):
-    pass
-
-
-class YawClassification(CrossEntropy):
-    pass
-
-
-
-
-class FastRCNNOutputLayers(nn.Module):
-    """
-    Two linear layers for predicting Fast R-CNN outputs:
-      (1) proposal-to-detection box regression deltas
-      (2) classification scores
-    """
-
-    def __init__(self, input_size, num_classes, cls_agnostic_bbox_reg, box_dim=4):
+    def _subsample_labels(self, label):
         """
+        Randomly sample a subset of positive and negative examples, and overwrite
+        the label vector to the ignore value (-1) for all elements that are not
+        included in the sample.
+
         Args:
-            input_size (int): channels, or (channels, height, width)
-            num_classes (int): number of foreground classes
-            cls_agnostic_bbox_reg (bool): whether to use class agnostic for bbox regression
-            box_dim (int): the dimension of bounding boxes.
-                Example box dimensions: 4 for regular XYXY boxes and 5 for rotated XYWHA boxes
+            labels (Tensor): a vector of -1, 0, 1. Will be modified in-place and returned.
         """
-        super(FastRCNNOutputLayers, self).__init__()
+        pos_idx, neg_idx = subsample_labels(
+            label, self.batch_size_per_image, self.positive_fraction, 0
+        )
+        # Fill with the ignore label (-1), then set positive and negative labels
+        label.fill_(-1)
+        label.scatter_(0, pos_idx, 1)
+        label.scatter_(0, neg_idx, 0)
+        return label
 
-        if not isinstance(input_size, int):
-            input_size = np.prod(input_size)
-
-        # The prediction layer for num_classes foreground classes and one background class
-        # (hence + 1)
-        self.cls_score = nn.Linear(input_size, num_classes + 1)
-        num_bbox_reg_classes = 1 if cls_agnostic_bbox_reg else num_classes
-        self.bbox_pred = nn.Linear(input_size, num_bbox_reg_classes * box_dim)
-
-        nn.init.normal_(self.cls_score.weight, std=0.01)
-        nn.init.normal_(self.bbox_pred.weight, std=0.001)
-        for l in [self.cls_score, self.bbox_pred]:
-            nn.init.constant_(l.bias, 0)
-
-        self.viewpoint = cfg.Model.Structure.VIEWPOINT
-        viewpoint_bins = cfg.Model.Structure.VP_BINS
-        self.viewpoint_residual = cfg.Model.Structure.VIEWPOINT_RESIDUAL
-        self.height_training = cfg.Model.Structure.HEIGHT_TRAINING
-        if self.viewpoint:
-            self.viewpoint_pred = nn.Linear(input_size, viewpoint_bins * num_classes)
-            # torch.nn.init.kaiming_normal_(self.viewpoint_pred.weight,nonlinearity='relu')
-            nn.init.xavier_normal_(self.viewpoint_pred.weight)
-            nn.init.constant_(self.viewpoint_pred.bias, 0)
-        if self.viewpoint_residual:
-            self.viewpoint_pred_residuals = nn.Linear(input_size, viewpoint_bins * num_classes)
-            nn.init.xavier_normal_(self.viewpoint_pred_residuals.weight)
-            # torch.nn.init.kaiming_normal_(self.viewpoint_pred_residuals.weight,nonlinearity='relu')
-            nn.init.constant_(self.viewpoint_pred_residuals.bias, 0)
-        if self.height_training:
-            self.height_pred = nn.Linear(input_size, 2 * num_classes)
-            nn.init.xavier_normal_(self.height_pred.weight)
-            # torch.nn.init.kaiming_normal_(self.height_pred.weight,nonlinearity='relu')
-            nn.init.constant_(self.height_pred.bias, 0)
-
-    def forward(self, x):
-        if x.dim() > 2:
-            x = torch.flatten(x, start_dim=1)
-        scores = self.cls_score(x)
-        proposal_deltas = self.bbox_pred(x)
-        if self.viewpoint:
-            viewpoint_scores = self.viewpoint_pred(x)
-            viewpoint_residuals = self.viewpoint_pred_residuals(x) if self.viewpoint_residual else None
-            if self.height_training:
-                height_scores = self.height_pred(x)
-                return scores, proposal_deltas, viewpoint_scores, viewpoint_residuals, height_scores
-            return scores, proposal_deltas, viewpoint_scores, viewpoint_residuals, None
-        return scores, proposal_deltas, None, None, None
-
-
-class RPNOutputs(object):
-    def __init__(
-        self,
-        box2box_transform,
-        anchor_matcher,
-        batch_size_per_image,
-        positive_fraction,
-        images,
-        pred_objectness_logits,
-        pred_anchor_deltas,
-        anchors,
-        boundary_threshold=0,  # -1 del
-        gt_boxes=None,
-        smooth_l1_beta=0.0,
+    def label_and_sample_anchors(
+            self, anchors, gt_instances
     ):
         """
         Args:
-            box2box_transform (Box2BoxTransform): :class:`Box2BoxTransform` instance for
-                anchor-proposal transformations.
-            anchor_matcher (Matcher): :class:`Matcher` instance for matching anchors to
-                ground-truth boxes; used to determine training labels.
-            batch_size_per_image (int): number of proposals to sample when training
-            positive_fraction (float): target fraction of sampled proposals that should be positive
-            images (ImageList): :class:`ImageList` instance representing N input images
-            pred_objectness_logits (list[Tensor]): A list of L elements.
-                Element i is a tensor of shape (N, A, Hi, Wi) representing
-                the predicted objectness logits for anchors.
-            pred_anchor_deltas (list[Tensor]): A list of L elements. Element i is a tensor of shape
-                (N, A*4, Hi, Wi) representing the predicted "deltas" used to transform anchors
-                to proposals.
-            anchors (list[list[Boxes]]): A list of N elements. Each element is a list of L
-                Boxes. The Boxes at (n, l) stores the entire anchor array for feature map l in image
-                n (i.e. the cell anchors repeated over all locations in feature map (n, l)).
-            boundary_threshold (int): if >= 0, then anchors that extend beyond the image
-                boundary by more than boundary_thresh are not used in training. Set to a very large
-                number or < 0 to disable this behavior. Only needed in training.
-            gt_boxes (list[Boxes], optional): A list of N elements. Element i a Boxes storing
-                the ground-truth ("gt") boxes for image i.
-            smooth_l1_beta (float): The transition point between L1 and L2 loss in
-                the smooth L1 loss function. When set to 0, the loss becomes L1. When
-                set to +inf, the loss becomes constant 0.
-        """
-        self.box2box_transform = box2box_transform
-        self.anchor_matcher = anchor_matcher
-        self.batch_size_per_image = batch_size_per_image
-        self.positive_fraction = positive_fraction
-        self.pred_objectness_logits = pred_objectness_logits
-        self.pred_anchor_deltas = pred_anchor_deltas
+            anchors (list[Boxes]): anchors for each feature map.
+            gt_instances: the ground-truth instances for each image.
 
-        self.anchors = anchors
-        self.gt_boxes = gt_boxes
-        self.num_feature_maps = len(pred_objectness_logits)
-        self.num_images = len(images)
-        self.image_sizes = images.image_sizes
-        self.boundary_threshold = boundary_threshold
-        self.smooth_l1_beta = smooth_l1_beta
-
-    def _get_ground_truth(self):
-        """
         Returns:
-            gt_objectness_logits: list of N tensors. Tensor i is a vector whose length is the
-                total number of anchors in image i (i.e., len(anchors[i])). Label values are
-                in {-1, 0, 1}, with meanings: -1 = ignore; 0 = negative class; 1 = positive class.
-            gt_anchor_deltas: list of N tensors. Tensor i has shape (len(anchors[i]), 4).
+            list[Tensor]:
+                List of #img tensors. i-th element is a vector of labels whose length is
+                the total number of anchors across all feature maps R = sum(Hi * Wi * A).
+                Label values are in {-1, 0, 1}, with meanings: -1 = ignore; 0 = negative
+                class; 1 = positive class.
+            list[Tensor]:
+                i-th element is a Rx4 tensor. The values are the matched gt boxes for each
+                anchor. Values are undefined for those anchors not labeled as 1.
         """
-        gt_objectness_logits = []
-        gt_anchor_deltas = []
-        # Concatenate anchors from all feature maps into a single Boxes per image
-        anchors = self.anchors
-        for image_size_i, anchors_i, gt_boxes_i in zip(self.image_sizes, anchors, self.gt_boxes):
+
+        anchors = torch.cat(anchors)
+
+        gt_len = len(gt_instances)
+        gt_boxes = [x['gt_bbox2D'] for x in gt_instances]
+        image_sizes = [(700, 1400) for i in range(gt_len)]
+
+        del gt_instances
+
+        gt_labels = []
+        matched_gt_boxes = []
+        for image_size_i, gt_boxes_i in zip(image_sizes, gt_boxes):
             """
             image_size_i: (h, w) for the i-th image
-            anchors_i: anchors for i-th image
             gt_boxes_i: ground-truth boxes for i-th image
             """
-            gt_boxes_i = gt_boxes_i.to('cuda')
-            match_quality_matrix = pairwise_iou(gt_boxes_i, anchors_i)
-            matched_idxs, gt_objectness_logits_i = self.anchor_matcher(match_quality_matrix)
 
-            # if self.boundary_threshold >= 0:
-            #     # Discard anchors that go out of the boundaries of the image
-            #     # NOTE: This is legacy functionality that is turned off by default in Detectron2
-            #     anchors_inside_image = anchors_i.inside_box(image_size_i, self.boundary_threshold)
-            #     gt_objectness_logits_i[~anchors_inside_image] = -1
-            # print(len(gt_boxes_i))
-            # if len(gt_boxes_i) == 0:
-            #     # These values won't be used anyway since the anchor is labeled as background
-            #     gt_anchor_deltas_i = torch.zeros_like(anchors_i)
-            # else:
-                # TODO wasted computation for ignored boxes
-            matched_gt_boxes = gt_boxes_i[matched_idxs]
-            gt_anchor_deltas_i = self.box2box_transform.get_deltas(
-                anchors_i, matched_gt_boxes
-            )
+            match_quality_matrix = pairwise_iou(gt_boxes_i, anchors)
+            matched_idxs, gt_labels_i = self.anchor_matcher(match_quality_matrix)
+            # Matching is memory-expensive and may result in CPU tensors. But the result is small
+            gt_labels_i = gt_labels_i.to(device=gt_boxes_i.device)
+            del match_quality_matrix
 
-            gt_objectness_logits.append(gt_objectness_logits_i)
-            gt_anchor_deltas.append(gt_anchor_deltas_i)
-
-        return gt_objectness_logits, gt_anchor_deltas
-
-    def losses(self):
-        """
-        Return the losses from a set of RPN predictions and their associated ground-truth.
-
-        Returns:
-            dict[loss name -> loss value]: A dict mapping from loss name to loss value.
-                Loss names are: `loss_rpn_cls` for objectness classification and
-                `loss_rpn_loc` for proposal localization.
-        """
+            # A vector of labels (-1, 0, 1) for each anchor
+            gt_labels_i = self._subsample_labels(gt_labels_i)
+            gt_labels_i = gt_labels_i.to('cuda')
+            if len(gt_boxes_i) == 0:
+                # These values won't be used anyway since the anchor is labeled as background
+                matched_gt_boxes_i = torch.zeros_like(anchors)
+            else:
+                # TODO wasted indexing computation for ignored boxes
+                matched_gt_boxes_i = gt_boxes_i[matched_idxs]
+            gt_labels.append(gt_labels_i)  # N,AHW
+            matched_gt_boxes.append(matched_gt_boxes_i)
+        return gt_labels, matched_gt_boxes
 
 
-        def resample(label):
-            """
-            Randomly sample a subset of positive and negative examples by overwriting
-            the label vector to the ignore value (-1) for all elements that are not
-            included in the sample.
-            """
-            pos_idx, neg_idx = subsample_labels(
-                label, self.batch_size_per_image, self.positive_fraction, 0
-            )
-            # Fill with the ignore label (-1), then set positive and negative labels
-            label.fill_(-1)
-            label.scatter_(0, pos_idx, 1)
-            label.scatter_(0, neg_idx, 0)
-            return label
+class SmoothL1(LossBase):
+    def __call__(self, pred):
+        pass
 
-        gt_objectness_logits, gt_anchor_deltas = self._get_ground_truth()
-        """
-        gt_objectness_logits: list of N tensors. Tensor i is a vector whose length is the
-            total number of anchors in image i (i.e., len(anchors[i]))
-        gt_anchor_deltas: list of N tensors. Tensor i has shape (len(anchors[i]), B),
-            where B is the box dimension
-        """
-        # Collect all objectness labels and delta targets over feature maps and images
-        # The final ordering is L, N, H, W, A from slowest to fastest axis.
-        num_anchors_per_map = [np.prod(x.shape[1:]) for x in self.pred_objectness_logits]
-        num_anchors_per_image = sum(num_anchors_per_map)
+    def smooth_l1(self, pred, grtr, beta, reduction):
+        if beta < 1e-5:
+            # if beta == 0, then torch.where will result in nan gradients when
+            # the chain rule is applied due to pytorch implementation details
+            # (the False branch "0.5 * n ** 2 / 0" has an incoming gradient of
+            # zeros, rather than "no gradient"). To avoid this issue, we define
+            # small values of beta to be exactly l1 loss.
+            loss = torch.abs(pred - grtr)
+        else:
+            n = torch.abs(pred - grtr)
+            cond = n < beta
+            loss = torch.where(cond, 0.5 * n ** 2 / beta, n - 0.5 * beta)
 
-        # Stack to: (N, num_anchors_per_image)
-        gt_objectness_logits = torch.stack(
-            [resample(label) for label in gt_objectness_logits], dim=0
+        if reduction == "mean":
+            loss = loss.mean() if loss.numel() > 0 else 0.0 * loss.sum()
+        elif reduction == "sum":
+            loss = loss.sum()
+        return loss
+
+
+class Box2dRegression(SmoothL1):
+    def __call__(self, pred):
+        gt_instances = pred['gt_instances']
+        anchors = pred['anchors']
+        pred_anchor_deltas = pred['pred_anchor_deltas']
+
+        gt_labels, gt_boxes = self.label_and_sample_anchors(anchors, gt_instances)
+        gt_labels = torch.stack(gt_labels)  # (N, sum(Hi*Wi*Ai))
+        anchors = torch.cat(anchors)
+        gt_anchor_deltas = [self.box2box_transform.get_deltas(anchors, k) for k in gt_boxes]
+        gt_anchor_deltas = torch.stack(gt_anchor_deltas)  # (N, R, 4)
+
+        pos_mask = gt_labels == 1
+        loss = self.smooth_l1(torch.cat(pred_anchor_deltas, dim=1)[pos_mask],
+                              gt_anchor_deltas[pos_mask],
+                              beta=0.0,
+                              reduction='sum')
+
+        return loss
+
+
+class Box3dRegression(SmoothL1):
+    def __call__(self, pred):
+        #
+        # dict_keys(
+        #     ['pred_class_logits', 'pred_proposal_deltas', 'viewpoint_logits',
+        #     'viewpoint_residuals', 'height_logits',
+        #      'rpn_proposals', 'pred_objectness_logits', 'pred_anchor_deltas',
+        #      'anchors', 'gt_instances',
+        #      'head_proposals'])
+
+        # self.box2box_transform,
+        pred_class_logits = pred['pred_class_logits']
+        pred_proposal_deltas = pred['pred_proposal_deltas']
+        head_proposals = pred['head_proposals']
+        gt_boxes3d = torch.cat([p['gt_bbox3D'] for p in head_proposals])
+        gt_classes = torch.cat([p['gt_category_id'] for p in head_proposals], dim=0)
+        proposals = torch.cat([p['proposal_boxes'] for p in head_proposals])
+
+        gt_proposal_deltas = self.box2box_transform.get_deltas(
+            proposals, gt_boxes3d[:, :4], self.rotated_box_training
+        )
+        box_dim = gt_proposal_deltas.size(1)
+        cls_agnostic_bbox_reg = pred_proposal_deltas.size(1) == box_dim
+        device = pred_proposal_deltas.device
+        bg_class_ind = pred_class_logits.shape[1] - 1
+        print("\n\n Box3dRegression")
+        print('pred_class_logits :', pred_class_logits.shape)
+        print(gt_classes < bg_class_ind)
+        fg_inds = torch.nonzero((gt_classes >= 0) & (gt_classes < bg_class_ind)).squeeze(
+            1
         )
 
-        # Log the number of positive/negative anchors per-image that's used in training
-        num_pos_anchors = (gt_objectness_logits == 1).sum().item()
-        num_neg_anchors = (gt_objectness_logits == 0).sum().item()
-        storage = get_event_storage()
-        storage.put_scalar("rpn/num_pos_anchors", num_pos_anchors / self.num_images)
-        storage.put_scalar("rpn/num_neg_anchors", num_neg_anchors / self.num_images)
+        if cls_agnostic_bbox_reg:
+            # pred_proposal_deltas only corresponds to foreground class for agnostic
+            gt_class_cols = torch.arange(box_dim, device=device)
+        else:
+            fg_gt_classes = gt_classes[fg_inds]
+            # pred_proposal_deltas for class k are located in columns [b * k : b * k + b],
+            # where b is the dimension of box representation (4 or 5)
+            # Note that compared to Detectron1,
+            # we do not perform bounding box regression for background classes.
+            gt_class_cols = box_dim * fg_gt_classes[:, None] + torch.arange(box_dim, device=device)
 
-        assert gt_objectness_logits.shape[1] == num_anchors_per_image
-        # Split to tuple of L tensors, each with shape (N, num_anchors_per_map)
-        gt_objectness_logits = torch.split(gt_objectness_logits, num_anchors_per_map, dim=1)
-        # Concat from all feature maps
-        gt_objectness_logits = cat([x.flatten() for x in gt_objectness_logits], dim=0)
-
-        # Stack to: (N, num_anchors_per_image, B)
-        gt_anchor_deltas = torch.stack(gt_anchor_deltas, dim=0)
-        assert gt_anchor_deltas.shape[1] == num_anchors_per_image
-        B = gt_anchor_deltas.shape[2]  # box dimension (4 or 5)
-
-        # Split to tuple of L tensors, each with shape (N, num_anchors_per_image)
-        gt_anchor_deltas = torch.split(gt_anchor_deltas, num_anchors_per_map, dim=1)
-        # Concat from all feature maps
-        gt_anchor_deltas = cat([x.reshape(-1, B) for x in gt_anchor_deltas], dim=0)
-
-        # Collect all objectness logits and delta predictions over feature maps
-        # and images to arrive at the same shape as the labels and targets
-        # The final ordering is L, N, H, W, A from slowest to fastest axis.
-        pred_objectness_logits = cat(
-            [
-                # Reshape: (N, A, Hi, Wi) -> (N, Hi, Wi, A) -> (N*Hi*Wi*A, )
-                x.permute(0, 2, 3, 1).flatten()
-                for x in self.pred_objectness_logits
-            ],
-            dim=0,
+        loss_box_reg = self.smooth_l1(
+            pred_proposal_deltas[fg_inds[:, None], gt_class_cols],
+            gt_proposal_deltas[fg_inds],
+            beta=0.0,
+            reduction="sum",
         )
-        pred_anchor_deltas = cat(
-            [
-                # Reshape: (N, A*B, Hi, Wi) -> (N, A, B, Hi, Wi) -> (N, Hi, Wi, A, B)
-                #          -> (N*Hi*Wi*A, B)
-                x.view(x.shape[0], -1, B, x.shape[-2], x.shape[-1])
-                .permute(0, 3, 4, 1, 2)
-                .reshape(-1, B)
-                for x in self.pred_anchor_deltas
-            ],
-            dim=0,
+        loss_box_reg = loss_box_reg / gt_classes.numel()
+        return loss_box_reg
+        #
+        #
+
+
+class HeightRegression(SmoothL1):
+    def __call__(self, pred):
+        #
+        # dict_keys(
+        #     ['pred_class_logits', 'pred_proposal_deltas', 'viewpoint_logits',
+        #     'viewpoint_residuals', 'height_logits',
+        #      'rpn_proposals', 'pred_objectness_logits', 'pred_anchor_deltas',
+        #      'anchors', 'gt_instances',
+        #      'head_proposals'])
+
+        # self.box2box_transform,
+        pred_class_logits = pred['pred_class_logits']
+        pred_proposal_deltas = pred['pred_proposal_deltas']
+        head_proposals = pred['head_proposals']
+
+
+        height_logits = pred['height_logits']
+        gt_boxes3d = torch.cat([p['gt_bbox3D'] for p in head_proposals])
+        gt_classes = torch.cat([p['gt_category_id'] for p in head_proposals], dim=0)
+
+        gt_height = gt_boxes3d[:, -2:]
+        gt_height_deltas = self.get_h_deltas(gt_height, gt_classes)
+        box_dim = gt_height_deltas.size(1)
+        device = pred_proposal_deltas.device
+        bg_class_ind = pred_class_logits.shape[1] - 1
+        print("\n\n HeightRegression")
+        print('pred_class_logits :', pred_class_logits.shape)
+        print(gt_classes < bg_class_ind)
+
+        fg_inds = torch.nonzero((gt_classes >= 0) & (gt_classes < bg_class_ind)).squeeze(
+            1
         )
 
-        objectness_loss, localization_loss = rpn_losses(
-            gt_objectness_logits,
-            gt_anchor_deltas,
-            pred_objectness_logits,
-            pred_anchor_deltas,
-            self.smooth_l1_beta,
+        fg_gt_classes = gt_classes[fg_inds].to('cuda')
+        gt_class_cols = box_dim * fg_gt_classes[:, None] + torch.arange(box_dim, device=device)
+        loss_box_reg = self.smooth_l1(
+            height_logits[fg_inds[:, None], gt_class_cols],
+            gt_height_deltas[fg_inds],
+            0.0,
+            reduction="sum",
         )
-        normalizer = 1.0 / (self.batch_size_per_image * self.num_images)
-        loss_cls = objectness_loss * normalizer  # cls: classification loss
-        loss_loc = localization_loss * normalizer  # loc: localization loss
-        losses = {"loss_rpn_cls": loss_cls, "loss_rpn_loc": loss_loc}
+        # The loss is normalized as in box delta regression task
+        loss_box_reg = loss_box_reg / gt_classes.numel()
+        return loss_box_reg
 
-        return losses
+    def get_h_deltas(self, gt_height, gt_classes):
+        src_heights = torch.tensor([130.05, 149.6, 147.9, 1.0]).to(gt_classes.device)  # Mean heights encoded
 
-    def predict_proposals(self):
-        """
-        Transform anchors into proposals by applying the predicted anchor deltas.
+        target_heights = gt_height[:, 0]
+        # For ground codification
+        # target_ground = gt_height[:, 1]
+        # target_ctr = target_ground + 0.5*target_heights # target_ground NOT CODIFICATED
+        target_ctr = gt_height[:, 1]
 
-        Returns:
-            proposals (list[Tensor]): A list of L tensors. Tensor i has shape
-                (N, Hi*Wi*A, B), where B is box dimension (4 or 5).
-        """
+        wh, wg, wz = self.weights_height
+        dh = wh * torch.log(target_heights / src_heights[gt_classes])
+        # dg = wg * target_ground
+        dz = wz * (target_ctr - src_heights[gt_classes] / 2.) / src_heights[gt_classes]
 
-        proposals = []
-        # Transpose anchors from images-by-feature-maps (N, L) to feature-maps-by-images (L, N)
-        anchors = list(zip(*self.anchors))
-        # For each feature map
-        for anchors_i, pred_anchor_deltas_i in zip(anchors, self.pred_anchor_deltas):
-            B = anchors_i[0].tensor.size(1)
-            N, _, Hi, Wi = pred_anchor_deltas_i.shape
-            # Reshape: (N, A*B, Hi, Wi) -> (N, A, B, Hi, Wi) -> (N, Hi, Wi, A, B) -> (N*Hi*Wi*A, B)
-            pred_anchor_deltas_i = (
-                pred_anchor_deltas_i.view(N, -1, B, Hi, Wi).permute(0, 3, 4, 1, 2).reshape(-1, B)
-            )
-            # Concatenate all anchors to shape (N*Hi*Wi*A, B)
-            # type(anchors_i[0]) is Boxes (B = 4) or RotatedBoxes (B = 5)
-            anchors_i = type(anchors_i[0]).cat(anchors_i)
-            proposals_i = self.box2box_transform.apply_deltas(
-                pred_anchor_deltas_i, anchors_i.tensor
-            )
-            # Append feature map proposals with shape (N, Hi*Wi*A, B)
-            proposals.append(proposals_i.view(N, -1, B))
-        return proposals
-
-    def predict_objectness_logits(self):
-        """
-        Return objectness logits in the same format as the proposals returned by
-        :meth:`predict_proposals`.
-
-        Returns:
-            pred_objectness_logits (list[Tensor]): A list of L tensors. Tensor i has shape
-                (N, Hi*Wi*A).
-        """
-        pred_objectness_logits = [
-            # Reshape: (N, A, Hi, Wi) -> (N, Hi, Wi, A) -> (N, Hi*Wi*A)
-            score.permute(0, 2, 3, 1).reshape(self.num_images, -1)
-            for score in self.pred_objectness_logits
-        ]
-        return pred_objectness_logits
+        deltas = torch.stack((dh, dz), dim=1, ).to('cuda')
+        return deltas
 
 
-def subsample_labels(labels, num_samples, positive_fraction, bg_label):
-    """
-    Return `num_samples` random samples from `labels`, with a fraction of
-    positives no larger than `positive_fraction`.
+class YawRegression(SmoothL1):
+    def __call__(self, pred):
+        pred_class_logits = pred['pred_class_logits']
+        pred_proposal_deltas = pred['pred_proposal_deltas']
+        head_proposals = pred['head_proposals']
 
-    Args:
-        labels (Tensor): (N, ) label vector with values:
-            * -1: ignore
-            * bg_label: background ("negative") class
-            * otherwise: one or more foreground ("positive") classes
-        num_samples (int): The total number of labels with value >= 0 to return.
-            Values that are not sampled will be filled with -1 (ignore).
-        positive_fraction (float): The number of subsampled labels with values > 0
-            is `min(num_positives, int(positive_fraction * num_samples))`. The number
-            of negatives sampled is `min(num_negatives, num_samples - num_positives_sampled)`.
-            In order words, if there are not enough positives, the sample is filled with
-            negatives. If there are also not enough negatives, then as many elements are
-            sampled as is possible.
-        bg_label (int): label index of background ("negative") class.
+        viewpoint_logits = pred['viewpoint_logits']
+        viewpoint_residuals = pred['viewpoint_residuals']
 
-    Returns:
-        pos_idx, neg_idx (Tensor):
-            1D indices. The total number of indices is `num_samples` if possible.
-            The fraction of positive indices is `positive_fraction` if possible.
-    """
-    positive = torch.nonzero((labels != -1) & (labels != bg_label)).squeeze(1)
-    negative = torch.nonzero(labels == bg_label).squeeze(1)
+        gt_classes = torch.cat([p['gt_category_id'] for p in head_proposals], dim=0)
+        gt_viewpoint = torch.cat([p['gt_yaw'] for p in head_proposals], dim=0)
+        gt_viewpoint_rads = gt_viewpoint[:, 1].to('cuda')
+        gt_viewpoint = gt_viewpoint[:, 0].to('cuda')
 
-    num_pos = int(num_samples * positive_fraction)
-    # protect against not enough positive examples
-    num_pos = min(positive.numel(), num_pos)
-    num_neg = num_samples - num_pos
-    # protect against not enough negative examples
-    num_neg = min(negative.numel(), num_neg)
+        gt_vp_deltas = self.get_vp_deltas(gt_viewpoint, gt_viewpoint_rads, pred_proposal_deltas)
+        bg_class_ind = pred_class_logits.shape[1] - 1
+        print("\n\n YawRegression")
+        print('pred_class_logits :', pred_class_logits.shape)
+        print(gt_classes < bg_class_ind)
+        fg_inds = torch.nonzero((gt_classes >= 0) & (gt_classes < bg_class_ind)).squeeze(
+            1
+        )
+        fg_gt_classes = gt_classes[fg_inds]
+        res_index_list = list()
 
-    # randomly select positive and negative examples
-    perm1 = torch.randperm(positive.numel(), device=positive.device)[:num_pos]
-    perm2 = torch.randperm(negative.numel(), device=negative.device)[:num_neg]
+        for idx, logit in enumerate(viewpoint_residuals[fg_inds]):
+            res_index_list.append(fg_gt_classes[idx] * self.vp_bins + gt_viewpoint[fg_inds][idx])
+        loss_box_reg = self.smooth_l1(
+            viewpoint_residuals[fg_inds, res_index_list],
+            gt_vp_deltas[fg_inds],
+            0.0,
+            reduction="sum",
+        )
+        loss_box_reg = loss_box_reg / gt_classes.numel()
+        return loss_box_reg
 
-    pos_idx = positive[perm1]
-    neg_idx = negative[perm2]
-    return pos_idx, neg_idx
+    def get_vp_deltas(self, gt_viewpoint, gt_viewpoint_rads, pred_proposal_deltas):
+        # gt_viewpoint = gt_viewpoint.type(torch.int32)
+        bin_dist = np.linspace(-math.pi, math.pi, self.vp_bins + 1)
+        bin_res = (bin_dist[1] - bin_dist[0]) / 2.
+
+        src_vp_res = torch.tensor(bin_dist - bin_res, dtype=torch.float32).to(pred_proposal_deltas.device)
+        target_vp = gt_viewpoint_rads
+        src_vp_proposals = src_vp_res[gt_viewpoint.long()]
+        src_vp_proposals[target_vp > src_vp_res[self.vp_bins]] = src_vp_res[self.vp_bins]
+
+        wvp = np.trunc(1 / bin_res)
+        dvp = wvp * (target_vp - src_vp_proposals - bin_res)
+        deltas = dvp
+        return deltas
+
+
+class CrossEntropy():
+    def __call__(self, grtr, pred, beta, reduction):
+        raise NotImplementedError()
+
+    def smooth_l1(self, foo, bar):
+        pass
+
+
+class CategoryClassification(LossBase):
+    def __call__(self, pred):
+        pred_class_logits = pred['pred_class_logits']
+        head_proposals = pred['head_proposals']
+        gt_classes = torch.cat([p['gt_category_id'] for p in head_proposals], dim=0)
+        gt_classes = gt_classes.to('cuda')
+        loss = F.cross_entropy(pred_class_logits, gt_classes, reduction="mean")
+        return loss
+
+
+class YawClassification(LossBase):
+    def __call__(self, pred):
+        pred_class_logits = pred['pred_class_logits']
+        head_proposals = pred['head_proposals']
+
+        viewpoint_logits = pred['viewpoint_logits']
+        gt_classes = torch.cat([p['gt_category_id'] for p in head_proposals], dim=0)
+        gt_viewpoint = torch.cat([p['gt_yaw'] for p in head_proposals], dim=0)
+        gt_viewpoint = gt_viewpoint[:, 0].to('cuda')
+        bg_class_ind = pred_class_logits.shape[1] - 1
+        print("\n\n vpclsstart")
+        print(gt_classes < bg_class_ind)
+        fg_inds = torch.nonzero((gt_classes >= 0) & (gt_classes < bg_class_ind)).squeeze(1)
+        print('fg_inds : ', fg_inds)
+        fg_gt_classes = gt_classes[fg_inds]
+        vp_list = list()
+        for idx, logit in enumerate(viewpoint_logits[fg_inds]):
+            vp_list.append(logit[int(fg_gt_classes[idx]) * self.vp_bins:int(fg_gt_classes[
+                                                                                idx]) * self.vp_bins + self.vp_bins])  # Theoricatly the last class is background... SEE bg_class_ind
+        filtered_viewpoint_logits = torch.cat(vp_list).view(gt_viewpoint[fg_inds].size()[0], self.vp_bins)
+        loss = F.cross_entropy(filtered_viewpoint_logits, gt_viewpoint[fg_inds].long(), reduction="sum")
+        loss = loss / gt_classes.numel()
+        return loss
+
+
+class ObjectClassification(LossBase):
+    def __call__(self, pred):
+        # super(Box2dRegression, self).__call__(beta=beta, reduction=reduction)
+        gt_instances = pred['gt_instances']
+        anchors = pred['anchors']
+        pred_objectness_logits = pred['pred_objectness_logits']
+        gt_labels, gt_boxes = self.label_and_sample_anchors(anchors, gt_instances)
+        gt_labels = torch.stack(gt_labels)  # (N, sum(Hi*Wi*Ai))
+        valid_mask = gt_labels >= 0
+        loss = F.binary_cross_entropy_with_logits(
+            torch.cat(pred_objectness_logits, dim=1)[valid_mask],
+            gt_labels[valid_mask].to(torch.float32),
+            reduction="sum",
+        )
+        return loss

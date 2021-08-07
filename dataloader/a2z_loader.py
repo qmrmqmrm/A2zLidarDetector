@@ -1,4 +1,4 @@
-import os, sys, glob
+import os, glob
 import numpy as np
 import json
 import cv2
@@ -10,7 +10,6 @@ from dataloader.loader_base import DatasetBase
 from dataloader.get_calibration_form import get_calibration
 from config import Config
 from utils.util_function import print_progress
-from dataloader.anchor import Anchor
 
 max_box = 512
 
@@ -19,7 +18,6 @@ class A2D2Loader(DatasetBase):
     def __init__(self, path):
         self.max_box = max_box
         self.calib_path = path
-        self.anchor = Anchor()
         self.calib_dict = get_calibration(self.calib_path)
 
         self.camera_path = os.path.join(self.calib_path, 'image')
@@ -92,8 +90,7 @@ class A2D2Loader(DatasetBase):
                 ann_id += 1
                 ann['category_id'] = label + 1
 
-                ann['bbox2D'] = [(bbox_xmin + bbox_xmax) / 2., (bbox_ymin + bbox_ymax) / 2.,
-                                 np.abs(bbox_xmax - bbox_xmin), np.abs(bbox_ymax - bbox_ymin)]
+                ann['bbox2D'] = [bbox_xmin, bbox_ymin, bbox_xmax, bbox_ymax]
                 #     # ONLY VALID FOR FRONTAL CAMERA (ONLY_FRONT PARAM)
                 velodyne_h = 1.12
                 ann['bbox3D'] = [(bbox_xmin + bbox_xmax) / 2., (bbox_ymin + bbox_ymax) / 2.,
@@ -111,13 +108,13 @@ class A2D2Loader(DatasetBase):
     def get_anno_data(self, ann):
 
         fixed_anns = self.gather_elements(ann)
-        fixed_anns["box2d_map"], fixed_anns["object_map"], _ = self.gather_featmaps(fixed_anns["bbox2D"])
+        fixed_anns["box2d_map"], fixed_anns["object_map"], _ = self.gather_featmaps(fixed_anns["gt_bbox2D"])
         # print("fixed_anns.keys() : ", fixed_anns.keys())
         return fixed_anns
 
     def gather_elements(self, anns):
         """
-        :param anns: {"bbox2D", "bbox3D",  "bbox_id", "category_id", "yaw"}
+        :param anns: {'image_file', 'image', 'bbox_id', 'category_id', 'bbox2D', 'bbox3D', 'object', 'yaw'}
         :return: gathered_anns:
         """
         gathered_anns = dict()
@@ -129,15 +126,24 @@ class A2D2Loader(DatasetBase):
                     # img = img.to('cuda')
                     gathered_anns["image_file"] = ann_val
                     gathered_anns["image"] = img.permute(2,0,1)
+
                 else:
                     if not isinstance(ann_val, int):
                         rank = len(ann_val)
                     else:
                         rank = 1
+                    # if not ann_key in gathered_anns.keys():
+                    #     if ann_key == 'bbox2D':
+                    #         gathered_anns['gt_bbox2D'] = torch.tensor([ann_val])
+                    #     if ann_key == 'category_id':
+                    #         gathered_anns['gt_category_id'] = torch.tensor([ann_val])
+                    #     gathered_anns[ann_key] = torch.zeros((self.max_box, rank))
+                    #     # gathered_anns[ann_key] = gathered_anns[ann_key].to('cuda')
+                    # gathered_anns[ann_key][i, :] = torch.tensor(ann_val)
                     if not ann_key in gathered_anns.keys():
-                        gathered_anns[ann_key] = torch.zeros((self.max_box, rank))
-                        # gathered_anns[ann_key] = gathered_anns[ann_key].to('cuda')
-                    gathered_anns[ann_key][i, :] = torch.tensor(ann_val)
+                        gathered_anns[f"gt_{ann_key}"] = torch.tensor([ann_val])
+                        gathered_anns[f"num_{ann_key}"] = torch.zeros((self.max_box, rank))
+                    gathered_anns[f"num_{ann_key}"][i, :] = torch.tensor(ann_val)
 
         return gathered_anns
 
@@ -149,11 +155,11 @@ class A2D2Loader(DatasetBase):
         :param bbox2D: [num_box, channel]
         :return: "box2d_map": [channel, height, width]
         """
-        channel_shape = bbox2D.shape[-1]
-        box2d = bbox2D[np.where(bbox2D > 0)].reshape(-1, 4)
 
-        center_xs = box2d[:, 0].reshape((-1, 1))
-        center_ys = box2d[:, 1].reshape((-1, 1))
+        channel_shape = bbox2D.shape[-1]
+
+        center_xs = bbox2D[:, 0].reshape((-1, 1))
+        center_ys = bbox2D[:, 1].reshape((-1, 1))
         # center_xs= np.reshape(center_xs,(1,-1))
         heights = [176, 88, 44]
         box2D_map_dict = dict()
@@ -172,7 +178,7 @@ class A2D2Loader(DatasetBase):
             for j, (center_x, center_y) in enumerate(zip(center_xs, center_ys)):
                 w = center_x / rasio
                 h = center_y / rasio
-                bbox2d_map[int(h), int(w), :] = box2d[j, :]
+                bbox2d_map[int(h), int(w), :] = bbox2D[j, :]
                 object_map[int(h), int(w), :] = 1
 
             # mask_map = torch.tensor(bbox2d_map[:, :, None, :], device="cuda")
@@ -201,8 +207,8 @@ def obtain_bvbox(obj, bv_img, pv, bvres=0.05):
     bvrows, bvcols, _ = bv_img.shape
     centroid = [round(num, 2) for num in pv[0][:2]]  # Lidar coordinates
     #
-    length = obj['size'][0]
-    width = obj['size'][1]
+    length = obj['size'][1]
+    width = obj['size'][0]
     yaw = obj['rot_angle']
 
     # # Compute the four vertexes coordinates
@@ -247,38 +253,5 @@ def obtain_bvbox(obj, bv_img, pv, bvres=0.05):
 
 
 
-def drow_box(img, bboxes_2d):
-    # print(bboxes_2d)
-    img = img.permute(1, 2, 0)
-    drow_img = img.numpy()
-    # bboxes_2d = bboxes_2d.numpy()
-    bboxes_2d = bboxes_2d[np.where(bboxes_2d > 0)].reshape(-1, 4)
-    shape = bboxes_2d.shape
-    for i in range(shape[0]):
-        bbox = bboxes_2d[i, :]
-        x0 = int(bbox[0] - bbox[2] / 2)
-        x1 = int(bbox[0] + bbox[2] / 2)
-        y0 = int(bbox[1] - bbox[3] / 2)
-        y1 = int(bbox[1] + bbox[3] / 2)
-
-        drow_img = cv2.rectangle(drow_img, (x0, y0), (x1, y1), (255, 255, 255), 2)
-    cv2.imshow("drow_img", drow_img)
-    cv2.waitKey()
 
 
-def test_():
-    path = "/media/dolphin/intHDD/birdnet_data/my_a2d2"
-    train_loader = get_dataset(path, 2)
-    train_loader_iter = iter(train_loader)
-    for i in range(3):
-        batch = next(train_loader_iter)
-        img = batch[0].get("image")
-        drow_box(img, batch[0].get('bbox2D'))
-        # cv2.imshow("img",img)
-        # cv2.waitKey()
-
-
-
-if __name__ == '__main__':
-    path = "/media/dolphin/intHDD/birdnet_data/my_a2d2"
-    a = test_(path)
