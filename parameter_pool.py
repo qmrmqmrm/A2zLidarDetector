@@ -25,5 +25,15 @@ class TrainingPlan:
         ("kitti", 10, 0.00001, LossComb.STANDARD, True)
     ]
     A2D2_SIMPLE = [
-        ('a2d2', 10, 0.00001, LossComb.BIRDNET, True)
+        ('a2d2', 1, 0.000001, LossComb.BIRDNET, True),
+        ('a2d2', 1, 0.00001, LossComb.BIRDNET, True),
+        ('a2d2', 1, 0.00001, LossComb.BIRDNET, True),
+        ('a2d2', 1, 0.00001, LossComb.BIRDNET, True),
+        ('a2d2', 1, 0.00001, LossComb.BIRDNET, True),
+        ('a2d2', 1, 0.0001, LossComb.BIRDNET, True),
+        ('a2d2', 1, 0.0001, LossComb.BIRDNET, True),
+        ('a2d2', 1, 0.0001, LossComb.BIRDNET, True),
+        ('a2d2', 1, 0.0001, LossComb.BIRDNET, True),
+        ('a2d2', 1, 0.0001, LossComb.BIRDNET, True)
+
     ]

@@ -8,18 +8,17 @@ import torch
 
 from dataloader.loader_base import DatasetBase
 from dataloader.get_calibration_form import get_calibration
+from dataloader.utils_calib import Calibration
 from config import Config as cfg
 from utils.util_function import print_progress
 
 max_box = 512
 
 
-class A2D2Loader(DatasetBase):
+class KittiLoader(DatasetBase):
     def __init__(self, path):
         self.max_box = max_box
         self.calib_path = path
-        self.calib_dict = get_calibration(self.calib_path)
-
         self.camera_path = os.path.join(self.calib_path, 'image')
         self.img_files = sorted(glob.glob(os.path.join(self.camera_path, '*.png')))
         self.anns_list = self.get_img_list(self.img_files)
@@ -27,13 +26,11 @@ class A2D2Loader(DatasetBase):
 
         super().__init__(self.anns_list)
 
-    #
     def get_img_list(self, img_files):
-
+        anns_list = list()
         num_img = len(img_files)
         ann_dict = {}
-        img_dict_list = list()
-        outfile_name = "/media/dolphin/intHDD/birdnet_data/my_a2d2/result/anno.json"
+        outfile_name = "/media/dolphin/intHDD/birdnet_data/bv_kitti/result/anno.json"
         if os.path.exists(outfile_name):
             print('File exists: ' + str(outfile_name))
             # ans = input("Do you want to overwrite it? (y/n)")
@@ -42,19 +39,24 @@ class A2D2Loader(DatasetBase):
             if ans is 'n':
                 # Return always the same file to match with training script
                 with open(outfile_name, 'r') as f:
-                    ann_dict = json.load(f)
-                return ann_dict
+                    anns_list = json.load(f)
+                return anns_list
         for i, img_file in enumerate(img_files):
-            label_file = img_file.replace('image/', 'label/').replace('.png', '.json')
-            with open(label_file, 'r') as f:
-                label = json.load(f)
-                # ['2d_bbox', '3d_points', 'alpha', 'axis', 'center', 'class', 'id', 'occlusion', 'rot_angle', 'size', 'truncation']
-            anns = self.convert_bev(label, img_file, self.calib_dict, viewpoint=True, vp_res=True, bins=12)
+            label_file = img_file.replace('image/', 'label/').replace('.png', '.txt')
+            calib_file = img_file.replace('image/', 'calib/').replace('.png', '.txt')
+
+            calib = Calibration(calib_file)
+            label = np.genfromtxt(label_file, delimiter=' ',
+                                  names=['type', 'truncated', 'occluded', 'alpha', 'bbox_xmin', 'bbox_ymin',
+                                         'bbox_xmax', 'bbox_ymax', 'dimensions_1', 'dimensions_2', 'dimensions_3',
+                                         'location_1', 'location_2', 'location_3', 'rotation_y'], dtype=None)
+            # ['2d_bbox', '3d_points', 'alpha', 'axis', 'center', 'class', 'id', 'occlusion', 'rot_angle', 'size', 'truncation']
+            anns = self.convert_bev(label, img_file, calib, viewpoint=True, vp_res=True, bins=12)
             if len(anns) != 0:
-                ann_dict[img_file] = anns
+                anns_list.append(anns)
             print_progress(f"{i}/{num_img}")
 
-        # img_dict_list.append(ann_dict)
+        ann_dict['annotations'] = anns_list
         with open(outfile_name, "w") as outfile:
             outfile.write(json.dumps(ann_dict))
         return ann_dict
@@ -62,71 +64,61 @@ class A2D2Loader(DatasetBase):
     def convert_bev(self, label, img_file, calib, vp_res, bins, bvres=0.05, viewpoint=False):
         ann_id = 0
         annotations = list()
-
+        if (label.ndim < 1):
+            label = np.array(label, ndmin=1)
         img = cv2.imread(img_file)
-        for boxes, obj in label.items():
-
-            location = np.array(obj['center']).reshape((1, 3))
-            pts_3d_ref = np.transpose(np.dot(np.linalg.inv(calib["R0"]), np.transpose(location)))
-            n = pts_3d_ref.shape[0]
-            pts_3d_hom = np.hstack((pts_3d_ref, np.ones((n, 1))))
-            pv = np.dot(pts_3d_hom, np.transpose(calib["C2V"]))
-            categories = ['Car', 'Pedestrian', 'Cyclist']
-            category_dict = {k: v for v, k in enumerate(categories)}
-
-            o = obj['class']
+        only_eval_classes = '0, 3, 5'
+        only_eval_classes = only_eval_classes.split(',')
+        only_eval_classes = [int(cl) for cl in only_eval_classes]
+        categories = ['Car', 'Van', 'Truck', 'Pedestrian', 'Person_sitting', 'Cyclist', 'Tram', 'Misc', 'DontCare']
+        categories = [categories[idx] for idx in only_eval_classes]
+        category_dict = {k: v for v, k in enumerate(categories)}
+        for obj in label:
+            o = obj['type']
+            print(o)
+            if isinstance(o, (bytes, np.bytes_)):
+                o = o.decode("utf-8")
             label = category_dict.get(o, 8)  # Default value just in case
-
             if (label != 7) and (label != 8):
-
-                bbox_xmin, bbox_ymin, bbox_xmax, bbox_ymax, x, y = obtain_bvbox(obj, img, pv, 0.05)
-
+                bbox_xmin, bbox_ymin, bbox_xmax, bbox_ymax = obtain_bvbox(obj, img, calib, bvres)
                 if bbox_xmin < 0:
                     continue
-                # cv2.imshow("im", img)
-                # cv2.waitKey()
-                # dimg = cv2.rectangle(img, (int(bbox_xmin), int(bbox_xmax)), (int(bbox_ymin), int(bbox_ymax)),
-                #                      (255, 255, 255), 2)
-                # cv2.imshow("drow_img", dimg)
-                # cv2.waitKey()
-                ann = {}
+                print(bbox_xmin, bbox_ymin, bbox_xmax, bbox_ymax)
 
+                cv2.imshow("im", img)
+                cv2.waitKey()
+                dimg = cv2.rectangle(img, (int(bbox_xmin), int(bbox_xmax)), (int(bbox_ymin), int(bbox_ymax)),
+                                     (255, 255, 255), 2)
+                cv2.imshow("drow_img", dimg)
+                cv2.waitKey()
+                ann = {}
+                ann['image_file'] = img_file
                 ann['bbox_id'] = ann_id
                 ann_id += 1
                 ann['category_id'] = label
-
+                boxes = np.empty((0, 4), dtype=np.float32)
                 ann['bbox2D'] = [bbox_xmin, bbox_ymin, bbox_xmax, bbox_ymax]
-                #     # ONLY VALID FOR FRONTAL CAMERA (ONLY_FRONT PARAM)
-                velodyne_h = 1.12
+
+                # ONLY VALID FOR FRONTAL CAMERA (ONLY_FRONT PARAM)
+                p = calib.project_rect_to_velo(np.array([[obj['location_1'], obj['location_2'], obj['location_3']]]))
+                ann['height'] = [obj['dimensions_1'] * 255 / 3.0, ((p[0][2] + 1.73) + obj[
+                    'dimensions_1'] * 0.5) * 255 / 3.0]  # (p[0][2]+velodyne_h)]#Not codificated ground
                 ann['bbox3D'] = [(bbox_xmin + bbox_xmax) / 2., (bbox_ymin + bbox_ymax) / 2.,
-                                 round(obj['size'][1] / bvres, 3), round(obj['size'][2] / bvres, 3),
-                                 obj['size'][0] * 255 / 3., ((pv[0][2] + velodyne_h) + obj['size'][0] * 0.5) * 255 / 3.]
+                                 round(obj['dimensions_2'] / bvres, 3), round(obj['dimensions_3'] / bvres, 3)]
                 ann["object"] = 1
                 if viewpoint:
-                    ann['yaw'] = [rad2bin(obj['rot_angle'], bins), obj['rot_angle']] if vp_res else [
+                    ann['yaw'] = [rad2bin(obj['rotation_y'], bins), obj['rotation_y']] if vp_res else [
                         rad2bin(obj['rotation_y'], bins)]
 
                 annotations.append(ann)
 
         return annotations
 
-    def get_anno_data(self, img_file, anns):
+    def get_anno_data(self, ann):
 
-        # anns = img_anns.values()
-        ann_dict = dict()
-        # label_file = img_file.replace('image/', 'label/').replace('.png', '.json')
-        # with open(label_file, 'r') as f:
-        #     label = json.load(f)
-        # anns = self.convert_bev(label, img_file, self.calib_dict, viewpoint=True, vp_res=True, bins=12)
-        fixed_anns = self.gather_elements(anns)
-
+        fixed_anns = self.gather_elements(ann)
         fixed_anns["box2d_map"], fixed_anns["object_map"], _ = self.gather_featmaps(fixed_anns["gt_bbox2D"])
-        img = cv2.imread(img_file)
-        img = torch.tensor(img)
-        fixed_anns['img_file'] = img_file
-        fixed_anns['image'] = img.permute(2, 0, 1)
-
-        # ann_dict[img_file] = fixed_anns
+        # print("fixed_anns.keys() : ", fixed_anns.keys())
         return fixed_anns
 
     def gather_elements(self, anns):
@@ -138,18 +130,24 @@ class A2D2Loader(DatasetBase):
         for i, ann in enumerate(anns):
             for ann_key, ann_val in ann.items():
 
-                if not isinstance(ann_val, int):
-                    rank = len(ann_val)
-                else:
-                    rank = 1
-                tensor_ann = torch.tensor([ann_val])
-                if f"gt_{ann_key}" in gathered_anns:
-                    gathered_anns[f"gt_{ann_key}"] = torch.cat((gathered_anns[f"gt_{ann_key}"],tensor_ann), dim=0)
+                if ann_key == "image_file":
+                    img = cv2.imread(ann_val)
+                    img = torch.tensor(img)
+                    # img = img.to('cuda')
+                    gathered_anns["image_file"] = ann_val
+                    gathered_anns["image"] = img.permute(2, 0, 1)
 
                 else:
-                    gathered_anns[f"gt_{ann_key}"] = torch.tensor([ann_val])
-                gathered_anns[f"num_{ann_key}"] = torch.zeros((self.max_box, rank))
-                gathered_anns[f"num_{ann_key}"][i, :] = torch.tensor(ann_val)
+                    if not isinstance(ann_val, int):
+                        rank = len(ann_val)
+                    else:
+                        rank = 1
+
+
+                    if not ann_key in gathered_anns.keys():
+                        gathered_anns[f"gt_{ann_key}"] = torch.tensor([ann_val])
+                        gathered_anns[f"num_{ann_key}"] = torch.zeros((self.max_box, rank))
+                    gathered_anns[f"num_{ann_key}"][i, :] = torch.tensor(ann_val)
 
         return gathered_anns
 
@@ -209,13 +207,15 @@ def rad2bin(rad, bins):
     return 0  # If the angle is above max angle, it won't match so it corresponds to initial bin, initial bin must be from (-pi+bin_res) to (pi-bin_res)
 
 
-def obtain_bvbox(obj, bv_img, pv, bvres=0.05):
+def obtain_bvbox(obj, bv_img, calib, bvres=0.05):
     bvrows, bvcols, _ = bv_img.shape
+    pv = calib.project_rect_to_velo(np.array([[obj['location_1'], obj['location_2'], obj['location_3']]]))
+
     centroid = [round(num, 2) for num in pv[0][:2]]  # Lidar coordinates
     #
-    length = obj['size'][1]
-    width = obj['size'][0]
-    yaw = obj['rot_angle']
+    length = obj['dimensions_2']
+    width = obj['dimensions_3']
+    yaw = obj['rotation_y']
 
     # # Compute the four vertexes coordinates
     corners = np.array([[centroid[0] - length / 2., centroid[1] + width / 2.],
@@ -228,18 +228,14 @@ def obtain_bvbox(obj, bv_img, pv, bvres=0.05):
 
     rotated_corners = np.dot(corners - centroid, R) + centroid
 
-    x1 = bvcols / 2 + min(rotated_corners[:, 0]) / bvres
-    x2 = bvcols / 2 + max(rotated_corners[:, 0]) / bvres
-    y1 = bvrows - max(rotated_corners[:, 1]) / bvres
-    y2 = bvrows - min(rotated_corners[:, 1]) / bvres
-
-    x = bvcols / 2 + (rotated_corners[:, 0]) / bvres
-    y = bvrows - (rotated_corners[:, 1]) / bvres
-
+    x1 = bvcols / 2 + min(-rotated_corners[:, 1]) / bvres
+    x2 = bvcols / 2 + max(-rotated_corners[:, 1]) / bvres
+    y1 = bvrows - max(rotated_corners[:, 0]) / bvres
+    y2 = bvrows - min(rotated_corners[:, 0]) / bvres
     roi = bv_img[int(y1):int(y2), int(x1):int(x2)]
     nonzero = np.count_nonzero(np.sum(roi, axis=2))
     if nonzero < 3:  # Detection is doomed impossible with fewer than 3 points
-        return -1, -1, -1, -1, None, None
+        return -1, -1, -1, -1
     # # TODO: Assign DontCare labels to objects with few points?
     #
     # # Remove objects outside the BEV image
@@ -247,7 +243,7 @@ def obtain_bvbox(obj, bv_img, pv, bvres=0.05):
             x1 >= bvcols - 1 and x2 >= bvcols - 1 or \
             y1 <= 0 and y2 <= 0 or \
             y1 >= bvrows - 1 and y2 >= bvrows - 1:
-        return -1, -1, -1, -1, None, None  # Out of bounds
+        return -1, -1, -1, -1 # Out of bounds
     #
     # # Clip boxes to the BEV image
     x1 = max(0, x1)
@@ -255,26 +251,7 @@ def obtain_bvbox(obj, bv_img, pv, bvres=0.05):
     x2 = min(bvcols - 1, x2)
     y2 = min(bvrows - 1, y2)
 
-    return x1, y1, x2, y2, x, y
-
-
-def get_img():
-    path = cfg.Datasets.A2D2.PATH
-    a2d2 = A2D2Loader(path=path)
-    ann_dict = dict()
-    img_files = sorted(glob.glob(os.path.join(a2d2.camera_path, '000039068.png')))
-    for img_file in img_files:
-        label_file = img_file.replace('image/', 'label/').replace('.png', '.json')
-        print('img_file : ', img_file)
-        with open(label_file, 'r') as f:
-            label = json.load(f)
-            # ['2d_bbox', '3d_points', 'alpha', 'axis', 'center', 'class', 'id', 'occlusion', 'rot_angle', 'size', 'truncation']
-        anns = a2d2.convert_bev(label, img_file, a2d2.calib_dict, viewpoint=True, vp_res=True, bins=12)
-
-        for ann in anns:
-            img = cv2.imread(img_file)
-            print(ann['bbox2D'])
-            drow_box(img, ann['bbox2D'])
+    return x1, y1, x2, y2
 
 
 def drow_box(img, bbox):
@@ -286,7 +263,3 @@ def drow_box(img, bbox):
     img = cv2.rectangle(img, (x0, y0), (x1, y1), (255, 255, 255), 2)
     cv2.imshow("drow_img", img)
     cv2.waitKey()
-
-
-if __name__ == '__main__':
-    get_img()

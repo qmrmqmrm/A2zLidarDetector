@@ -249,6 +249,25 @@ class ROIPooler(nn.Module):
         """
 
         num_level_assignments = len(self.level_poolers)
+        assert isinstance(x, list) and isinstance(
+            box_lists, list
+        ), "Arguments to pooler must be lists"
+        assert (
+            len(x) == num_level_assignments
+        ), "unequal value, num_level_assignments={}, but x is list of {} Tensors".format(
+            num_level_assignments, len(x)
+        )
+
+        assert len(box_lists) == x[0].size(
+            0
+        ), "unequal value, x[0] batch dim 0 is {}, but box_list has length {}".format(
+            x[0].size(0), len(box_lists)
+        )
+        if len(box_lists) == 0:
+            return torch.zeros(
+                (0, x[0].shape[1]) + self.output_size, device=x[0].device, dtype=x[0].dtype
+            )
+
         pooler_fmt_boxes = convert_boxes_to_pooler_format(box_lists)
 
         if num_level_assignments == 1:

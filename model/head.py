@@ -400,10 +400,10 @@ class FastRCNNConvFCHead(nn.Module):
             self.fcs.append(fc)
             self._output_size = fc_dim
 
-        # for layer in self.conv_norm_relus:
-        #     weight_init.c2_msra_fill(layer)
-        # for layer in self.fcs:
-        #     weight_init.c2_xavier_fill(layer)
+        for layer in self.conv_norm_relus:
+            weight_init.c2_msra_fill(layer)
+        for layer in self.fcs:
+            weight_init.c2_xavier_fill(layer)
 
     def forward(self, x):
         print('FastRCNNConvFCHead forward')

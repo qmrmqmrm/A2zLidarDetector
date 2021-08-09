@@ -5,7 +5,7 @@ import numpy as np
 
 class Config:
     class Paths:
-        RESULT_ROOT = "/media/dolphin/intHDD/birdnet_data/bv_a2d2/result"
+        RESULT_ROOT = "/media/dolphin/intHDD/birdnet_data/my_a2d2/result"
         TFRECORD = op.join(RESULT_ROOT, "pyloader")
         CHECK_POINT = op.join(RESULT_ROOT, "ckpt")
 
@@ -13,7 +13,7 @@ class Config:
         # specific dataset configs MUST have the same items
         class Kitti:
             NAME = "kitti"
-            PATH = "/media/ian/Ian4T/dataset/kitti_detection"
+            PATH = "/media/dolphin/intHDD/birdnet_data/bv_kitti"
             CATEGORIES_TO_USE = ["Pedestrian", "Car", "Van", "Truck", "Cyclist"]
             CATEGORY_REMAP = {"Pedestrian": "Person", "Cyclist": "Bicycle"}
             INPUT_RESOLUTION = (256, 832)  # (4,13) * 64
@@ -124,7 +124,7 @@ class Config:
             POST_NMS_TOPK_TEST = 1000
             POST_NMS_TOPK_TRAIN = 2000
             BOUNDARY_THRESH = -1
-            BBOX_REG_WEIGHTS = (10.0, 10.0, 5.0, 5.0)
+            BBOX_REG_WEIGHTS = (1.0, 1.0, 1.0, 1.0)
             ANCHOR_SIZES = [[16, 64, 80]]
             ANCHOR_RATIOS = [[0.5, 1., 2.]]
 

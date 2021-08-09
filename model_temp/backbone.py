@@ -8,6 +8,7 @@ from config import Config as cfg
 from model_temp.submodules.model_util import Conv2d
 from utils.batch_norm import get_norm ,FrozenBatchNorm2d
 from utils.util_class import ShapeSpec
+from model_temp.submodules.weight_init import c2_msra_fill, c2_xavier_fill
 
 
 class Backbone(nn.Module, metaclass=ABCMeta):
@@ -92,7 +93,7 @@ class BasicStem(nn.Module):
             bias=False,
             norm=get_norm(norm, out_channels),
         )
-        # weight_init.c2_msra_fill(self.conv1)
+        c2_msra_fill(self.conv1)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -199,9 +200,9 @@ class BottleneckBlock(ResNetBlockBase):
             norm=get_norm(norm, out_channels),
         )
 
-        # for layer in [self.conv1, self.conv2, self.conv3, self.shortcut]:
-            # if layer is not None:  # shortcut can be None
-            #     weight_init.c2_msra_fill(layer)
+        for layer in [self.conv1, self.conv2, self.conv3, self.shortcut]:
+            if layer is not None:  # shortcut can be None
+                c2_msra_fill(layer)
 
         # Zero-initialize the last normalization in each residual branch,
         # so that at the beginning, the residual branch starts with zeros,

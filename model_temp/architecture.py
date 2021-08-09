@@ -87,7 +87,7 @@ class GeneralizedRCNN(ModelBase):
         pred, head_proposals = self.roi_heads(images, features, rpn_proposals, gt_instances)
         pred['rpn_proposals'] = rpn_proposals
         pred.update(loss_instances)
-        pred['gt_instances'] = gt_instances
+        pred['gt_instances'] = batched_inputs
         pred['head_proposals'] = head_proposals
         # pred keys :  dict_keys(['scores', 'proposal_deltas', 'viewpoint_scores', 'viewpoint_residuals', 'height_scores', 'proposals', 'loss_instances'])
         # print("pred_anchor_deltas",loss_instances['pred_anchor_deltas'])

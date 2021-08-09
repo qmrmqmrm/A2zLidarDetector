@@ -37,7 +37,7 @@ class IntegratedLoss:
         loss_by_type = {loss_name: 0 for loss_name in self.loss_objects}
 
         for loss_name, loss_object in self.loss_objects.items():
-            scalar_loss = loss_object(predictions)
+            scalar_loss = loss_object(features,predictions)
             weight = self.loss_weights[loss_name] if loss_name in self.loss_weights \
                                                      else self.loss_weights[loss_name]
             total_loss += scalar_loss * weight

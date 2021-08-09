@@ -3,17 +3,21 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-
 from dataloader.a2z_loader import A2D2Loader
+from dataloader.kitti_loader import KittiLoader
 from dataloader.sampler import TrainingSampler
 from config import Config as cfg
 
 
 def loader_factory(dataset_name):
     if dataset_name == "a2d2":
-        print('a2d2 data')
+        print('a2d2')
         path = cfg.Datasets.A2D2.PATH
         loader = A2D2Loader(path)
+        return loader
+    if dataset_name == "kitti":
+        path = cfg.Datasets.Kitti.PATH
+        loader = KittiLoader(path)
         return loader
 
 
@@ -39,11 +43,8 @@ def drow_box(img, bboxes_2d):
     # print(bboxes_2d)
     img = img.permute(1, 2, 0)
     drow_img = img.numpy()
-    # bboxes_2d = bboxes_2d.numpy()
-    bboxes_2d = bboxes_2d[np.where(bboxes_2d > 0)].reshape(-1, 4)
-    shape = bboxes_2d.shape
-    for i in range(shape[0]):
-        bbox = bboxes_2d[i, :]
+
+    for bbox in bboxes_2d:
         x0 = int(bbox[0])
         x1 = int(bbox[2])
         y0 = int(bbox[1])
@@ -55,15 +56,14 @@ def drow_box(img, bboxes_2d):
 
 
 def test_():
-    train_loader = get_dataset("a2d2", 2)
+    train_loader = get_dataset("a2d2", 1)
     train_loader_iter = iter(train_loader)
 
     for i in range(len(train_loader_iter)):
-        batch = next(train_loader_iter)
-        img = batch[0].get("image")
-        drow_box(img, batch[0].get('bbox2D'))
-        # cv2.imshow("img",img)
-        # cv2.waitKey()
+        batches = next(train_loader_iter)
+        for batch in batches:
+            img = batch.get("image")
+            drow_box(img, batch.get('gt_bbox2D'))
 
 
 if __name__ == '__main__':

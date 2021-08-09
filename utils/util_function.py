@@ -1,6 +1,8 @@
 import sys
 import torch
 
+from config import Config as cfg
+
 
 def print_progress(status_msg):
     # NOTE: the \r which means the line should overwrite itself.
@@ -109,3 +111,12 @@ def retry_if_cuda_oom(func):
         return func(*new_args, **new_kwargs)
 
     return wrapped
+
+
+def slice_features(feature, output_composition=cfg.Model.Output.OUT_COMPOSITION):
+    index = 0
+    slices = dict()
+    for name, channel in output_composition:
+        slices[name] = feature[..., index:index + channel]
+        index += channel
+    return slices
