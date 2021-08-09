@@ -25,23 +25,15 @@ class DatasetBase(Dataset):
     """ Diabetes dataset."""
 
     # Initialize your data, download, etc.
-    def __init__(self, img_dict):
-        print(type(img_dict))
-        self.img_dict = img_dict
-        self.img_files = list(self.img_dict.keys())
-        self.len = len(self.img_files)
-        print('self.len')
-        print(self.len)
+    def __init__(self, root_dir):
+        self.root_dir = root_dir
+        self.img_files = self.list_frames(root_dir)
 
-    def get_anno_data(self, img_file, anns):
+    def list_frames(self, root_dir):
         raise NotImplementedError
 
     def __getitem__(self, index):
-        # self.annotation = torch.from_numpy(self.anno_dict[index].values())
-        img_file = self.img_files[index]
-        ann_feature = self.get_anno_data(img_file, self.img_dict[img_file])
-        return ann_feature
+        raise NotImplementedError
 
-    #
     def __len__(self):
-        return self.len
+        return len(self.img_files)

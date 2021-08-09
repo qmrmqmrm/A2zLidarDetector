@@ -3,7 +3,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from dataloader.a2z_loader import A2D2Dataset
+from dataloader.a2d2_dataset import A2D2Dataset
 from dataloader.kitti_loader import KittiDataset
 from dataloader.sampler import TrainingSampler
 from config import Config as cfg
@@ -61,9 +61,11 @@ def test_():
 
     for i in range(len(train_loader_iter)):
         batches = next(train_loader_iter)
-        for batch in batches:
-            img = batch.get("image")
-            drow_box(img, batch.get('gt_bbox2D'))
+        print("batches type: ", type(batches))
+        print("batches type: ", (batches))
+        # for batch in batches:
+        #     img = batch.get("image")
+        #     drow_box(img, batch.get('gt_bbox2D'))
 
 
 if __name__ == '__main__':

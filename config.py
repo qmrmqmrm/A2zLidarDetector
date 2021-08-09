@@ -24,6 +24,7 @@ class Config:
             PATH = "/media/dolphin/intHDD/birdnet_data/my_a2d2"
             CATEGORIES_TO_USE = ["Pedestrian", "Car", "Cyclist"]
             CATEGORY_REMAP = {}
+            MAX_NUM = 10
             INPUT_RESOLUTION = (256, 832)  # (4,13) * 64
             CROP_TLBR = [0, 0, 0, 0]  # crop [top, left, bottom, right] or [y1 x1 y2 x2]
 
@@ -81,6 +82,7 @@ class Config:
 
             NAMES = [NAME.MODEL_NAME, NAME.BACKBONE_NAME, NAME.NECK_NAME, NAME.RPN_NAME, NAME.HEAD_NAME]
             VP_BINS = 12
+
             VIEWPOINT = 'true'
             VIEWPOINT_RESIDUAL = 'true'
             HEIGHT_TRAINING = 'true'

@@ -12,12 +12,12 @@ class IntegratedLoss:
 
     def create_loss_objects(self, loss_weights):
         loss_objects = dict()
-        if "bbox2D" in loss_weights:
-            loss_objects["bbox2D"] = loss.Box2dRegression()
+        if "bbox2d" in loss_weights:
+            loss_objects["bbox2d"] = loss.Box2dRegression()
         if "object" in loss_weights:
             loss_objects["object"] = loss.ObjectClassification()
-        if "bbox3D" in loss_weights:
-            loss_objects["bbox3D"] = loss.Box3dRegression()
+        if "bbox3d" in loss_weights:
+            loss_objects["bbox3d"] = loss.Box3dRegression()
         if "height" in loss_weights:
             loss_objects["height"] = loss.HeightRegression()
 

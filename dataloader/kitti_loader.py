@@ -7,7 +7,7 @@ import math
 import torch
 
 from dataloader.loader_base import DatasetBase
-from dataloader.get_calibration_form import get_calibration
+from dataloader.a2d2_calib_reader import get_calibration
 from dataloader.utils_calib import Calibration
 from config import Config as cfg
 from utils.util_function import print_progress
@@ -95,15 +95,15 @@ class KittiDataset(DatasetBase):
                 ann['image_file'] = img_file
                 ann['bbox_id'] = ann_id
                 ann_id += 1
-                ann['category_id'] = label
+                ann['category'] = label
                 boxes = np.empty((0, 4), dtype=np.float32)
-                ann['bbox2D'] = [bbox_xmin, bbox_ymin, bbox_xmax, bbox_ymax]
+                ann['bbox2d'] = [bbox_xmin, bbox_ymin, bbox_xmax, bbox_ymax]
 
                 # ONLY VALID FOR FRONTAL CAMERA (ONLY_FRONT PARAM)
                 p = calib.project_rect_to_velo(np.array([[obj['location_1'], obj['location_2'], obj['location_3']]]))
                 ann['height'] = [obj['dimensions_1'] * 255 / 3.0, ((p[0][2] + 1.73) + obj[
                     'dimensions_1'] * 0.5) * 255 / 3.0]  # (p[0][2]+velodyne_h)]#Not codificated ground
-                ann['bbox3D'] = [(bbox_xmin + bbox_xmax) / 2., (bbox_ymin + bbox_ymax) / 2.,
+                ann['bbox3d'] = [(bbox_xmin + bbox_xmax) / 2., (bbox_ymin + bbox_ymax) / 2.,
                                  round(obj['dimensions_2'] / bvres, 3), round(obj['dimensions_3'] / bvres, 3)]
                 ann["object"] = 1
                 if viewpoint:
@@ -123,7 +123,7 @@ class KittiDataset(DatasetBase):
 
     def gather_elements(self, anns):
         """
-        :param anns: {'image_file', 'image', 'bbox_id', 'category_id', 'bbox2D', 'bbox3D', 'object', 'yaw'}
+        :param anns: {'image_file', 'image', 'bbox_id', 'category', 'bbox2d', 'bbox3d', 'object', 'yaw'}
         :return: gathered_anns:
         """
         gathered_anns = dict()
@@ -151,19 +151,19 @@ class KittiDataset(DatasetBase):
 
         return gathered_anns
 
-    def gather_featmaps(self, bbox2D):
+    def gather_featmaps(self, bbox2d):
         """
                  res2(Tensor) : torch.Size([4, 256, 176, 352]) 3.9772727
                  res3(Tensor) : torch.Size([4, 512, 88, 176])  7.95454545
                  res4(Tensor) : torch.Size([4, 1024, 44, 88])  15.9090909
-        :param bbox2D: [num_box, channel]
+        :param bbox2d: [num_box, channel]
         :return: "box2d_map": [channel, height, width]
         """
 
-        channel_shape = bbox2D.shape[-1]
+        channel_shape = bbox2d.shape[-1]
 
-        center_xs = bbox2D[:, 0].reshape((-1, 1))
-        center_ys = bbox2D[:, 1].reshape((-1, 1))
+        center_xs = bbox2d[:, 0].reshape((-1, 1))
+        center_ys = bbox2d[:, 1].reshape((-1, 1))
         # center_xs= np.reshape(center_xs,(1,-1))
         heights = [176, 88, 44]
         box2D_map_dict = dict()
@@ -182,7 +182,7 @@ class KittiDataset(DatasetBase):
             for j, (center_x, center_y) in enumerate(zip(center_xs, center_ys)):
                 w = center_x / rasio
                 h = center_y / rasio
-                bbox2d_map[int(h), int(w), :] = bbox2D[j, :]
+                bbox2d_map[int(h), int(w), :] = bbox2d[j, :]
                 object_map[int(h), int(w), :] = 1
 
             # mask_map = torch.tensor(bbox2d_map[:, :, None, :], device="cuda")
