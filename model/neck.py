@@ -4,10 +4,10 @@ import math
 import torch.nn.functional as F
 from torch import nn
 
-from model_temp.backbone import Backbone
+from model.backbone import Backbone
 from config import Config as cfg
 
-from model_temp.submodules.model_util import Conv2d
+from model.submodules.model_util import Conv2d
 from utils.batch_norm import get_norm
 from utils.util_class import ShapeSpec
 

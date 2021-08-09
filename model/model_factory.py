@@ -2,147 +2,109 @@ import torch
 from torch import nn
 import numpy as np
 
-import utils.util_function as uf
 from config import Config as cfg
-from model.rpn import RPN
 from utils.util_class import ShapeSpec
-from utils.image_list import ImageList
-from model.fpn import build_resnet_fpn_backbone
+from model.backbone import ResNet, BasicStem, BottleneckBlock,make_stage
+from model.neck import FPN, LastLevelMaxPool
+from model.rpn import RPN
 from model.head import StandardROIHeads
+from model.architecture import GeneralizedRCNN
 
 
-class GeneralizedRCNN(nn.Module):
+def build_model(model_name, backbone_name, neck_name, rpn_name, head_name):
+    backbone = backbone_factory(backbone_name, neck_name)
+    rpn = rpn_factory(rpn_name, backbone.output_shape())
+    head = head_factory(head_name, backbone.output_shape())
+    ModelClass = select_model(model_name)
+    model = ModelClass(backbone=backbone, rpn=rpn, head=head)
+    return model
+
+
+def backbone_factory(backbone_name, neck_name):
     """
-    Generalized R-CNN. Any models that contains the following three components:
-    1. Per-image feature extraction (aka backbone)
-    2. Region proposal generation
-    3. Per-region feature extraction and prediction
+    try except, split functions, specify inputs
+    :param backbone_name:
+    :param neck_name:
+    :return:
     """
-
-    def __init__(self):
-        super().__init__()
-
-        self.device = torch.device("cuda")
+    if backbone_name == "ResNet":
+        # need registration of new blocks/stems?
         input_shape = ShapeSpec(channels=len(cfg.Model.Structure.PIXEL_MEAN))
-        self.backbone = build_resnet_fpn_backbone(input_shape=input_shape)
-        self.proposal_generator = RPN(self.backbone.output_shape())
-        self.roi_heads = StandardROIHeads(self.backbone.output_shape())
+        norm = cfg.Model.RESNET.NORM
+        stem = BasicStem(
+            in_channels=input_shape.channels,
+            out_channels=cfg.Model.RESNET.STEM_OUT_CHANNELS,
+            norm=norm,
+        )
+        freeze_at = 0
 
-        assert len(cfg.Model.Structure.PIXEL_MEAN) == len(cfg.Model.Structure.PIXEL_STD)
-        num_channels = len(cfg.Model.Structure.PIXEL_MEAN)
-        pixel_mean = torch.Tensor(cfg.Model.Structure.PIXEL_MEAN).to(self.device).view(num_channels, 1, 1)
-        pixel_std = torch.Tensor(cfg.Model.Structure.PIXEL_STD).to(self.device).view(num_channels, 1, 1)
-        self.normalizer = lambda x: (x - pixel_mean) / pixel_std
-        self.to(self.device)
-        self.rotated_box_training = cfg.Model.Structure.ROTATED_BOX_TRAINING
+        # fmt: off
+        out_features = cfg.Model.RESNET.OUT_FEATURES
+        depth = cfg.Model.RESNET.DEPTH
+        num_groups = cfg.Model.RESNET.NUM_GROUPS
+        width_per_group = cfg.Model.RESNET.WIDTH_PER_GROUP
+        bottleneck_channels = num_groups * width_per_group
+        in_channels = cfg.Model.RESNET.STEM_OUT_CHANNELS
+        out_channels = cfg.Model.RESNET.RES2_OUT_CHANNELS
+        stride_in_1x1 = cfg.Model.RESNET.STRIDE_IN_1X1
+        res5_dilation = cfg.Model.RESNET.RES5_DILATION
 
-    def forward(self, batched_inputs):
-        """
-        Args:
-            batched_inputs: a list, batched outputs of :class:`DatasetMapper` .
-                Each item in the list contains the inputs for one image.
-                For now, each item in the list is a dict that contains:
+        # fmt: on
+        assert res5_dilation in {1, 2}, "res5_dilation cannot be {}.".format(res5_dilation)
 
-                * image: Tensor, image in (C, H, W) format.
-                * instances (optional): groundtruth :class:`Instances`
-                * proposals (optional): :class:`Instances`, precomputed proposals.
+        num_blocks_per_stage = {50: [3, 4, 6, 3], 101: [3, 4, 23, 3], 152: [3, 8, 36, 3]}[depth]
 
-                Other information that's included in the original dicts, such as:
+        stages = []
 
-                * "height", "width" (int): the output resolution of the model, used in inference.
-                    See :meth:`postprocess` for details.
+        # Avoid creating variables without gradients
+        # It consumes extra memory and may cause allreduce to fail
+        out_stage_idx = [{"res2": 2, "res3": 3, "res4": 4, "res5": 5}[f] for f in out_features]
+        max_stage_idx = max(out_stage_idx)
+        for idx, stage_idx in enumerate(range(2, max_stage_idx + 1)):
+            dilation = res5_dilation if stage_idx == 5 else 1
+            first_stride = 1 if idx == 0 or (stage_idx == 5 and dilation == 2) else 2
+            stage_kargs = {"num_blocks": num_blocks_per_stage[idx], "first_stride": first_stride,
+                           "in_channels": in_channels, "bottleneck_channels": bottleneck_channels,
+                           "out_channels": out_channels, "num_groups": num_groups, "norm": norm,
+                           "stride_in_1x1": stride_in_1x1, "dilation": dilation, "block_class": BottleneckBlock}
 
-        Returns:
-            list[dict]:
-                Each dict is the output for one input image.
-                The dict contains one key "instances" whose value is a :class:`Instances`.
-                The :class:`Instances` object has the following keys:
-                    "pred_boxes", "pred_classes", "scores", "pred_masks", "pred_keypoints"
-        """
-        if not self.training:
-            return self.inference(batched_inputs)
+            blocks = make_stage(**stage_kargs)
+            in_channels = out_channels
+            out_channels *= 2
+            bottleneck_channels *= 2
 
-        images = self.preprocess_image(batched_inputs)
-        gt_instances = batched_inputs.copy()
-        # gt = list()
-        # for gt_instance in gt_instances:
-        #     x = gt_instance
-        #     x.pop('image')
-        #     gt.append(x)
-        features = self.backbone(images.tensor)
+            if freeze_at >= stage_idx:
+                for block in blocks:
+                    block.freeze()
+            stages.append(blocks)
+        bottom_up = ResNet(stem, stages, out_features=out_features)
 
-        if self.proposal_generator:
-            proposals, proposal_losses = self.proposal_generator(images, features, gt_instances)
-        else:
-            assert "proposals" in batched_inputs[0]
-            proposals = [x["proposals"].to(self.device) for x in batched_inputs]
-            proposal_losses = {}
+    if neck_name == "FPN":
+        in_features = cfg.Model.RESNET.OUT_FEATURES
+        out_channels = cfg.Model.FPN.OUTPUT_CHANNELS
+        backbone = FPN(
+            bottom_up=bottom_up,
+            in_features=in_features,
+            out_channels=out_channels,
+            norm=cfg.Model.FPN.NORM,
+            top_block=LastLevelMaxPool(cfg.Model.ROI_HEADS.INPUT_FEATURES[-1]),
+            fuse_type=cfg.Model.FPN.FUSE_TYPE,
+        )
+        return backbone
 
-        _, detector_losses = self.roi_heads(images, features, proposals, gt_instances)
 
-        losses = {}
-        losses.update(detector_losses)
-        losses.update(proposal_losses)
-        return losses
+def rpn_factory(rpn_name, output_shape):
+    if rpn_name == 'RPN':
+        return RPN(output_shape)
+    pass
 
-    def inference(self, batched_inputs, detected_instances=None, do_postprocess=True):
-        """
-        Run inference on the given inputs.
 
-        Args:
-            batched_inputs (list[dict]): same as in :meth:`forward`
-            detected_instances (None or list[Instances]): if not None, it
-                contains an `Instances` object per image. The `Instances`
-                object contains "pred_boxes" and "pred_classes" which are
-                known boxes in the image.
-                The inference will then skip the detection of bounding boxes,
-                and only predict other per-ROI outputs.
-            do_postprocess (bool): whether to apply post-processing on the outputs.
+def head_factory(head_name, output_shape):
+    if head_name == 'ROI':
+        return StandardROIHeads(output_shape)
 
-        Returns:
-            same as in :meth:`forward`.
-        """
-        assert not self.training
 
-        images = self.preprocess_image(batched_inputs)
-        features = self.backbone(images.tensor)
-
-        if detected_instances is None:
-            if self.proposal_generator:
-                proposals, _ = self.proposal_generator(images, features, None)
-            else:
-                assert "proposals" in batched_inputs[0]
-                proposals = [x["proposals"].to(self.device) for x in batched_inputs]
-
-            results, _ = self.roi_heads(images, features, proposals, None)
-        else:
-            detected_instances = [x.to(self.device) for x in detected_instances]
-            results = self.roi_heads.forward_with_given_boxes(features, detected_instances)
-
-        if do_postprocess:
-            processed_results = []
-            for results_per_image, input_per_image, image_size in zip(
-                    results, batched_inputs, images.image_sizes
-            ):
-                height = input_per_image.get("height", image_size[0])
-                width = input_per_image.get("width", image_size[1])
-                r = detector_postprocess(results_per_image, height, width,
-                                         rotated_box_training=self.rotated_box_training)
-                processed_results.append({"instances": r})
-            return processed_results
-        else:
-            return results
-
-    def preprocess_image(self, batched_inputs):
-        """
-        Normalize, pad and batch the input images.
-        """
-        images = [x["image"].to(self.device) for x in batched_inputs]
-        # images = [x.permute(2, 0, 1) for x in images]
-        images = [self.normalizer(x) for x in images]
-        images = ImageList.from_tensors(images, self.backbone.size_divisibility)
-        return images
-
-# if __name__ == "__main__":
-#     uf.set_gpu_configs()
-#     test_model_factory()
+def select_model(model_name):
+    if model_name == "RCNN":
+        return GeneralizedRCNN
+    pass

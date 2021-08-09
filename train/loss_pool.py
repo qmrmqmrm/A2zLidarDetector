@@ -32,9 +32,9 @@ import numpy as np
 import math
 
 from config import Config as cfg
-from model_temp.submodules.box_regression import Box2BoxTransform
-from model_temp.submodules.matcher import Matcher
-from model_temp.submodules.sampling import subsample_labels
+from model.submodules.box_regression import Box2BoxTransform
+from model.submodules.matcher import Matcher
+from model.submodules.sampling import subsample_labels
 from utils.util_function import pairwise_iou
 
 
