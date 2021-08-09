@@ -3,8 +3,8 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from dataloader.a2z_loader import A2D2Loader
-from dataloader.kitti_loader import KittiLoader
+from dataloader.a2z_loader import A2D2Dataset
+from dataloader.kitti_loader import KittiDataset
 from dataloader.sampler import TrainingSampler
 from config import Config as cfg
 
@@ -13,21 +13,21 @@ def loader_factory(dataset_name):
     if dataset_name == "a2d2":
         print('a2d2')
         path = cfg.Datasets.A2D2.PATH
-        loader = A2D2Loader(path)
-        return loader
+        dataset = A2D2Dataset(path)
+        return dataset
     if dataset_name == "kitti":
         path = cfg.Datasets.Kitti.PATH
-        loader = KittiLoader(path)
-        return loader
+        dataset = KittiDataset(path)
+        return dataset
 
 
 def get_dataset(dataset_name, batch_size):
-    loader = loader_factory(dataset_name)
-    sampler = TrainingSampler(len(loader))
+    dataset = loader_factory(dataset_name)
+    sampler = TrainingSampler(len(dataset))
     batch_sampler = torch.utils.data.sampler.BatchSampler(
         sampler, batch_size, drop_last=True
     )
-    data_loader = DataLoader(dataset=loader,
+    data_loader = DataLoader(dataset=dataset,
                              batch_sampler=batch_sampler,
                              collate_fn=trivial_batch_collator,
                              num_workers=2)

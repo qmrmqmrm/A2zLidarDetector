@@ -115,12 +115,12 @@ class RPN(nn.Module):
 
     def forward(
             self,
-            images,
+            image_sizes,
             features
     ):
         """
         Args:
-            images (ImageList): input images of length `N`
+            image_sizes:
             features (dict[str, Tensor]): input data as a mapping from feature
                 map name to tensor. Axis 0 represents the number of images `N` in
                 the input data; axes 1-3 are channels, height, and width, which may
@@ -153,7 +153,7 @@ class RPN(nn.Module):
         # print(pred_anchor_deltas[0].shape) # torch.Size([2, 557568, 4])
         loss_instances = {'pred_objectness_logits': pred_objectness_logits,'pred_anchor_deltas':pred_anchor_deltas, 'anchors':anchors}
         proposals = self.predict_proposals(
-            anchors, pred_objectness_logits, pred_anchor_deltas, images.image_sizes
+            anchors, pred_objectness_logits, pred_anchor_deltas, image_sizes
         )
         return proposals, loss_instances
 
@@ -214,7 +214,7 @@ class RPN(nn.Module):
 def find_top_rpn_proposals(
         proposals,
         pred_objectness_logits,
-        images,
+        image_sizes,
         nms_thresh,
         pre_nms_topk,
         post_nms_topk,
@@ -250,7 +250,6 @@ def find_top_rpn_proposals(
         proposals (list[Instances]): list of N Instances. The i-th Instances
             stores post_nms_topk object proposals for image i.
     """
-    image_sizes = images[:][:2]  # in (h, w) order
     num_images = len(image_sizes)
     device = proposals[0].device
 

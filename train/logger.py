@@ -45,10 +45,10 @@ class LogData:
         loss_list = [loss_name for loss_name, loss_tensor in loss_by_type.items() if loss_tensor.ndim == 0]
         batch_data = {loss_name: loss_by_type[loss_name].cpu().detach().numpy() for loss_name in loss_list}
         batch_data["total_loss"] = total_loss.cpu().detach().numpy()
-        objectness = self.analyze_objectness(grtr, pred)
-        batch_data.update(objectness)
+        # objectness = self.analyze_objectness(grtr, pred)
+        # batch_data.update(objectness)
 
-        self.check_nan(batch_data, grtr, pred)
+        # self.check_nan(batch_data, grtr, pred)
         batch_data = self.set_precision(batch_data, 5)
         self.batch = self.batch.append(batch_data, ignore_index=True)
         if step % 200 == 10:
@@ -58,12 +58,25 @@ class LogData:
     def analyze_objectness(self, grtr, pred):
         pos_obj, neg_obj = 0, 0
         print(type(grtr))
+        print(len(grtr))
+        print(type(grtr[0]))
+        print((grtr[0].keys()))
         print(type(pred))
-        grtr_slices = uf.slice_features(grtr)
-        pred_slices = uf.slice_features(pred)
-        grtr_obj_mask = grtr_slices["object"]
-        pred_obj_prob = pred_slices["object"]
-        obj_num = torch.maximum(torch.sum(grtr_obj_mask), 1)
+        print((pred.keys()))
+        print(len(pred['pred_objectness_logits']))
+        # grtr_slices = uf.slice_features(grtr)
+        # pred_slices = uf.slice_features(pred)
+
+        grtr_objs = [gt["gt_object"] for gt in grtr]
+        grtr_obj_mask = torch.cat(grtr_objs,dim=0)
+
+        pred_obj = [obj for obj in pred["pred_objectness_logits"]]
+        print(grtr_objs)
+        print(pred_obj)
+        pred_obj_prob = torch.cat(pred_obj,dim=1)
+        print(grtr_obj_mask.shape)
+        print(pred_obj_prob.shape)
+        obj_num = torch.maximum(torch.sum(grtr_obj_mask))
         # average positive objectness probability
         pos_obj += torch.sum(grtr_obj_mask * pred_obj_prob) / obj_num
         # average top 50 negative objectness probabilities per frame

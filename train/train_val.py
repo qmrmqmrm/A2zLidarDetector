@@ -18,12 +18,13 @@ class TrainValBase:
         logger = LogData()
         steps = len(self.train_loader_iter)
         for step in range(steps):
-
+            # if step > 10:
+            #     break
             features = next(self.train_loader_iter)
             start = timer()
             prediction, total_loss, loss_by_type = self.run_step(features)
-            # logger.append_batch_result(step, features, prediction, total_loss, loss_by_type)
-            uf.print_progress(f"{self.epoch_steps} epoch, training {step}/{steps} steps, "
+            logger.append_batch_result(step, features, prediction, total_loss, loss_by_type)
+            uf.print_progress(f"training {step}/{steps} steps, "
                               f"time={timer() - start:.3f}, "
                               f"loss={total_loss:.3f}, ")
 
@@ -37,6 +38,7 @@ class TrainValBase:
 
 class ModelTrainer(TrainValBase):
     def __init__(self, model, data_loader, loss_object, optimizer, epoch_steps=0):
+        model.train()
         super().__init__(model, data_loader, loss_object, optimizer, epoch_steps)
 
     def run_step(self, features):
@@ -55,6 +57,7 @@ class ModelTrainer(TrainValBase):
 
 class ModelValidater(TrainValBase):
     def __init__(self, model, data_loader, loss_object, epoch_steps=0):
+        model.eval()
         super().__init__(model, data_loader, loss_object, None, epoch_steps)
 
     def run_step(self, features):

@@ -15,7 +15,7 @@ from utils.util_function import print_progress
 max_box = 512
 
 
-class KittiLoader(DatasetBase):
+class KittiDataset(DatasetBase):
     def __init__(self, path):
         self.max_box = max_box
         self.calib_path = path

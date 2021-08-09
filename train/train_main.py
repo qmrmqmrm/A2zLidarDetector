@@ -15,10 +15,17 @@ from train.logger import LogFile
 
 
 def train_main():
-    end_epoch = 0
+    end_epoch = get_end_epohcs()
     for dataset_name, epochs, learning_rate, loss_weights, model_save in cfg.Train.TRAINING_PLAN:
-        end_epoch += epochs
+        # end_epoch += epochs
         train_by_plan(dataset_name, end_epoch, learning_rate, loss_weights, model_save)
+
+
+def get_end_epohcs():
+    end_epochs = 0
+    for dataset_name, epochs, learning_rate, loss_weights, model_save in cfg.Train.TRAINING_PLAN:
+        end_epochs += epochs
+    return end_epochs
 
 
 def train_by_plan(dataset_name, end_epoch, learning_rate, loss_weights, model_save):
@@ -40,7 +47,6 @@ def train_by_plan(dataset_name, end_epoch, learning_rate, loss_weights, model_sa
         print(f"========== Start dataset : {dataset_name} epoch: {epoch + 1}/{end_epoch} ==========")
         train_result = trainer.run_epoch()
         val_result = validator.run_epoch()
-        # val_result = validator.run_epoch()
         save_model_ckpt(ckpt_path, model)
         log_file.save_log(epoch, train_result, val_result)
 
@@ -53,7 +59,7 @@ def save_model_ckpt(ckpt_path, model, weights_suffix='latest'):
     if not op.isdir(ckpt_path):
         os.makedirs(ckpt_path, exist_ok=True)
     print("=== save model:", ckpt_file)
-    torch.save(model.state_dict(), ckpt_path)
+    torch.save(model.state_dict(), ckpt_file)
 
 
 def read_previous_epoch(ckpt_path):
@@ -103,7 +109,6 @@ def build_optimizer(model: torch.nn.Module, learning_rate) -> torch.optim.Optimi
 
     optimizer = torch.optim.SGD(params, lr, momentum=cfg.Model.Output.MOMENTUM)
     return optimizer
-
 
 
 if __name__ == '__main__':

@@ -14,7 +14,7 @@ from utils.util_function import print_progress
 max_box = 512
 
 
-class A2D2Loader(DatasetBase):
+class A2D2Dataset(DatasetBase):
     def __init__(self, path):
         self.max_box = max_box
         self.calib_path = path
@@ -29,6 +29,12 @@ class A2D2Loader(DatasetBase):
 
     #
     def get_img_list(self, img_files):
+        """
+        {image_list :[{ bbox2D : list}]}
+
+        :param img_files:
+        :return:
+        """
 
         num_img = len(img_files)
         ann_dict = {}
@@ -260,7 +266,7 @@ def obtain_bvbox(obj, bv_img, pv, bvres=0.05):
 
 def get_img():
     path = cfg.Datasets.A2D2.PATH
-    a2d2 = A2D2Loader(path=path)
+    a2d2 = A2D2Dataset(path=path)
     ann_dict = dict()
     img_files = sorted(glob.glob(os.path.join(a2d2.camera_path, '000039068.png')))
     for img_file in img_files:

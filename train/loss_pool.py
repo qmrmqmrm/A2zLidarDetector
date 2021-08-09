@@ -153,11 +153,10 @@ class SmoothL1(LossBase):
 
 class Box2dRegression(SmoothL1):
     def __call__(self, features, pred):
-        gt_instances = pred['gt_instances']
         anchors = pred['anchors']
         pred_anchor_deltas = pred['pred_anchor_deltas']
 
-        gt_labels, gt_boxes = self.label_and_sample_anchors(anchors, gt_instances)
+        gt_labels, gt_boxes = self.label_and_sample_anchors(anchors, features)
         gt_labels = torch.stack(gt_labels)  # (N, sum(Hi*Wi*Ai))
         anchors = torch.cat(anchors)
         gt_anchor_deltas = [self.box2box_transform.get_deltas(anchors, k) for k in gt_boxes]
@@ -179,7 +178,7 @@ class Box3dRegression(SmoothL1):
         #     ['pred_class_logits', 'pred_proposal_deltas', 'viewpoint_logits',
         #     'viewpoint_residuals', 'height_logits',
         #      'rpn_proposals', 'pred_objectness_logits', 'pred_anchor_deltas',
-        #      'anchors', 'gt_instances',
+        #      'anchors',
         #      'head_proposals'])
 
         # self.box2box_transform,
@@ -227,7 +226,7 @@ class HeightRegression(SmoothL1):
         #     ['pred_class_logits', 'pred_proposal_deltas', 'viewpoint_logits',
         #     'viewpoint_residuals', 'height_logits',
         #      'rpn_proposals', 'pred_objectness_logits', 'pred_anchor_deltas',
-        #      'anchors', 'gt_instances',
+        #      'anchors',
         #      'head_proposals'])
 
         # self.box2box_transform,
@@ -367,10 +366,9 @@ class YawClassification(LossBase):
 
 class ObjectClassification(LossBase):
     def __call__(self, features, pred):
-        gt_instances = pred['gt_instances']
         anchors = pred['anchors']
         pred_objectness_logits = pred['pred_objectness_logits']
-        gt_labels, gt_boxes = self.label_and_sample_anchors(anchors, gt_instances)
+        gt_labels, gt_boxes = self.label_and_sample_anchors(anchors, features)
         gt_labels = torch.stack(gt_labels)  # (N, sum(Hi*Wi*Ai))
         valid_mask = gt_labels >= 0
         loss = F.binary_cross_entropy_with_logits(

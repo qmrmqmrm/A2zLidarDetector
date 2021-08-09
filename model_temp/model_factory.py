@@ -21,13 +21,13 @@ def build_model(model_name, backbone_name, neck_name, rpn_name, head_name):
 
 
 def backbone_factory(backbone_name, neck_name):
+    """
+    try except, split functions, specify inputs
+    :param backbone_name:
+    :param neck_name:
+    :return:
+    """
     if backbone_name == "ResNet":
-        """
-        Create a ResNet instance from config.
-
-        Returns:
-            ResNet: a :class:`ResNet` instance.
-        """
         # need registration of new blocks/stems?
         input_shape = ShapeSpec(channels=len(cfg.Model.Structure.PIXEL_MEAN))
         norm = cfg.Model.RESNET.NORM
@@ -37,11 +37,6 @@ def backbone_factory(backbone_name, neck_name):
             norm=norm,
         )
         freeze_at = 0
-
-        # if freeze_at >= 1:
-        #     for p in stem.parameters():
-        #         p.requires_grad = False
-        #     stem = FrozenBatchNorm2d.convert_frozen_batchnorm(stem)
 
         # fmt: off
         out_features = cfg.Model.RESNET.OUT_FEATURES
@@ -97,14 +92,17 @@ def backbone_factory(backbone_name, neck_name):
         )
         return backbone
 
+
 def rpn_factory(rpn_name, output_shape):
     if rpn_name == 'RPN':
         return RPN(output_shape)
     pass
 
+
 def head_factory(head_name, output_shape):
     if head_name == 'ROI':
         return StandardROIHeads(output_shape)
+
 
 def select_model(model_name):
     if model_name == "RCNN":
