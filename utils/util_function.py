@@ -1,5 +1,6 @@
 import sys
 import torch
+import cv2
 
 from config import Config as cfg
 
@@ -120,3 +121,16 @@ def slice_features(feature, output_composition=cfg.Model.Output.OUT_COMPOSITION)
         slices[name] = feature[..., index:index + channel]
         index += channel
     return slices
+
+
+def draw_box(img, bboxes_2d):
+    draw_img = img.copy()
+    for bbox in bboxes_2d:
+        x0 = int(bbox[0])
+        x1 = int(bbox[2])
+        y0 = int(bbox[1])
+        y1 = int(bbox[3])
+        draw_img = cv2.rectangle(draw_img, (x0, y0), (x1, y1), (255, 255, 255), 2)
+
+    return draw_img
+

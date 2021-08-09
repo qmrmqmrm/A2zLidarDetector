@@ -7,9 +7,8 @@ import math
 import torch
 
 from dataloader.loader_base import DatasetBase
-from dataloader.a2d2_calib_reader import get_calibration
+from dataloader.data_util.a2d2_calib_reader import get_calibration
 from config import Config as cfg
-from utils.util_function import print_progress
 
 
 class A2D2Dataset(DatasetBase):
@@ -17,6 +16,7 @@ class A2D2Dataset(DatasetBase):
         super().__init__(root_path)
         self.max_box = max_box
         self.calib_dict = get_calibration(root_path)
+        self.categories = cfg.Datasets.A2D2.CATEGORIES_TO_USE
         self.last_sample = self.__getitem__(132)
         del self.last_sample['image']
 
@@ -25,6 +25,11 @@ class A2D2Dataset(DatasetBase):
         return img_files
 
     def __getitem__(self, index):
+        """
+        :param index: index for self.img_files
+        :return: {'image': [height, width, channel], 'category': [fixbox, 1], 'bbox2d': [fixbox, 4],
+                    'bbox3d': [fixbox, 6], 'object': [fixbox, 1], 'yaw': [fixbox, 2]}
+        """
         image_file = self.img_files[index]
         image = cv2.imread(image_file)
         features = dict()
@@ -40,22 +45,18 @@ class A2D2Dataset(DatasetBase):
         else:
             anns = self.zero_annotation()
         features.update(anns)
-        # fixed_anns["box2d_map"], fixed_anns["object_map"], _ = self.gather_featmaps(fixed_anns["gt_bbox2D"])
-
+        # map_anns = self.gather_featmaps(anns["bbox2d"], anns["object"])
+        # features.update(map_anns)
         return features
 
     def convert_bev(self, label, image, calib, vp_res, bins, bvres=0.05, viewpoint=False):
         annotations = list()
-        categories = ['Car', 'Pedestrian', 'Cyclist']
 
         for boxes, obj in label.items():
-            # get categories from config
             obj_category = obj['class']
-            if obj_category not in categories:
-                # print("not in category", obj_category)
+            if obj_category not in self.categories:
                 continue
 
-            label = categories.index(obj_category)
             location = np.array(obj['center']).reshape((1, 3))
             pts_3d_ref = np.transpose(np.dot(np.linalg.inv(calib["R0"]), np.transpose(location)))
             n = pts_3d_ref.shape[0]
@@ -63,9 +64,9 @@ class A2D2Dataset(DatasetBase):
             pts_3d_velo = np.dot(pts_3d_homo, np.transpose(calib["C2V"]))
             bbox_xmin, bbox_ymin, bbox_xmax, bbox_ymax = self.obtain_bvbox(obj, image, pts_3d_velo, 0.05)
             if bbox_xmin < 0:
-                # print("no bvbox", obj)
                 continue
 
+            label = self.categories.index(obj_category)
             ann = dict()
             ann['category'] = [label]
             ann['bbox2d'] = [bbox_xmin, bbox_ymin, bbox_xmax, bbox_ymax]
@@ -148,17 +149,16 @@ class A2D2Dataset(DatasetBase):
         gathered_anns = {key: torch.zeros(val.shape, dtype=torch.float32) for key, val in self.last_sample.items()}
         return gathered_anns
 
-    def gather_featmaps(self, bbox2d):
+    def gather_featmaps(self, bbox2d, objectness):
         """
                  res2(Tensor) : torch.Size([4, 256, 176, 352]) 3.9772727
                  res3(Tensor) : torch.Size([4, 512, 88, 176])  7.95454545
                  res4(Tensor) : torch.Size([4, 1024, 44, 88])  15.9090909
-        :param bbox2d: [num_box, channel]
+        :param bbox2d: [padded_box, 4]
+        :param objectness: [padded_box, 1]
         :return: "box2d_map": [channel, height, width]
         """
-
         channel_shape = bbox2d.shape[-1]
-
         center_xs = bbox2d[:, 0].reshape((-1, 1))
         center_ys = bbox2d[:, 1].reshape((-1, 1))
         # center_xs= np.reshape(center_xs,(1,-1))
@@ -169,7 +169,7 @@ class A2D2Dataset(DatasetBase):
         # anchor = self.anchor.make_anchor_map(heights)
         feature_names = cfg.Model.Output.FEATURE_ORDER
         for i, (height, feature_name) in enumerate(zip(heights, feature_names)):
-            rasio = 700 / height
+            ratio = 700 / height
 
             bbox2d_map = np.zeros((height, height * 2, channel_shape))
             object_map = np.zeros((height, height * 2, 1))
@@ -177,8 +177,8 @@ class A2D2Dataset(DatasetBase):
             # anchor_map = anchor[i].view(height, height * 2, 9, -1)
             # anchor_map = anchor_map.to("cpu")
             for j, (center_x, center_y) in enumerate(zip(center_xs, center_ys)):
-                w = center_x / rasio
-                h = center_y / rasio
+                w = center_x / ratio
+                h = center_y / ratio
                 bbox2d_map[int(h), int(w), :] = bbox2d[j, :]
                 object_map[int(h), int(w), :] = 1
 
