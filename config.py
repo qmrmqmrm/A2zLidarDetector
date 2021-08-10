@@ -24,7 +24,7 @@ class Config:
             PATH = "/media/dolphin/intHDD/birdnet_data/my_a2d2"
             CATEGORIES_TO_USE = ["Pedestrian", "Car", "Cyclist"]
             CATEGORY_REMAP = {}
-            MAX_NUM = 10
+            MAX_NUM = 15
             INPUT_RESOLUTION = (256, 832)  # (4,13) * 64
             CROP_TLBR = [0, 0, 0, 0]  # crop [top, left, bottom, right] or [y1 x1 y2 x2]
 
@@ -82,15 +82,15 @@ class Config:
 
             NAMES = [NAME.MODEL_NAME, NAME.BACKBONE_NAME, NAME.NECK_NAME, NAME.RPN_NAME, NAME.HEAD_NAME]
             VP_BINS = 12
-
-            VIEWPOINT = 'true'
-            VIEWPOINT_RESIDUAL = 'true'
-            HEIGHT_TRAINING = 'true'
+            DEVICE = 'cuda'
+            VIEWPOINT = True
+            VIEWPOINT_RESIDUAL = True
+            HEIGHT_TRAINING = True
             VP_WEIGHT_LOSS = 1.0
             WEIGHTS_HEIGHT = [5.0, 0.5, 10.0]
             PIXEL_MEAN = [0.0, 0.0, 0.0]
             PIXEL_STD = [1.0, 1.0, 1.0]
-            ROTATED_BOX_TRAINING = 'true'
+            ROTATED_BOX_TRAINING = True
 
             BACKBONE_CONV_ARGS = {"activation": "leaky_relu", "scope": "back"}
             HEAD_CONV_ARGS = {"activation": "leaky_relu", "scope": "head"}
@@ -108,7 +108,7 @@ class Config:
             NUM_GROUPS = 1
             WIDTH_PER_GROUP = 64
             RES2_OUT_CHANNELS = 256
-            STRIDE_IN_1X1 = "true"
+            STRIDE_IN_1X1 = True
             RES5_DILATION = 1
 
         class RPN:
@@ -139,12 +139,12 @@ class Config:
             SCORE_THRESH_TEST = 0.05
             NMS_THRESH_TEST = 0.5
             NUM_CLASSES = 3
-            PROPOSAL_APPEND_GT = "true"
+            PROPOSAL_APPEND_GT = True
 
         class ROI_BOX_HEAD:
-            CLS_AGNOSTIC_BBOX_REG = "false"
+            CLS_AGNOSTIC_BBOX_REG = False
             SMOOTH_L1_BETA = 0.0
-            ROTATED_BOX_TRAINING = 'true'
+            ROTATED_BOX_TRAINING = True
             BBOX_REG_WEIGHTS = (10.0, 10.0, 5.0, 5.0)
             POOLER_RESOLUTION = 7
             POOLER_SAMPLING_RATIO = 0

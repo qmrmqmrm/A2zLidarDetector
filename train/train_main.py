@@ -6,7 +6,6 @@ import pandas as pd
 
 from config import Config as cfg
 import settings
-# from model.model_factory import GeneralizedRCNN
 from model.model_factory import build_model
 from dataloader.loader_factory import get_dataset
 from train.train_val import get_train_val

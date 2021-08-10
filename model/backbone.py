@@ -74,7 +74,6 @@ class Backbone(nn.Module, metaclass=ABCMeta):
         return {f: self._out_feature_channels[f] for f in self._out_features}
 
 
-
 class BasicStem(nn.Module):
     def __init__(self, in_channels=3, out_channels=64, norm="BN"):
         """
@@ -108,6 +107,7 @@ class BasicStem(nn.Module):
     @property
     def stride(self):
         return 4  # = stride 2 conv -> stride 2 max pool
+
 
 class ResNetBlockBase(nn.Module):
     def __init__(self, in_channels, out_channels, stride):
@@ -235,7 +235,6 @@ class BottleneckBlock(ResNetBlockBase):
         return out
 
 
-
 class ResNet(Backbone):
     def __init__(self, stem, stages, num_classes=None, out_features=None):
         """
@@ -289,7 +288,6 @@ class ResNet(Backbone):
             assert out_feature in children, "Available children: {}".format(", ".join(children))
 
     def forward(self, x):
-
         outputs = {}
         x = self.stem(x)
         if "stem" in self._out_features:

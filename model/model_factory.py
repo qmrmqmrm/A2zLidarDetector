@@ -3,8 +3,8 @@ from torch import nn
 import numpy as np
 
 from config import Config as cfg
-from utils.util_class import ShapeSpec
-from model.backbone import ResNet, BasicStem, BottleneckBlock,make_stage
+from utils.util_class import ShapeSpec, MyExceptionToCatch
+from model.backbone import ResNet, BasicStem, BottleneckBlock, make_stage
 from model.neck import FPN, LastLevelMaxPool
 from model.rpn import RPN
 from model.head import StandardROIHeads
@@ -13,10 +13,12 @@ from model.architecture import GeneralizedRCNN
 
 def build_model(model_name, backbone_name, neck_name, rpn_name, head_name):
     backbone = backbone_factory(backbone_name, neck_name)
-    rpn = rpn_factory(rpn_name, backbone.output_shape())
-    head = head_factory(head_name, backbone.output_shape())
+    neck = neck_factory(neck_name, backbone)
+    rpn = rpn_factory(rpn_name, neck.output_shape())
+    head = head_factory(head_name, neck.output_shape())
     ModelClass = select_model(model_name)
-    model = ModelClass(backbone=backbone, rpn=rpn, head=head)
+    model = ModelClass(backbone=neck, rpn=rpn, head=head)
+    # print(model)
     return model
 
 
@@ -51,9 +53,7 @@ def backbone_factory(backbone_name, neck_name):
 
         # fmt: on
         assert res5_dilation in {1, 2}, "res5_dilation cannot be {}.".format(res5_dilation)
-
         num_blocks_per_stage = {50: [3, 4, 6, 3], 101: [3, 4, 23, 3], 152: [3, 8, 36, 3]}[depth]
-
         stages = []
 
         # Avoid creating variables without gradients
@@ -78,7 +78,12 @@ def backbone_factory(backbone_name, neck_name):
                     block.freeze()
             stages.append(blocks)
         bottom_up = ResNet(stem, stages, out_features=out_features)
+        return bottom_up
+    else:
+        raise MyExceptionToCatch(f"[backbone] EMPTY")
 
+
+def neck_factory(neck_name, bottom_up):
     if neck_name == "FPN":
         in_features = cfg.Model.RESNET.OUT_FEATURES
         out_channels = cfg.Model.FPN.OUTPUT_CHANNELS
@@ -91,20 +96,26 @@ def backbone_factory(backbone_name, neck_name):
             fuse_type=cfg.Model.FPN.FUSE_TYPE,
         )
         return backbone
+    else:
+        raise MyExceptionToCatch(f"[neck] EMPTY")
 
 
 def rpn_factory(rpn_name, output_shape):
     if rpn_name == 'RPN':
         return RPN(output_shape)
-    pass
+    else:
+        raise MyExceptionToCatch(f"[rpn] EMPTY")
 
 
 def head_factory(head_name, output_shape):
     if head_name == 'ROI':
         return StandardROIHeads(output_shape)
+    else:
+        raise MyExceptionToCatch(f"[head] EMPTY")
 
 
 def select_model(model_name):
     if model_name == "RCNN":
         return GeneralizedRCNN
-    pass
+    else:
+        raise MyExceptionToCatch(f"[model] EMPTY")

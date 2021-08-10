@@ -6,6 +6,8 @@ from torch.autograd import Function
 from torchvision.ops import roi_align
 from torch.nn.modules.utils import _pair
 
+from config import Config as cfg
+
 
 def assign_boxes_to_levels(box_lists, min_level, max_level, canonical_box_size, canonical_level):
     """
@@ -72,7 +74,7 @@ def convert_boxes_to_pooler_format(box_lists):
     pooler_fmt_boxes = torch.cat(
         [fmt_box_list(box_list, i) for i, box_list in enumerate(box_lists)], dim=0
     )
-    pooler_fmt_boxes = pooler_fmt_boxes.to('cuda')
+    pooler_fmt_boxes = pooler_fmt_boxes.to(cfg.Model.Structure.DEVICE)
 
     return pooler_fmt_boxes
 

@@ -11,15 +11,15 @@ from utils.image_list import ImageList
 class ModelBase(nn.Module):
     def __init__(self, backbone, rpn, head):
         super(ModelBase, self).__init__()
-        self.device = torch.device("cuda")
+        self.device = torch.device(cfg.Model.Structure.DEVICE)
         self.backbone = backbone
         self.proposal_generator = rpn
         self.roi_heads = head
-        self.to(self.device)
+        self.to(cfg.Model.Structure.DEVICE)
 
         pass
 
-    def forward(self, batched_inputs):
+    def forward(self, batched_input):
         # ...
         # return {"backbone_l": backbone_l, "backbone_m": backbone_m, "backbone_s": backbone_s,
         #         "boxreg": boxreg, "category": catetory, "validbox": valid_box}
@@ -41,45 +41,92 @@ class GeneralizedRCNN(ModelBase):
         pixel_mean = torch.Tensor(cfg.Model.Structure.PIXEL_MEAN).to(self.device).view(num_channels, 1, 1)
         pixel_std = torch.Tensor(cfg.Model.Structure.PIXEL_STD).to(self.device).view(num_channels, 1, 1)
         self.normalizer = lambda x: (x - pixel_mean) / pixel_std
-
         self.rotated_box_training = cfg.Model.Structure.ROTATED_BOX_TRAINING
 
-    def forward(self, batched_inputs):
+    def forward(self, batched_input):
         """
-
-        :param batched_inputs: [list[Dict]] {"num_bbox2D": [512,4], "num_bbox3D": [512,6], "num_yaw": [512,2] ,
-                                             "gt_bbox2D": [n,4], "bv_img": [700,1400]}
+        :param batched_input:
+            {'image': [batch, height, width, channel], 'category': [batch, fixbox, 1],
+            'bbox2d': [batch, fixbox, 4], 'bbox3d': [batch, fixbox, 6], 'object': [batch, fixbox, 1],
+            'yaw': [batch, fixbox, 2]}
         :return:
+            pred :{'pred_class_logits': torch.Size([1024, 4])
+                  'pred_proposal_deltas': torch.Size([1024, 12])
+                  'viewpoint_logits': torch.Size([1024, 36])
+                  'viewpoint_residuals': torch.Size([1024, 36])
+                  'height_logits': torch.Size([1024, 6])
+
+                  'head_proposals': [{'proposal_boxes': torch.Size([512, 4])
+                                      'objectness_logits': torch.Size([512])
+                                      'category': torch.Size([512, 1])
+                                      'bbox2d': torch.Size([512, 4])
+                                      'bbox3d': torch.Size([512, 6])
+                                      'object': torch.Size([512, 1])
+                                      'yaw': torch.Size([512, 2])} * batch]
+
+                  'rpn_proposals': [{'proposal_boxes': torch.Size([2000, 4]),
+                                    'objectness_logits': torch.Size([2000])} * batch]
+
+                  'pred_objectness_logits' : [torch.Size([batch, 557568(176 * 352 * 9)]),
+                                              torch.Size([batch, 139392(88 * 176 * 9)]),
+                                              torch.Size([batch, 34848(44 * 88 * 9)])]
+
+                  'pred_anchor_deltas' : [torch.Size([batch, 557568(176 * 352 * 9), 4]),
+                                          torch.Size([batch, 139392(88 * 176 * 9), 4]),
+                                          torch.Size([batch, 34848(44 * 88 * 9), 4])]
+
+                  'anchors' : [torch.Size([557568(176 * 352 * 9), 4])
+                               torch.Size([139392(88 * 176 * 9), 4])
+                               torch.Size([34848(44 * 88 * 9), 4])]
+                  }
         """
-        images = self.preprocess_image(batched_inputs)
+        batched_input = self.preprocess_input(batched_input)
+        features = self.backbone(batched_input['image'])
+        # features {'p2': torch.Size([batch, 256, 176, 352]),'p3': torch.Size([batch, 256, 88, 176]),
+        # 'p4': torch.Size([batch, 256, 44, 88]), 'p5': torch.Size([batch, 256, 22, 44])}
+        rpn_proposals, auxiliary = self.proposal_generator(batched_input['image'].shape, features)
+        # rpn_proposals [{'proposal_boxes': torch.Size([2000, 4]), 'objectness_logits': torch.Size([2000])} * batch]
+        # auxiliary {'pred_objectness_logits' : [torch.Size([batch, 557568]),
+        #                                        torch.Size([batch, 139392]),
+        #                                        torch.Size([batch, 34848])]
+        #             'pred_anchor_deltas' : [torch.Size([batch, 557568, 4]),
+        #                                     torch.Size([batch, 139392, 4]),
+        #                                     torch.Size([batch, 34848, 4])]
+        #             'anchors' : [torch.Size([557568, 4])
+        #                          torch.Size([139392, 4])
+        #                          torch.Size([34848, 4])]}
+        # return features, rpn_proposals, auxiliary
 
-        gt_instances = list()
-        for batched_input in batched_inputs:
-            gt_instance = dict()
-            for key, value in batched_input.items():
-                if 'gt_' in key:
-                    gt_instance.update({key: value})
-            gt_instances.append(gt_instance)
+        pred = self.roi_heads(batched_input, features, rpn_proposals)
+        # pred {'pred_class_logits': torch.Size([1024, 4])
+        #       'pred_proposal_deltas': torch.Size([1024, 12])
+        #       'viewpoint_logits': torch.Size([1024, 36])
+        #       'viewpoint_residuals': torch.Size([1024, 36])
+        #       'height_logits': torch.Size([1024, 6])
+        #       'head_proposals' : [{'proposal_boxes': torch.Size([512, 4])
+        #                           'objectness_logits': torch.Size([512])
+        #                           'category': torch.Size([512, 1])
+        #                           'bbox2d': torch.Size([512, 4])
+        #                           'bbox3d': torch.Size([512, 6])
+        #                           'object': torch.Size([512, 1])
+        #                           'yaw': torch.Size([512, 2])} * batch]
+        #       }
 
-        features = self.backbone(images.tensor)
-        rpn_proposals, loss_instances = self.proposal_generator(images.image_sizes, features)
-        pred, head_proposals = self.roi_heads(features, rpn_proposals, gt_instances)
+
+        # return features, rpn_proposals, auxiliary, pred
         pred['rpn_proposals'] = rpn_proposals
-        pred.update(loss_instances)
-        pred['head_proposals'] = head_proposals
-        # pred keys :  dict_keys(['scores', 'proposal_deltas', 'viewpoint_scores', 'viewpoint_residuals', 'height_scores', 'proposals', 'loss_instances'])
-        # print("pred_anchor_deltas",loss_instances['pred_anchor_deltas'])
+        pred.update(auxiliary)
+        # # pred keys :  dict_keys(['scores', 'proposal_deltas', 'viewpoint_scores', 'viewpoint_residuals', 'height_scores', 'proposals', 'loss_instances'])
         return pred
 
-    def preprocess_image(self, batched_inputs):
-        """
-        Normalize, pad and batch the input images.
-        """
-        images = [x["image"].to(self.device) for x in batched_inputs]
-        # images = [x.permute(2, 0, 1) for x in images]
-        images = [self.normalizer(x) for x in images]
-        images = ImageList.from_tensors(images, self.backbone.size_divisibility)
-        return images
+    def preprocess_input(self, batched_input):
+        image = batched_input['image'].permute(0, 3, 1, 2).to(cfg.Model.Structure.DEVICE)
+        image = torch.nn.functional.pad(image, (4, 4, 2, 2), "constant", 0)
+        image = self.normalizer(image)
+        batched_input['image'] = image
+        batched_input['bbox2d'] += torch.tensor([[[4, 2, 4, 2]]], dtype=torch.float32)
+        batched_input['bbox3d'][:, :, :2] += torch.tensor([[[4, 2]]], dtype=torch.float32)
+        return batched_input
 
 
 class YOLO(ModelBase):

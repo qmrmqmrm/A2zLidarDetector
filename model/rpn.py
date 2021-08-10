@@ -86,7 +86,6 @@ class RPN(nn.Module):
         self.in_features = cfg.Model.RPN.INPUT_FEATURES
         self.nms_thresh = cfg.Model.RPN.NMS_THRESH
 
-
         self.smooth_l1_beta = cfg.Model.RPN.SMOOTH_L1_BETA
         self.min_box_size = 0
         self.loss_weight = cfg.Model.RPN.LOSS_WEIGHT
@@ -115,23 +114,30 @@ class RPN(nn.Module):
 
     def forward(
             self,
-            image_sizes,
+            image_shape,
             features
     ):
         """
-        Args:
-            image_sizes:
-            features (dict[str, Tensor]): input data as a mapping from feature
-                map name to tensor. Axis 0 represents the number of images `N` in
-                the input data; axes 1-3 are channels, height, and width, which may
-                vary between feature maps (e.g., if a feature pyramid is used).
-            gt_instances (list[Instances], optional): a length `N` list of `Instances`s.
-                Each `Instances` stores ground-truth instances for the corresponding image.
 
-        Returns:
-            proposals: list[Instances]: contains fields "proposal_boxes", "objectness_logits"
-            loss: dict[Tensor] or None
+         :param image_shape: (torch.Size): torch.Size([2, 3, 704, 1408])
+         :param features: (dict[torch.Tensor]):
+                    {'p2': torch.Size([batch, 256, 176, 352]),'p3': torch.Size([batch, 256, 88, 176]),
+                    'p4': torch.Size([batch, 256, 44, 88]), 'p5': torch.Size([batch, 256, 22, 44])}
+
+         :return:
+             proposals (list[dict[torch.tensor]]): [{'proposal_boxes': torch.Size([2000, 4]),
+                                                    'objectness_logits': torch.Size([2000])} * batch]
+             auxiliary (dict[list[torch.tensor]]): {'pred_objectness_logits' : [torch.Size([batch, 557568]),
+                                                    torch.Size([batch, 139392]),
+                                                    torch.Size([batch, 34848])]
+                                                    'pred_anchor_deltas' : [torch.Size([batch, 557568, 4]),
+                                                                            torch.Size([batch, 139392, 4]),
+                                                                            torch.Size([batch, 34848, 4])]
+                                                    'anchors' : [torch.Size([557568, 4])
+                                                                 torch.Size([139392, 4])
+                                                                 torch.Size([34848, 4])]}
         """
+        image_sizes = [(image_shape[2], image_shape[3]) for i in range(image_shape[0])]
         features = [features[f] for f in self.in_features]
         anchors = self.anchor_generator(features)
 
@@ -151,11 +157,12 @@ class RPN(nn.Module):
         ]
 
         # print(pred_anchor_deltas[0].shape) # torch.Size([2, 557568, 4])
-        loss_instances = {'pred_objectness_logits': pred_objectness_logits,'pred_anchor_deltas':pred_anchor_deltas, 'anchors':anchors}
+        aux_outputs = {'pred_objectness_logits': pred_objectness_logits, 'pred_anchor_deltas': pred_anchor_deltas,
+                       'anchors': anchors}
         proposals = self.predict_proposals(
             anchors, pred_objectness_logits, pred_anchor_deltas, image_sizes
         )
-        return proposals, loss_instances
+        return proposals, aux_outputs
 
     def predict_proposals(
             self,

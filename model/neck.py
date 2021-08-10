@@ -11,6 +11,7 @@ from model.submodules.model_util import Conv2d
 from utils.batch_norm import get_norm
 from utils.util_class import ShapeSpec
 
+
 def _assert_strides_are_log2_contiguous(strides):
     """
     Assert that each stride is 2x times its preceding stride, i.e. "contiguous in log2".
@@ -130,16 +131,11 @@ class FPN(Backbone):
 
     def forward(self, x):
         """
-        Args:
-            input (dict[str: Tensor]): mapping feature map name (e.g., "res5") to
-                feature map tensor for each feature level in high to low resolution order.
 
-        Returns:
-            dict[str: Tensor]:
-                mapping from feature map name to FPN feature map tensor
-                in high to low resolution order. Returned feature names follow the FPN
-                paper convention: "p<stage>", where stage has stride = 2 ** stage e.g.,
-                ["p2", "p3", ..., "p6"].
+        :param x: (torch.Tensor): torch.Size([2, 3, 704, 1408])
+        :return:
+        features (dict[torch.Tensor]):{'p2': torch.Size([batch, 256, 176, 352]),'p3': torch.Size([batch, 256, 88, 176]),
+                    'p4': torch.Size([batch, 256, 44, 88]), 'p5': torch.Size([batch, 256, 22, 44])}
         """
         # Reverse feature maps into top-down order (from low to high resolution)
         bottom_up_features = self.bottom_up(x)

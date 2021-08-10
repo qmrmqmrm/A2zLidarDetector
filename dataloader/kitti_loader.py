@@ -133,7 +133,7 @@ class KittiDataset(DatasetBase):
                 if ann_key == "image_file":
                     img = cv2.imread(ann_val)
                     img = torch.tensor(img)
-                    # img = img.to('cuda')
+                    # img = img.to(cfg.Model.Structure.DEVICE)
                     gathered_anns["image_file"] = ann_val
                     gathered_anns["image"] = img.permute(2, 0, 1)
 

@@ -40,7 +40,7 @@ class Box2BoxTransform(object):
             target_boxes (Tensor): target of the transformation, e.g., ground-truth
                 boxes.
         """
-        target_boxes = target_boxes.to('cuda')
+        target_boxes = target_boxes.to(cfg.Model.Structure.DEVICE)
         assert isinstance(src_boxes, torch.Tensor), type(src_boxes)
         assert isinstance(target_boxes, torch.Tensor), type(target_boxes)
         src_widths = src_boxes[:, 2] - src_boxes[:, 0]

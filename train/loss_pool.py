@@ -115,7 +115,7 @@ class LossBase:
 
             # A vector of labels (-1, 0, 1) for each anchor
             gt_labels_i = self._subsample_labels(gt_labels_i)
-            gt_labels_i = gt_labels_i.to('cuda')
+            gt_labels_i = gt_labels_i.to(cfg.Model.Structure.DEVICE)
             if len(gt_boxes_i) == 0:
                 # These values won't be used anyway since the anchor is labeled as background
                 matched_gt_boxes_i = torch.zeros_like(anchors)
@@ -248,7 +248,7 @@ class HeightRegression(SmoothL1):
             1
         )
 
-        fg_gt_classes = gt_classes[fg_inds].to('cuda')
+        fg_gt_classes = gt_classes[fg_inds].to(cfg.Model.Structure.DEVICE)
         gt_class_cols = box_dim * fg_gt_classes[:, None] + torch.arange(box_dim, device=device)
         loss_box_reg = self.smooth_l1(
             height_logits[fg_inds[:, None], gt_class_cols],
@@ -270,7 +270,7 @@ class HeightRegression(SmoothL1):
         dh = wh * torch.log(target_heights / src_heights[gt_classes])
         dz = wz * (target_ctr - src_heights[gt_classes] / 2.) / src_heights[gt_classes]
 
-        deltas = torch.stack((dh, dz), dim=1, ).to('cuda')
+        deltas = torch.stack((dh, dz), dim=1, ).to(cfg.Model.Structure.DEVICE)
         return deltas
 
 
@@ -284,8 +284,8 @@ class YawRegression(SmoothL1):
 
         gt_classes = torch.cat([p['gt_category_id'] for p in head_proposals], dim=0)
         gt_viewpoint = torch.cat([p['gt_yaw'] for p in head_proposals], dim=0)
-        gt_viewpoint_rads = gt_viewpoint[:, 1].to('cuda')
-        gt_viewpoint = gt_viewpoint[:, 0].to('cuda')
+        gt_viewpoint_rads = gt_viewpoint[:, 1].to(cfg.Model.Structure.DEVICE)
+        gt_viewpoint = gt_viewpoint[:, 0].to(cfg.Model.Structure.DEVICE)
 
         gt_vp_deltas = self.get_vp_deltas(gt_viewpoint, gt_viewpoint_rads, pred_proposal_deltas)
         bg_class_ind = pred_class_logits.shape[1] - 1
@@ -335,7 +335,7 @@ class CategoryClassification(LossBase):
         pred_class_logits = pred['pred_class_logits']
         head_proposals = pred['head_proposals']
         gt_classes = torch.cat([p['gt_category_id'] for p in head_proposals], dim=0)
-        gt_classes = gt_classes.to('cuda')
+        gt_classes = gt_classes.to(cfg.Model.Structure.DEVICE)
 
         loss = F.cross_entropy(pred_class_logits, gt_classes, reduction="mean")
         return loss
@@ -349,7 +349,7 @@ class YawClassification(LossBase):
         viewpoint_logits = pred['viewpoint_logits']
         gt_classes = torch.cat([p['gt_category_id'] for p in head_proposals], dim=0)
         gt_viewpoint = torch.cat([p['gt_yaw'] for p in head_proposals], dim=0)
-        gt_viewpoint = gt_viewpoint[:, 0].to('cuda')
+        gt_viewpoint = gt_viewpoint[:, 0].to(cfg.Model.Structure.DEVICE)
         bg_class_ind = pred_class_logits.shape[1] - 1
 
         fg_inds = torch.nonzero((gt_classes >= 0) & (gt_classes < bg_class_ind)).squeeze(1)

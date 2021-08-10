@@ -1,6 +1,8 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 import math
 import torch
+from config import Config as cfg
+
 
 def add_ground_truth_to_proposals(gt_boxes, proposals):
     """
@@ -39,7 +41,7 @@ def add_ground_truth_to_proposals_single_image(gt_boxes, proposals):
     Returns:
         Same as `add_ground_truth_to_proposals`, but for only one image.
     """
-    gt_boxes = gt_boxes.to('cuda')
+    gt_boxes = gt_boxes.to(cfg.Model.Structure.DEVICE)
     device = proposals.get('objectness_logits').device
     # device = proposals.objectness_logits.device
     # Concatenating gt_boxes with proposals requires them to have the same fields
@@ -51,10 +53,7 @@ def add_ground_truth_to_proposals_single_image(gt_boxes, proposals):
     gt_proposal["proposal_boxes"] = gt_boxes
     gt_proposal["objectness_logits"] = gt_logits
 
-    # new_proposals = Instances.cat([proposals, gt_proposal])
-
     new_proposals = dict()
-    new_proposals["proposal_boxes"] = torch.cat((proposals["proposal_boxes"],gt_proposal["proposal_boxes"]), dim=0)
-    new_proposals["objectness_logits"] = torch.cat((proposals["objectness_logits"],gt_proposal["objectness_logits"]), dim=0)
-
+    new_proposals["proposal_boxes"] = torch.cat((proposals["proposal_boxes"], gt_proposal["proposal_boxes"]), dim=0)
+    new_proposals["objectness_logits"] = torch.cat((proposals["objectness_logits"], gt_proposal["objectness_logits"]), dim=0)
     return new_proposals
