@@ -9,7 +9,6 @@ class IntegratedLoss:
         self.valid_category = torch.Tensor(valid_category)
         self.loss_objects = self.create_loss_objects(loss_weights)
 
-
     def create_loss_objects(self, loss_weights):
         loss_objects = dict()
         if "bbox2d" in loss_weights:
@@ -28,27 +27,18 @@ class IntegratedLoss:
         if 'yaw_cls' in loss_weights:
             loss_objects['yaw_cls'] = loss.YawClassification()
 
-
         return loss_objects
-
 
     def __call__(self, features, predictions):
         total_loss = 0
         loss_by_type = {loss_name: 0 for loss_name in self.loss_objects}
 
         for loss_name, loss_object in self.loss_objects.items():
-            scalar_loss = loss_object(features,predictions)
+            scalar_loss = loss_object(features, predictions)
             weight = self.loss_weights[loss_name] if loss_name in self.loss_weights \
                                                      else self.loss_weights[loss_name]
             total_loss += scalar_loss * weight
             loss_by_type[loss_name] += scalar_loss
         return total_loss, loss_by_type
-
-    def prepare_auxiliary_data(self, grtr, pred):
-        auxiliary = dict()
-        # As object_count is used as a denominator, it must NOT be 0.
-        auxiliary["object_count"] = tf.maximum(tf.reduce_sum(grtr["object"]), 1)
-        auxiliary["valid_category"] = self.valid_category
-        return auxiliary
 
 

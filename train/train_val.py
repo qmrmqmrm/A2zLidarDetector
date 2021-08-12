@@ -8,8 +8,6 @@ from train.logger import LogData
 class TrainValBase:
     def __init__(self, model, loss_object, optimizer, epoch_steps):
         self.model = model
-
-
         self.loss_object = loss_object
         self.optimizer = optimizer
         self.epoch_steps = epoch_steps

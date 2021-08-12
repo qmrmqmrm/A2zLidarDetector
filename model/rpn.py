@@ -13,8 +13,6 @@ from model.submodules.anchor import DefaultAnchorGenerator
 from model.submodules.matcher import Matcher
 from model.submodules.box_regression import Box2BoxTransform
 
-from model.submodules.sampling import subsample_labels
-from utils.util_function import pairwise_iou
 from config import Config as cfg
 
 
@@ -235,27 +233,6 @@ def find_top_rpn_proposals(
     otherwise, returns the highest `post_nms_topk` scoring proposals for each
     feature map.
 
-    Args:
-        proposals (list[Tensor]): A list of L tensors. Tensor i has shape (N, Hi*Wi*A, 4).
-            All proposal predictions on the feature maps.
-        pred_objectness_logits (list[Tensor]): A list of L tensors. Tensor i has shape (N, Hi*Wi*A).
-        images (ImageList): Input images as an :class:`ImageList`.
-        nms_thresh (float): IoU threshold to use for NMS
-        pre_nms_topk (int): number of top k scoring proposals to keep before applying NMS.
-            When RPN is run on multiple feature maps (as in FPN) this number is per
-            feature map.
-        post_nms_topk (int): number of top k scoring proposals to keep after applying NMS.
-            When RPN is run on multiple feature maps (as in FPN) this number is total,
-            over all feature maps.
-        min_box_side_len (float): minimum proposal box side length in pixels (absolute units
-            wrt input images).
-        training (bool): True if proposals are to be used in training, otherwise False.
-            This arg exists only to support a legacy bug; look for the "NB: Legacy bug ..."
-            comment.
-
-    Returns:
-        proposals (list[Instances]): list of N Instances. The i-th Instances
-            stores post_nms_topk object proposals for image i.
     """
     num_images = len(image_sizes)
     device = proposals[0].device

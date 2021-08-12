@@ -13,10 +13,9 @@ from model.submodules.model_util import Conv2d
 from model.submodules.poolers import ROIPooler
 from model.submodules.box_regression import Box2BoxTransform
 from model.submodules.proposal_utils import add_ground_truth_to_proposals
-from model.submodules.sampling import subsample_labels
 from model.submodules.weight_init import c2_msra_fill, c2_xavier_fill
 from utils.batch_norm import get_norm
-from utils.util_function import pairwise_iou
+from utils.util_function import pairwise_iou, subsample_labels
 
 
 class ROIHeads(torch.nn.Module):
@@ -120,6 +119,7 @@ class ROIHeads(torch.nn.Module):
         category_batch = list()
         yaw_batch = list()
         yaw_rads_batch = list()
+        bbox3d_batch = list()
         for i in range(bbox2d_shape[0]):
             bbox2d = targets['bbox2d'][i, :]
             weight = bbox2d[:, 2] - bbox2d[:, 0]
@@ -138,14 +138,20 @@ class ROIHeads(torch.nn.Module):
 
             valid_yaw_rads = targets['yaw_rads'][i, :][torch.where(targets['yaw_rads'][i, :] < 13)]
             yaw_rads_batch.append(valid_yaw_rads)
+
+            weight_3d = targets['bbox3d'][i, :, 2]
+            valid_3d = targets['bbox3d'][i, :][torch.where(weight_3d > 0)]
+            bbox3d_batch.append(valid_3d)
+
+
             # print('head category.shape :', category.shape)
             # print('head category :', category)
 
         if self.proposal_append_gt:
             proposals = add_ground_truth_to_proposals(bbox2d_batch, proposals)
         proposals_with_gt = []
-        for bbox2d_per_image, category_per_image, yaw_par_image, yaw_rads_par_image, instance_per_image in zip(
-                bbox2d_batch, category_batch, yaw_batch, yaw_rads_batch, proposals):
+        for bbox2d_per_image,bbox3d_per_image, category_per_image, yaw_par_image, yaw_rads_par_image, instance_per_image in zip(
+                bbox2d_batch, bbox3d_batch, category_batch, yaw_batch, yaw_rads_batch, proposals):
             # has_gt = len(targets_per_image) > 0
             match_quality_matrix = pairwise_iou(bbox2d_per_image, instance_per_image.get("proposal_boxes"))
             matched_idxs, matched_labels = self.proposal_matcher(match_quality_matrix)
@@ -158,7 +164,6 @@ class ROIHeads(torch.nn.Module):
             instance_per_image['objectness_logits'] = instance_per_image.get("objectness_logits")[sampled_idxs]
             instance_per_image['gt_category'] = gt_classes
 
-
             # We index all the attributes of targets that start with "gt_"
             # and have not been added to proposals yet (="gt_classes").
             if True:
@@ -169,12 +174,14 @@ class ROIHeads(torch.nn.Module):
                 # so we essentially index the data twice.
                 instance_per_image['yaw'] = yaw_par_image[sampled_targets]
                 instance_per_image['yaw_rads'] = yaw_rads_par_image[sampled_targets]
+                instance_per_image['bbox3d'] = bbox3d_per_image[sampled_targets]
                 for (trg_name, trg_value) in targets.items():
                     if trg_name != 'image':
                         if not trg_name in instance_per_image:
                             val = trg_value[i, :]
                             instance_per_image[trg_name] = val[sampled_targets]
             proposals_with_gt.append(instance_per_image)
+
         return proposals_with_gt
 
     def forward(self, batch_input, features, proposals):
@@ -242,9 +249,10 @@ class StandardROIHeads(ROIHeads):
     def forward(self, batch_input, features, proposals):
         """
 
-        :param batch_input: {'image': [batch, height, width, channel], 'category': [batch, fixbox, 1],
-                            'bbox2d': [batch, fixbox, 4], 'bbox3d': [batch, fixbox, 6], 'object': [batch, fixbox, 1],
-                            'yaw': [batch, fixbox, 2]}
+        :param batch_input:
+            {'image': [batch, height, width, channel], 'category': [batch, fixbox, 1],
+            'bbox2d': [batch, fixbox, 4], 'bbox3d': [batch, fixbox, 6], 'object': [batch, fixbox, 1],
+            'yaw': [batch, fixbox, 1], 'yaw_rads': [batch, fixbox, 1]}
         :param features: (dict[torch.Tensor]):
                 {'p2': torch.Size([batch, 256, 176, 352]),'p3': torch.Size([batch, 256, 88, 176]),
                 'p4': torch.Size([batch, 256, 44, 88]), 'p5': torch.Size([batch, 256, 22, 44])}

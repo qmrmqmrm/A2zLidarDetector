@@ -51,8 +51,10 @@ class LogData:
         # self.check_nan(batch_data, grtr, pred)
         batch_data = self.set_precision(batch_data, 5)
         self.batch = self.batch.append(batch_data, ignore_index=True)
+        # print("\n--- batch_data:", batch_data)
         if step % 200 == 10:
             print("\n--- batch_data:", batch_data)
+
         #     self.check_pred_scales(pred)
 
     def analyze_objectness(self, grtr, pred):

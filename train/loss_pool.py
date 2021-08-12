@@ -27,15 +27,13 @@ def smooth_l1(feature, prediction, objectness)
 
 import torch
 import torch.nn.functional as F
-from torch import nn
 import numpy as np
 import math
 
 from config import Config as cfg
 from model.submodules.box_regression import Box2BoxTransform
 from model.submodules.matcher import Matcher
-from model.submodules.sampling import subsample_labels
-from utils.util_function import pairwise_iou
+from train.loss_util import distribute_box_over_feature_map
 
 DEVICE = cfg.Model.Structure.DEVICE
 
@@ -46,8 +44,6 @@ class LossBase:
         self.anchor_matcher = Matcher(
             cfg.Model.RPN.IOU_THRESHOLDS, cfg.Model.RPN.IOU_LABELS, allow_low_quality_matches=True
         )
-        self.batch_size_per_image = cfg.Model.RPN.BATCH_SIZE_PER_IMAGE
-        self.positive_fraction = cfg.Model.RPN.POSITIVE_FRACTION
         self.vp_bins = cfg.Model.Structure.VP_BINS
         self.rotated_box_training = cfg.Model.Structure.ROTATED_BOX_TRAINING
 
@@ -59,9 +55,10 @@ class LossBase:
         :param features:
             {'image': [batch, height, width, channel], 'category': [batch, fixbox, 1],
             'bbox2d': [batch, fixbox, 4], 'bbox3d': [batch, fixbox, 6], 'object': [batch, fixbox, 1],
-            'yaw': [batch, fixbox, 2]}
+            'yaw': [batch, fixbox, 1], 'yaw_rads': [batch, fixbox, 1]}
         :param pred:
-                {'pred_class_logits': torch.Size([1024, 4])
+                {# header outputs
+                'pred_class_logits': torch.Size([1024, 4])
                 'pred_proposal_deltas': torch.Size([1024, 12])
                 'viewpoint_logits': torch.Size([1024, 36])
                 'viewpoint_residuals': torch.Size([1024, 36])
@@ -74,6 +71,8 @@ class LossBase:
                                     'bbox3d': torch.Size([512, 6])
                                     'object': torch.Size([512, 1])
                                     'yaw': torch.Size([512, 2])} * batch]
+
+                # rpn outputs
                 'rpn_proposals': [{'proposal_boxes': torch.Size([2000, 4]),
                                   'objectness_logits': torch.Size([2000])} * batch]
 
@@ -92,121 +91,26 @@ class LossBase:
         :return:
         """
 
-    def _subsample_labels(self, label):
-        """
-        Randomly sample a subset of positive and negative examples, and overwrite
-        the label vector to the ignore value (-1) for all elements that are not
-        included in the sample.
 
-        Args:
-            labels (Tensor): a vector of -1, 0, 1. Will be modified in-place and returned.
-        """
-        pos_idx, neg_idx = subsample_labels(
-            label, self.batch_size_per_image, self.positive_fraction, 0
-        )
-        # Fill with the ignore label (-1), then set positive and negative labels
-        label.fill_(-1)
-        label.scatter_(0, pos_idx, 1)
-        label.scatter_(0, neg_idx, 0)
-        return label
-
-    def label_and_sample_anchors(self, anchors, feature):
-        """
-
-        :param anchors:
-                    [torch.Size([557568(176 * 352 * 9), 4])
-                    torch.Size([139392(88 * 176 * 9), 4])
-                    torch.Size([34848(44 * 88 * 9), 4])]
-        :param feature:
-            {'image': [batch, height, width, channel], 'category': [batch, fixbox, 1],
-            'bbox2d': [batch, fixbox, 4], 'bbox3d': [batch, fixbox, 6], 'object': [batch, fixbox, 1],
-            'yaw': [batch, fixbox, 2]}
-        :return:
-        """
-
-        anchors = torch.cat(anchors)
-        image_shape = feature['image'].shape
-        image_sizes = [(image_shape[2], image_shape[3]) for i in feature['image'].shape]
-        bbox2d_shape = feature['bbox2d'].shape
-        bbox2d_batch = list()
-        for i in range(bbox2d_shape[0]):
-            bbox2d = feature['bbox2d'][i, :]
-            weight = bbox2d[:, 2] - bbox2d[:, 0]
-            x = torch.where(weight > 0)
-            bbox2d = bbox2d[:x[0][-1] + 1, :]
-            bbox2d_batch.append(bbox2d)
-
-        gt_labels = []
-        matched_gt_boxes = []
-        for image_size_i, gt_boxes_i in zip(image_sizes, bbox2d_batch):
-            """
-            image_size_i: (h, w) for the i-th image
-            gt_boxes_i: ground-truth boxes for i-th image
-            """
-
-            match_quality_matrix = pairwise_iou(gt_boxes_i, anchors)
-            matched_idxs, gt_labels_i = self.anchor_matcher(match_quality_matrix)
-            # Matching is memory-expensive and may result in CPU tensors. But the result is small
-            gt_labels_i = gt_labels_i.to(device=DEVICE)
-            del match_quality_matrix
-
-            # A vector of labels (-1, 0, 1) for each anchor
-            gt_labels_i = self._subsample_labels(gt_labels_i)
-            gt_labels_i = gt_labels_i.to(DEVICE)
-            if len(gt_boxes_i) == 0:
-                matched_gt_boxes_i = torch.zeros_like(anchors)
-            else:
-                matched_gt_boxes_i = gt_boxes_i[matched_idxs]
-            gt_labels.append(gt_labels_i)  # N,AHW
-            matched_gt_boxes.append(matched_gt_boxes_i)
-        return gt_labels, matched_gt_boxes
-
-
-class SmoothL1(LossBase):
-    def __call__(self, features, pred):
-        raise NotImplementedError()
-
-    def smooth_l1(self, pred, grtr, beta, reduction):
-        if beta < 1e-5:
-            # if beta == 0, then torch.where will result in nan gradients when
-            # the chain rule is applied due to pytorch implementation details
-            # (the False branch "0.5 * n ** 2 / 0" has an incoming gradient of
-            # zeros, rather than "no gradient"). To avoid this issue, we define
-            # small values of beta to be exactly l1 loss.
-            loss = torch.abs(pred - grtr)
-        else:
-            n = torch.abs(pred - grtr)
-            cond = n < beta
-            loss = torch.where(cond, 0.5 * n ** 2 / beta, n - 0.5 * beta)
-
-        if reduction == "mean":
-            loss = loss.mean() if loss.numel() > 0 else 0.0 * loss.sum()
-        elif reduction == "sum":
-            loss = loss.sum()
-        return loss
-
-
-class Box2dRegression(SmoothL1):
+class Box2dRegression(LossBase):
     def __call__(self, features, pred):
         anchors = pred['anchors']
         pred_anchor_deltas = pred['pred_anchor_deltas']
 
-        gt_labels, gt_boxes = self.label_and_sample_anchors(anchors, features)
+        gt_labels, gt_boxes = distribute_box_over_feature_map(anchors, features, self.anchor_matcher)
         gt_labels = torch.stack(gt_labels)  # (N, sum(Hi*Wi*Ai))
         anchors = torch.cat(anchors)
         gt_anchor_deltas = [self.box2box_transform.get_deltas(anchors, k) for k in gt_boxes]
         gt_anchor_deltas = torch.stack(gt_anchor_deltas)  # (N, R, 4)
 
         pos_mask = gt_labels == 1
-        loss = self.smooth_l1(torch.cat(pred_anchor_deltas, dim=1)[pos_mask],
-                              gt_anchor_deltas[pos_mask],
-                              beta=0.0,
-                              reduction='sum')
-
+        loss = F.smooth_l1_loss(torch.cat(pred_anchor_deltas, dim=1)[pos_mask],
+                                gt_anchor_deltas[pos_mask],
+                                reduction='sum', beta=0.5)
         return loss
 
 
-class Box3dRegression(SmoothL1):
+class Box3dRegression(LossBase):
     def __call__(self, features, pred):
         pred_class_logits = pred['pred_class_logits']
         pred_proposal_deltas = pred['pred_proposal_deltas']
@@ -232,19 +136,14 @@ class Box3dRegression(SmoothL1):
             fg_gt_classes = gt_classes[fg_inds]
             gt_class_cols = box_dim * fg_gt_classes[:, None].to(DEVICE) + torch.arange(box_dim, device=DEVICE)
 
-        loss_box_reg = self.smooth_l1(
-            pred_proposal_deltas[fg_inds[:, None].long(), gt_class_cols.long()],
-            gt_proposal_deltas[fg_inds],
-            beta=0.0,
-            reduction="sum",
-        )
+        loss_box_reg = F.smooth_l1_loss(pred_proposal_deltas[fg_inds[:, None].long(), gt_class_cols.long()],
+                                        gt_proposal_deltas[fg_inds],
+                                        reduction='sum', beta=0.5)
         loss_box_reg = loss_box_reg / gt_classes.numel()
         return loss_box_reg
-        #
-        #
 
 
-class HeightRegression(SmoothL1):
+class HeightRegression(LossBase):
     def __call__(self, features, pred):
         pred_class_logits = pred['pred_class_logits']
         height_logits = pred['height_logits']
@@ -261,12 +160,9 @@ class HeightRegression(SmoothL1):
 
         fg_gt_classes = gt_classes[fg_inds].to(cfg.Model.Structure.DEVICE)
         gt_class_cols = box_dim * fg_gt_classes[:, None] + torch.arange(box_dim, device=DEVICE)
-        loss_box_reg = self.smooth_l1(
-            height_logits[fg_inds[:, None].long(), gt_class_cols.long()],
-            gt_height_deltas[fg_inds],
-            0.0,
-            reduction="sum",
-        )
+        loss_box_reg = F.smooth_l1_loss(height_logits[fg_inds[:, None].long(), gt_class_cols.long()],
+                                        gt_height_deltas[fg_inds],
+                                        reduction='sum', beta=0.5)
         # The loss is normalized as in box delta regression task
         loss_box_reg = loss_box_reg / gt_classes.numel()
         return loss_box_reg
@@ -285,7 +181,7 @@ class HeightRegression(SmoothL1):
         return deltas
 
 
-class YawRegression(SmoothL1):
+class YawRegression(LossBase):
     def __call__(self, features, pred):
         pred_class_logits = pred['pred_class_logits']
         head_proposals = pred['head_proposals']
@@ -303,14 +199,12 @@ class YawRegression(SmoothL1):
 
         for idx, logit in enumerate(viewpoint_residuals[fg_inds]):
             res_index_list.append(fg_gt_classes[idx] * self.vp_bins + gt_viewpoint[fg_inds][idx])
-        loss_box_reg = self.smooth_l1(
-            viewpoint_residuals[fg_inds, res_index_list],
-            gt_vp_deltas[fg_inds],
-            0.0,
-            reduction="sum",
-        )
-        loss_box_reg = loss_box_reg / gt_classes.numel()
-        return loss_box_reg
+
+        loss = F.smooth_l1_loss(viewpoint_residuals[fg_inds, res_index_list],
+                                gt_vp_deltas[fg_inds],
+                                reduction='sum', beta=0.5)
+        loss = loss / gt_classes.numel()
+        return loss
 
     def get_vp_deltas(self, gt_viewpoint, gt_viewpoint_rads):
         gt_viewpoint = gt_viewpoint
@@ -326,14 +220,6 @@ class YawRegression(SmoothL1):
         dvp = wvp * (target_vp - src_vp_proposals - bin_res)
         deltas = dvp
         return deltas
-
-
-class CrossEntropy():
-    def __call__(self, grtr, pred, beta, reduction):
-        raise NotImplementedError()
-
-    def smooth_l1(self, foo, bar):
-        pass
 
 
 class CategoryClassification(LossBase):
@@ -375,7 +261,7 @@ class ObjectClassification(LossBase):
     def __call__(self, features, pred):
         anchors = pred['anchors']
         pred_objectness_logits = pred['pred_objectness_logits']
-        gt_labels, gt_boxes = self.label_and_sample_anchors(anchors, features)
+        gt_labels, gt_boxes = distribute_box_over_feature_map(anchors, features, self.anchor_matcher)
         gt_labels = torch.stack(gt_labels)  # (N, sum(Hi*Wi*Ai))
         valid_mask = gt_labels >= 0
         loss = F.binary_cross_entropy_with_logits(

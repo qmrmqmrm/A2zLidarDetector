@@ -47,9 +47,11 @@ class GeneralizedRCNN(ModelBase):
     def forward(self, batched_input):
         """
         :param batched_input:
-            {'image': [batch, height, width, channel], 'category': [batch, fixbox, 1],
-            'bbox2d': [batch, fixbox, 4], 'bbox3d': [batch, fixbox, 6], 'object': [batch, fixbox, 1],
-            'yaw': [batch, fixbox, 2]}
+            {'image': [batch, height, width, channel],
+            'category': [batch, fixbox, 1],
+            'bbox2d': [[numbox, 4]*batch], 'bbox3d': [batch, num, 6], 'object': [batch, num, 1],
+            'yaw': [batch, num, 1], 'yaw_rads': [batch, num, 1]}
+
         :return:
             pred :{'pred_class_logits': torch.Size([1024, 4])
                   'pred_proposal_deltas': torch.Size([1024, 12])
@@ -83,48 +85,10 @@ class GeneralizedRCNN(ModelBase):
         """
         batched_input = self.preprocess_input(batched_input)
         features = self.backbone(batched_input['image'])
-        # print('\nGeneralizedRCNN category.shape :', batched_input['category'].shape)
-        # print('GeneralizedRCNN category :', batched_input['category'])
-        # print('GeneralizedRCNN bbox2d.shape :', batched_input['bbox2d'].shape)
-        # print('GeneralizedRCNN bbox2d :', batched_input['bbox2d'])
-        # print('GeneralizedRCNN yaw shape :', batched_input['yaw'].shape)
-        # print('GeneralizedRCNN yaw :', batched_input['yaw'])
-        # print('GeneralizedRCNN yaw_rads shape :', batched_input['yaw_rads'].shape)
-        # print('GeneralizedRCNN yaw_rads :', batched_input['yaw_rads'])
-        # features {'p2': torch.Size([batch, 256, 176, 352]),'p3': torch.Size([batch, 256, 88, 176]),
-        # 'p4': torch.Size([batch, 256, 44, 88]), 'p5': torch.Size([batch, 256, 22, 44])}
         rpn_proposals, auxiliary = self.proposal_generator(batched_input['image'].shape, features)
-        # rpn_proposals [{'proposal_boxes': torch.Size([2000, 4]), 'objectness_logits': torch.Size([2000])} * batch]
-        # auxiliary {'pred_objectness_logits' : [torch.Size([batch, 557568]),
-        #                                        torch.Size([batch, 139392]),
-        #                                        torch.Size([batch, 34848])]
-        #             'pred_anchor_deltas' : [torch.Size([batch, 557568, 4]),
-        #                                     torch.Size([batch, 139392, 4]),
-        #                                     torch.Size([batch, 34848, 4])]
-        #             'anchors' : [torch.Size([557568, 4])
-        #                          torch.Size([139392, 4])
-        #                          torch.Size([34848, 4])]}
-        # return features, rpn_proposals, auxiliary
-
         pred = self.roi_heads(batched_input, features, rpn_proposals)
-        # pred {'pred_class_logits': torch.Size([1024, 4])
-        #       'pred_proposal_deltas': torch.Size([1024, 12])
-        #       'viewpoint_logits': torch.Size([1024, 36])
-        #       'viewpoint_residuals': torch.Size([1024, 36])
-        #       'height_logits': torch.Size([1024, 6])
-        #       'head_proposals' : [{'proposal_boxes': torch.Size([512, 4])
-        #                           'objectness_logits': torch.Size([512])
-        #                           'category': torch.Size([512, 1])
-        #                           'bbox2d': torch.Size([512, 4])
-        #                           'bbox3d': torch.Size([512, 6])
-        #                           'object': torch.Size([512, 1])
-        #                           'yaw': torch.Size([512, 2])} * batch]
-        #       }
-
-        # return features, rpn_proposals, auxiliary, pred
         pred['rpn_proposals'] = rpn_proposals
         pred.update(auxiliary)
-        # # pred keys :  dict_keys(['scores', 'proposal_deltas', 'viewpoint_scores', 'viewpoint_residuals', 'height_scores', 'proposals', 'loss_instances'])
         return pred
 
     def preprocess_input(self, batched_input):
