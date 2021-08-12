@@ -37,6 +37,8 @@ from model.submodules.matcher import Matcher
 from model.submodules.sampling import subsample_labels
 from utils.util_function import pairwise_iou
 
+DEVICE = cfg.Model.Structure.DEVICE
+
 
 class LossBase:
     def __init__(self):
@@ -52,7 +54,43 @@ class LossBase:
         self.weights_height = cfg.Model.Structure.WEIGHTS_HEIGHT
 
     def __call__(self, features, pred):
-        raise NotImplementedError()
+        """
+
+        :param features:
+            {'image': [batch, height, width, channel], 'category': [batch, fixbox, 1],
+            'bbox2d': [batch, fixbox, 4], 'bbox3d': [batch, fixbox, 6], 'object': [batch, fixbox, 1],
+            'yaw': [batch, fixbox, 2]}
+        :param pred:
+                {'pred_class_logits': torch.Size([1024, 4])
+                'pred_proposal_deltas': torch.Size([1024, 12])
+                'viewpoint_logits': torch.Size([1024, 36])
+                'viewpoint_residuals': torch.Size([1024, 36])
+                'height_logits': torch.Size([1024, 6])
+
+                'head_proposals': [{'proposal_boxes': torch.Size([512, 4])
+                                    'objectness_logits': torch.Size([512])
+                                    'category': torch.Size([512, 1])
+                                    'bbox2d': torch.Size([512, 4])
+                                    'bbox3d': torch.Size([512, 6])
+                                    'object': torch.Size([512, 1])
+                                    'yaw': torch.Size([512, 2])} * batch]
+                'rpn_proposals': [{'proposal_boxes': torch.Size([2000, 4]),
+                                  'objectness_logits': torch.Size([2000])} * batch]
+
+                'pred_objectness_logits' : [torch.Size([batch, 557568(176 * 352 * 9)]),
+                                            torch.Size([batch, 139392(88 * 176 * 9)]),
+                                            torch.Size([batch, 34848(44 * 88 * 9)])]
+
+                'pred_anchor_deltas' : [torch.Size([batch, 557568(176 * 352 * 9), 4]),
+                                        torch.Size([batch, 139392(88 * 176 * 9), 4]),
+                                        torch.Size([batch, 34848(44 * 88 * 9), 4])]
+
+                'anchors' : [torch.Size([557568(176 * 352 * 9), 4])
+                             torch.Size([139392(88 * 176 * 9), 4])
+                             torch.Size([34848(44 * 88 * 9), 4])]
+                }
+        :return:
+        """
 
     def _subsample_labels(self, label):
         """
@@ -72,36 +110,35 @@ class LossBase:
         label.scatter_(0, neg_idx, 0)
         return label
 
-    def label_and_sample_anchors(
-            self, anchors, gt_instances
-    ):
+    def label_and_sample_anchors(self, anchors, feature):
         """
-        Args:
-            anchors (list[Boxes]): anchors for each feature map.
-            gt_instances: the ground-truth instances for each image.
 
-        Returns:
-            list[Tensor]:
-                List of #img tensors. i-th element is a vector of labels whose length is
-                the total number of anchors across all feature maps R = sum(Hi * Wi * A).
-                Label values are in {-1, 0, 1}, with meanings: -1 = ignore; 0 = negative
-                class; 1 = positive class.
-            list[Tensor]:
-                i-th element is a Rx4 tensor. The values are the matched gt boxes for each
-                anchor. Values are undefined for those anchors not labeled as 1.
+        :param anchors:
+                    [torch.Size([557568(176 * 352 * 9), 4])
+                    torch.Size([139392(88 * 176 * 9), 4])
+                    torch.Size([34848(44 * 88 * 9), 4])]
+        :param feature:
+            {'image': [batch, height, width, channel], 'category': [batch, fixbox, 1],
+            'bbox2d': [batch, fixbox, 4], 'bbox3d': [batch, fixbox, 6], 'object': [batch, fixbox, 1],
+            'yaw': [batch, fixbox, 2]}
+        :return:
         """
 
         anchors = torch.cat(anchors)
-
-        gt_len = len(gt_instances)
-        gt_boxes = [x['gt_bbox2D'] for x in gt_instances]
-        image_sizes = [(700, 1400) for i in range(gt_len)]
-
-        del gt_instances
+        image_shape = feature['image'].shape
+        image_sizes = [(image_shape[2], image_shape[3]) for i in feature['image'].shape]
+        bbox2d_shape = feature['bbox2d'].shape
+        bbox2d_batch = list()
+        for i in range(bbox2d_shape[0]):
+            bbox2d = feature['bbox2d'][i, :]
+            weight = bbox2d[:, 2] - bbox2d[:, 0]
+            x = torch.where(weight > 0)
+            bbox2d = bbox2d[:x[0][-1] + 1, :]
+            bbox2d_batch.append(bbox2d)
 
         gt_labels = []
         matched_gt_boxes = []
-        for image_size_i, gt_boxes_i in zip(image_sizes, gt_boxes):
+        for image_size_i, gt_boxes_i in zip(image_sizes, bbox2d_batch):
             """
             image_size_i: (h, w) for the i-th image
             gt_boxes_i: ground-truth boxes for i-th image
@@ -110,17 +147,15 @@ class LossBase:
             match_quality_matrix = pairwise_iou(gt_boxes_i, anchors)
             matched_idxs, gt_labels_i = self.anchor_matcher(match_quality_matrix)
             # Matching is memory-expensive and may result in CPU tensors. But the result is small
-            gt_labels_i = gt_labels_i.to(device=gt_boxes_i.device)
+            gt_labels_i = gt_labels_i.to(device=DEVICE)
             del match_quality_matrix
 
             # A vector of labels (-1, 0, 1) for each anchor
             gt_labels_i = self._subsample_labels(gt_labels_i)
-            gt_labels_i = gt_labels_i.to(cfg.Model.Structure.DEVICE)
+            gt_labels_i = gt_labels_i.to(DEVICE)
             if len(gt_boxes_i) == 0:
-                # These values won't be used anyway since the anchor is labeled as background
                 matched_gt_boxes_i = torch.zeros_like(anchors)
             else:
-                # TODO wasted indexing computation for ignored boxes
                 matched_gt_boxes_i = gt_boxes_i[matched_idxs]
             gt_labels.append(gt_labels_i)  # N,AHW
             matched_gt_boxes.append(matched_gt_boxes_i)
@@ -129,7 +164,7 @@ class LossBase:
 
 class SmoothL1(LossBase):
     def __call__(self, features, pred):
-        pass
+        raise NotImplementedError()
 
     def smooth_l1(self, pred, grtr, beta, reduction):
         if beta < 1e-5:
@@ -173,20 +208,11 @@ class Box2dRegression(SmoothL1):
 
 class Box3dRegression(SmoothL1):
     def __call__(self, features, pred):
-        #
-        # dict_keys(
-        #     ['pred_class_logits', 'pred_proposal_deltas', 'viewpoint_logits',
-        #     'viewpoint_residuals', 'height_logits',
-        #      'rpn_proposals', 'pred_objectness_logits', 'pred_anchor_deltas',
-        #      'anchors',
-        #      'head_proposals'])
-
-        # self.box2box_transform,
         pred_class_logits = pred['pred_class_logits']
         pred_proposal_deltas = pred['pred_proposal_deltas']
         head_proposals = pred['head_proposals']
-        gt_boxes3d = torch.cat([p['gt_bbox3D'] for p in head_proposals])
-        gt_classes = torch.cat([p['gt_category_id'] for p in head_proposals], dim=0)
+        gt_boxes3d = torch.cat([p['bbox3d'] for p in head_proposals])
+        gt_classes = torch.cat([p['gt_category'] for p in head_proposals], dim=0)
         proposals = torch.cat([p['proposal_boxes'] for p in head_proposals])
 
         gt_proposal_deltas = self.box2box_transform.get_deltas(
@@ -194,21 +220,20 @@ class Box3dRegression(SmoothL1):
         )
         box_dim = gt_proposal_deltas.size(1)
         cls_agnostic_bbox_reg = pred_proposal_deltas.size(1) == box_dim
-        device = pred_proposal_deltas.device
+
         bg_class_ind = pred_class_logits.shape[1] - 1
         fg_inds = torch.nonzero((gt_classes >= 0) & (gt_classes < bg_class_ind)).squeeze(
             1
         )
 
         if cls_agnostic_bbox_reg:
-            # pred_proposal_deltas only corresponds to foreground class for agnostic
-            gt_class_cols = torch.arange(box_dim, device=device)
+            gt_class_cols = torch.arange(box_dim, device=DEVICE)
         else:
             fg_gt_classes = gt_classes[fg_inds]
-            gt_class_cols = box_dim * fg_gt_classes[:, None] + torch.arange(box_dim, device=device)
+            gt_class_cols = box_dim * fg_gt_classes[:, None].to(DEVICE) + torch.arange(box_dim, device=DEVICE)
 
         loss_box_reg = self.smooth_l1(
-            pred_proposal_deltas[fg_inds[:, None], gt_class_cols],
+            pred_proposal_deltas[fg_inds[:, None].long(), gt_class_cols.long()],
             gt_proposal_deltas[fg_inds],
             beta=0.0,
             reduction="sum",
@@ -221,37 +246,23 @@ class Box3dRegression(SmoothL1):
 
 class HeightRegression(SmoothL1):
     def __call__(self, features, pred):
-        #
-        # dict_keys(
-        #     ['pred_class_logits', 'pred_proposal_deltas', 'viewpoint_logits',
-        #     'viewpoint_residuals', 'height_logits',
-        #      'rpn_proposals', 'pred_objectness_logits', 'pred_anchor_deltas',
-        #      'anchors',
-        #      'head_proposals'])
-
-        # self.box2box_transform,
         pred_class_logits = pred['pred_class_logits']
-        pred_proposal_deltas = pred['pred_proposal_deltas']
-        head_proposals = pred['head_proposals']
-
         height_logits = pred['height_logits']
-        gt_boxes3d = torch.cat([p['gt_bbox3D'] for p in head_proposals])
-        gt_classes = torch.cat([p['gt_category_id'] for p in head_proposals], dim=0)
+        head_proposals = pred['head_proposals']
+        gt_boxes3d = torch.cat([p['bbox3d'] for p in head_proposals])
+        gt_classes = torch.cat([p['gt_category'] for p in head_proposals], dim=0)
 
         gt_height = gt_boxes3d[:, -2:]
         gt_height_deltas = self.get_h_deltas(gt_height, gt_classes)
         box_dim = gt_height_deltas.size(1)
-        device = pred_proposal_deltas.device
         bg_class_ind = pred_class_logits.shape[1] - 1
 
-        fg_inds = torch.nonzero((gt_classes >= 0) & (gt_classes < bg_class_ind)).squeeze(
-            1
-        )
+        fg_inds = torch.nonzero((gt_classes >= 0) & (gt_classes < bg_class_ind)).squeeze(1)
 
         fg_gt_classes = gt_classes[fg_inds].to(cfg.Model.Structure.DEVICE)
-        gt_class_cols = box_dim * fg_gt_classes[:, None] + torch.arange(box_dim, device=device)
+        gt_class_cols = box_dim * fg_gt_classes[:, None] + torch.arange(box_dim, device=DEVICE)
         loss_box_reg = self.smooth_l1(
-            height_logits[fg_inds[:, None], gt_class_cols],
+            height_logits[fg_inds[:, None].long(), gt_class_cols.long()],
             gt_height_deltas[fg_inds],
             0.0,
             reduction="sum",
@@ -261,14 +272,14 @@ class HeightRegression(SmoothL1):
         return loss_box_reg
 
     def get_h_deltas(self, gt_height, gt_classes):
-        src_heights = torch.tensor([130.05, 149.6, 147.9, 1.0]).to(gt_classes.device)  # Mean heights encoded
+        src_heights = torch.tensor([130.05, 149.6, 147.9, 1.0]).to(DEVICE)  # Mean heights encoded
 
-        target_heights = gt_height[:, 0]
-        target_ctr = gt_height[:, 1]
+        target_heights = gt_height[:, 0].to(DEVICE)
+        target_ctr = gt_height[:, 1].to(DEVICE)
 
         wh, wg, wz = self.weights_height
-        dh = wh * torch.log(target_heights / src_heights[gt_classes])
-        dz = wz * (target_ctr - src_heights[gt_classes] / 2.) / src_heights[gt_classes]
+        dh = wh * torch.log(target_heights / src_heights[gt_classes.long()])
+        dz = wz * (target_ctr - src_heights[gt_classes.long()] / 2.) / src_heights[gt_classes.long()]
 
         deltas = torch.stack((dh, dz), dim=1, ).to(cfg.Model.Structure.DEVICE)
         return deltas
@@ -277,22 +288,16 @@ class HeightRegression(SmoothL1):
 class YawRegression(SmoothL1):
     def __call__(self, features, pred):
         pred_class_logits = pred['pred_class_logits']
-        pred_proposal_deltas = pred['pred_proposal_deltas']
         head_proposals = pred['head_proposals']
 
         viewpoint_residuals = pred['viewpoint_residuals']
-
-        gt_classes = torch.cat([p['gt_category_id'] for p in head_proposals], dim=0)
-        gt_viewpoint = torch.cat([p['gt_yaw'] for p in head_proposals], dim=0)
-        gt_viewpoint_rads = gt_viewpoint[:, 1].to(cfg.Model.Structure.DEVICE)
-        gt_viewpoint = gt_viewpoint[:, 0].to(cfg.Model.Structure.DEVICE)
-
-        gt_vp_deltas = self.get_vp_deltas(gt_viewpoint, gt_viewpoint_rads, pred_proposal_deltas)
+        gt_classes = torch.cat([p['gt_category'] for p in head_proposals], dim=0).to(DEVICE)
+        gt_viewpoint = torch.cat([p['yaw'] for p in head_proposals], dim=0).type(torch.int64).to(DEVICE)
+        gt_viewpoint_rads = torch.cat([p['yaw_rads'] for p in head_proposals], dim=0).to(DEVICE)
+        gt_vp_deltas = self.get_vp_deltas(gt_viewpoint, gt_viewpoint_rads)
         bg_class_ind = pred_class_logits.shape[1] - 1
 
-        fg_inds = torch.nonzero((gt_classes >= 0) & (gt_classes < bg_class_ind)).squeeze(
-            1
-        )
+        fg_inds = torch.nonzero((gt_classes >= 0) & (gt_classes < bg_class_ind)).squeeze(1)
         fg_gt_classes = gt_classes[fg_inds]
         res_index_list = list()
 
@@ -307,13 +312,14 @@ class YawRegression(SmoothL1):
         loss_box_reg = loss_box_reg / gt_classes.numel()
         return loss_box_reg
 
-    def get_vp_deltas(self, gt_viewpoint, gt_viewpoint_rads, pred_proposal_deltas):
+    def get_vp_deltas(self, gt_viewpoint, gt_viewpoint_rads):
+        gt_viewpoint = gt_viewpoint
         bin_dist = np.linspace(-math.pi, math.pi, self.vp_bins + 1)
         bin_res = (bin_dist[1] - bin_dist[0]) / 2.
 
-        src_vp_res = torch.tensor(bin_dist - bin_res, dtype=torch.float32).to(pred_proposal_deltas.device)
+        src_vp_res = torch.tensor(bin_dist - bin_res, dtype=torch.float32).to(DEVICE)
         target_vp = gt_viewpoint_rads
-        src_vp_proposals = src_vp_res[gt_viewpoint.long()]
+        src_vp_proposals = src_vp_res[gt_viewpoint]
         src_vp_proposals[target_vp > src_vp_res[self.vp_bins]] = src_vp_res[self.vp_bins]
 
         wvp = np.trunc(1 / bin_res)
@@ -334,9 +340,8 @@ class CategoryClassification(LossBase):
     def __call__(self, features, pred):
         pred_class_logits = pred['pred_class_logits']
         head_proposals = pred['head_proposals']
-        gt_classes = torch.cat([p['gt_category_id'] for p in head_proposals], dim=0)
-        gt_classes = gt_classes.to(cfg.Model.Structure.DEVICE)
-
+        gt_classes = torch.cat([p['gt_category'] for p in head_proposals], dim=0).to(DEVICE).type(torch.int64)
+        pred_class_logits = pred_class_logits.type(torch.float32)
         loss = F.cross_entropy(pred_class_logits, gt_classes, reduction="mean")
         return loss
 
@@ -345,21 +350,23 @@ class YawClassification(LossBase):
     def __call__(self, features, pred):
         pred_class_logits = pred['pred_class_logits']
         head_proposals = pred['head_proposals']
-
         viewpoint_logits = pred['viewpoint_logits']
-        gt_classes = torch.cat([p['gt_category_id'] for p in head_proposals], dim=0)
-        gt_viewpoint = torch.cat([p['gt_yaw'] for p in head_proposals], dim=0)
-        gt_viewpoint = gt_viewpoint[:, 0].to(cfg.Model.Structure.DEVICE)
+        gt_classes = torch.cat([p['gt_category'] for p in head_proposals], dim=0)
+        gt_viewpoint = torch.cat([p['yaw'] for p in head_proposals], dim=0).to(DEVICE)
         bg_class_ind = pred_class_logits.shape[1] - 1
 
         fg_inds = torch.nonzero((gt_classes >= 0) & (gt_classes < bg_class_ind)).squeeze(1)
         fg_gt_classes = gt_classes[fg_inds]
         vp_list = list()
         for idx, logit in enumerate(viewpoint_logits[fg_inds]):
-            vp_list.append(logit[int(fg_gt_classes[idx]) * self.vp_bins:int(fg_gt_classes[
-                                                                                idx]) * self.vp_bins + self.vp_bins])  # Theoricatly the last class is background... SEE bg_class_ind
+            gt_num = int(fg_gt_classes[idx]) * self.vp_bins
+            vp_list.append(
+                logit[gt_num:gt_num + self.vp_bins])  # Theoricatly the last class is background... SEE bg_class_ind
         filtered_viewpoint_logits = torch.cat(vp_list).view(gt_viewpoint[fg_inds].size()[0], self.vp_bins)
-        loss = F.cross_entropy(filtered_viewpoint_logits, gt_viewpoint[fg_inds].long(), reduction="sum")
+        # print(filtered_viewpoint_logits.shape)
+        # print(gt_viewpoint[fg_inds].shape)
+        loss = F.cross_entropy(filtered_viewpoint_logits, gt_viewpoint[fg_inds].type(torch.int64),
+                               reduction="sum")
         loss = loss / gt_classes.numel()
         return loss
 

@@ -3,7 +3,7 @@ import torch
 import cv2
 
 from config import Config as cfg
-
+DEVICE =cfg.Model.Structure.DEVICE
 
 def print_progress(status_msg):
     # NOTE: the \r which means the line should overwrite itself.
@@ -59,7 +59,7 @@ def pairwise_intersection(boxes1, boxes2) -> torch.Tensor:
 
 
 def pairwise_iou(boxes1, boxes2):
-    boxes1 = boxes1.to(cfg.Model.Structure.DEVICE)
+    boxes1 = boxes1.to(DEVICE)
     area1 = (boxes1[:, 2] - boxes1[:, 0]) * (boxes1[:, 3] - boxes1[:, 1])
     area2 = (boxes2[:, 2] - boxes2[:, 0]) * (boxes2[:, 3] - boxes2[:, 1])
     inter = pairwise_intersection(boxes1, boxes2)
@@ -133,4 +133,3 @@ def draw_box(img, bboxes_2d):
         draw_img = cv2.rectangle(draw_img, (x0, y0), (x1, y1), (255, 255, 255), 2)
 
     return draw_img
-

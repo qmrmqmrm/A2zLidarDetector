@@ -93,24 +93,14 @@ class ROIHeads(torch.nn.Module):
     @torch.no_grad()
     def label_and_sample_proposals(self, proposals, targets):
         """
-        Prepare some proposals to be used to train the ROI heads.
-        It performs box matching between `proposals` and `targets`, and assigns
-        training labels to the proposals.
-        It returns `self.batch_size_per_image` random samples from proposals and groundtruth boxes,
-        with a fraction of positives that is no larger than `self.positive_sample_fraction.
 
-        Args:
-            See :meth:`ROIHeads.forward`
+        :param proposals: (list[dict[torch.tensor]])
+                 [{'proposal_boxes': torch.Size([2000, 4]), 'objectness_logits': torch.Size([2000])} * batch]
 
-        Returns:
-            list[Instances]:
-                length `N` list of `Instances`s containing the proposals
-                sampled for training. Each `Instances` has the following fields:
-                - proposal_boxes: the proposal boxes
-                - gt_boxes: the ground-truth box that the proposal is assigned to
-                  (this is only meaningful if the proposal has a label > 0; if label = 0
-                   then the ground-truth box is random)
-                Other fields such as "gt_classes", "gt_masks", that's included in `targets`.
+        :param targets: {'image': [batch, height, width, channel], 'category': [batch, fixbox, 1],
+                        'bbox2d': [batch, fixbox, 4], 'bbox3d': [batch, fixbox, 6], 'object': [batch, fixbox, 1],
+                        'yaw': [batch, fixbox, 2]}
+        :return:
         """
 
         # Augment proposals with ground-truth boxes.
@@ -125,29 +115,49 @@ class ROIHeads(torch.nn.Module):
         # convergence and empirically improves box AP on COCO by about 0.5
         # points (under one tested configuration).
         # targets = [image for image in batch[:]]
+        bbox2d_shape = targets['bbox2d'].shape
+        bbox2d_batch = list()
+        category_batch = list()
+        yaw_batch = list()
+        yaw_rads_batch = list()
+        for i in range(bbox2d_shape[0]):
+            bbox2d = targets['bbox2d'][i, :]
+            weight = bbox2d[:, 2] - bbox2d[:, 0]
+            x = torch.where(weight > 0)
+            bbox2d = bbox2d[:x[0][-1] + 1, :]
+            bbox2d_batch.append(bbox2d)
+            # print('\nhead bbox2d.shape :', bbox2d.shape)
+            # print('head bbox2d :', bbox2d)
 
-        gt_boxes = targets['bbox2d']
+            category = targets['category'][i, :]
+            category = category[torch.where(category < 3)]
+            category_batch.append(category)
+
+            valid_yaw = targets['yaw'][i, :][torch.where(targets['yaw'][i, :] < 13)]
+            yaw_batch.append(valid_yaw)
+
+            valid_yaw_rads = targets['yaw_rads'][i, :][torch.where(targets['yaw_rads'][i, :] < 13)]
+            yaw_rads_batch.append(valid_yaw_rads)
+            # print('head category.shape :', category.shape)
+            # print('head category :', category)
+
         if self.proposal_append_gt:
-            proposals = add_ground_truth_to_proposals(gt_boxes, proposals)
-
+            proposals = add_ground_truth_to_proposals(bbox2d_batch, proposals)
         proposals_with_gt = []
-        for i, proposals_per_image in enumerate(proposals):
-            bbox2d_per_image = targets['bbox2d'][i, :]
-            category_per_image = targets['category'][i, :]
+        for bbox2d_per_image, category_per_image, yaw_par_image, yaw_rads_par_image, instance_per_image in zip(
+                bbox2d_batch, category_batch, yaw_batch, yaw_rads_batch, proposals):
             # has_gt = len(targets_per_image) > 0
-            match_quality_matrix = pairwise_iou(
-                bbox2d_per_image, proposals_per_image.get("proposal_boxes")
-            )
-
+            match_quality_matrix = pairwise_iou(bbox2d_per_image, instance_per_image.get("proposal_boxes"))
             matched_idxs, matched_labels = self.proposal_matcher(match_quality_matrix)
             sampled_idxs, gt_classes = self._sample_proposals(
                 matched_idxs, matched_labels, category_per_image
             )
             # Set target attributes of the sampled proposals:
 
-            proposals_per_image['proposal_boxes'] = proposals_per_image.get("proposal_boxes")[sampled_idxs]
-            proposals_per_image['objectness_logits'] = proposals_per_image.get("objectness_logits")[sampled_idxs]
-            proposals_per_image['category'] = gt_classes
+            instance_per_image['proposal_boxes'] = instance_per_image.get("proposal_boxes")[sampled_idxs]
+            instance_per_image['objectness_logits'] = instance_per_image.get("objectness_logits")[sampled_idxs]
+            instance_per_image['gt_category'] = gt_classes
+
 
             # We index all the attributes of targets that start with "gt_"
             # and have not been added to proposals yet (="gt_classes").
@@ -157,13 +167,14 @@ class ROIHeads(torch.nn.Module):
                 # like masks, keypoints, etc, will filter the proposals again,
                 # (by foreground/background, or number of keypoints in the image, etc)
                 # so we essentially index the data twice.
+                instance_per_image['yaw'] = yaw_par_image[sampled_targets]
+                instance_per_image['yaw_rads'] = yaw_rads_par_image[sampled_targets]
                 for (trg_name, trg_value) in targets.items():
                     if trg_name != 'image':
-                        if not trg_name in proposals_per_image:
+                        if not trg_name in instance_per_image:
                             val = trg_value[i, :]
-                            proposals_per_image[trg_name] = val[sampled_targets]
-
-            proposals_with_gt.append(proposals_per_image)
+                            instance_per_image[trg_name] = val[sampled_targets]
+            proposals_with_gt.append(instance_per_image)
         return proposals_with_gt
 
     def forward(self, batch_input, features, proposals):
@@ -263,21 +274,13 @@ class StandardROIHeads(ROIHeads):
 
     def _forward_box(self, features, proposals):
         """
-        Forward logic of the box prediction branch.
 
-        Args:
-            features (list[Tensor]): #level input features for box prediction
-            proposals (list[Instances]): the per-image object proposals with
-                their matching ground truth.
-                Each has fields "proposal_boxes", and "objectness_logits",
-                "gt_classes", "gt_boxes".
-
-        Returns:
-            pred :{'pred_class_logits': torch.Size([1024, 4])
-                  'pred_proposal_deltas': torch.Size([1024, 12])
-                  'viewpoint_logits': torch.Size([1024, 36])
-                  'viewpoint_residuals': torch.Size([1024, 36])
-                  'height_logits': torch.Size([1024, 6])}
+        :param features: (dict[torch.Tensor]):
+                {'p2': torch.Size([batch, 256, 176, 352]),'p3': torch.Size([batch, 256, 88, 176]),
+                'p4': torch.Size([batch, 256, 44, 88]), 'p5': torch.Size([batch, 256, 22, 44])}
+        :param proposals: (list[dict[torch.tensor]])
+                 [{'proposal_boxes': torch.Size([2000, 4]), 'objectness_logits': torch.Size([2000])} * batch]
+        :return:
         """
         features = [features[f] for f in self.in_features]
         box_features = self.box_pooler(features, [x["proposal_boxes"] for x in proposals])

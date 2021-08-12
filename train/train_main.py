@@ -40,12 +40,12 @@ def train_by_plan(dataset_name, end_epoch, learning_rate, loss_weights, model_sa
     model = build_model(*cfg.Model.Structure.NAMES)
     loss_object = IntegratedLoss(loss_weights, valid_category)
     optimizer = build_optimizer(model, learning_rate)
-    trainer, validator = get_train_val(model, data_loader, loss_object, optimizer, start_epoch)
+    trainer, validator = get_train_val(model, loss_object, optimizer, start_epoch)
     log_file = LogFile()
     for epoch in range(start_epoch, end_epoch):
         print(f"========== Start dataset : {dataset_name} epoch: {epoch + 1}/{end_epoch} ==========")
-        train_result = trainer.run_epoch()
-        val_result = validator.run_epoch()
+        train_result = trainer.run_epoch(epoch, data_loader)
+        val_result = validator.run_epoch(epoch, data_loader)
         save_model_ckpt(ckpt_path, model)
         log_file.save_log(epoch, train_result, val_result)
 

@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+import torch.nn.functional as F
 import copy
 import numpy as np
 import cv2
@@ -82,6 +83,14 @@ class GeneralizedRCNN(ModelBase):
         """
         batched_input = self.preprocess_input(batched_input)
         features = self.backbone(batched_input['image'])
+        # print('\nGeneralizedRCNN category.shape :', batched_input['category'].shape)
+        # print('GeneralizedRCNN category :', batched_input['category'])
+        # print('GeneralizedRCNN bbox2d.shape :', batched_input['bbox2d'].shape)
+        # print('GeneralizedRCNN bbox2d :', batched_input['bbox2d'])
+        # print('GeneralizedRCNN yaw shape :', batched_input['yaw'].shape)
+        # print('GeneralizedRCNN yaw :', batched_input['yaw'])
+        # print('GeneralizedRCNN yaw_rads shape :', batched_input['yaw_rads'].shape)
+        # print('GeneralizedRCNN yaw_rads :', batched_input['yaw_rads'])
         # features {'p2': torch.Size([batch, 256, 176, 352]),'p3': torch.Size([batch, 256, 88, 176]),
         # 'p4': torch.Size([batch, 256, 44, 88]), 'p5': torch.Size([batch, 256, 22, 44])}
         rpn_proposals, auxiliary = self.proposal_generator(batched_input['image'].shape, features)
@@ -112,7 +121,6 @@ class GeneralizedRCNN(ModelBase):
         #                           'yaw': torch.Size([512, 2])} * batch]
         #       }
 
-
         # return features, rpn_proposals, auxiliary, pred
         pred['rpn_proposals'] = rpn_proposals
         pred.update(auxiliary)
@@ -121,8 +129,8 @@ class GeneralizedRCNN(ModelBase):
 
     def preprocess_input(self, batched_input):
         image = batched_input['image'].permute(0, 3, 1, 2).to(cfg.Model.Structure.DEVICE)
-        image = torch.nn.functional.pad(image, (4, 4, 2, 2), "constant", 0)
         image = self.normalizer(image)
+        image = F.pad(image,(4,4,2,2), "constant", 0)
         batched_input['image'] = image
         batched_input['bbox2d'] += torch.tensor([[[4, 2, 4, 2]]], dtype=torch.float32)
         batched_input['bbox3d'][:, :, :2] += torch.tensor([[[4, 2]]], dtype=torch.float32)

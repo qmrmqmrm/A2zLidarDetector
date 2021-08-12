@@ -8,7 +8,7 @@ import numpy as np
 from config import Config as cfg
 from utils.util_class import ShapeSpec
 
-
+DEVICE = cfg.Model.Structure.DEVICE
 class BufferList(nn.Module):
     """
     Similar to nn.ParameterList, but for buffers
@@ -141,8 +141,7 @@ class DefaultAnchorGenerator(nn.Module):
         anchors = []
         for size, stride, base_anchors in zip(grid_sizes, self.strides, self.cell_anchors):
             shift_x, shift_y = _create_grid_offsets(size, stride)
-            shifts = torch.stack((shift_x, shift_y, shift_x, shift_y), dim=1)
-
+            shifts = torch.stack((shift_x, shift_y, shift_x, shift_y), dim=1).to(DEVICE)
             anchors.append((shifts.view(-1, 1, 4) + base_anchors.view(1, -1, 4)).reshape(-1, 4))
 
         return anchors

@@ -8,12 +8,22 @@ def test_model(dataset_name="a2d2"):
     batch_size, train_mode = cfg.Train.BATCH_SIZE, cfg.Train.MODE
     data_loader = get_dataset(dataset_name, batch_size)
     model = build_model(*cfg.Model.Structure.NAMES)
-
-    for i, batch_input in enumerate(data_loader):
-        print("----- index:", i)
-        pred = model(batch_input)
+    train_loader_iter = iter(data_loader)
+    steps = len(train_loader_iter)
+    for step in range(steps):
+        print("----- index:", step)
+        features, image_file = next(train_loader_iter)
+        pred = model(features)
         for key, features in  pred.items():
-            print('pred',key,type(features))
+            if isinstance(features, list):
+                for k, feat in enumerate(features):
+                    if isinstance(feat, dict):
+                        for f_k, f in feat.items():
+                            print("prediction", key, k, f_k, f.shape)
+                    else:
+                        print("prediction", key, k, feat.shape)
+            else:
+                print("prediction", key, features.shape)
             # for key, feat in features.items():
             #     print("features", key, feat.shape)
         # for i, proposal in enumerate(rpn_proposals):
@@ -31,8 +41,7 @@ def test_model(dataset_name="a2d2"):
         #             for f_k, f in feat.items():
         #                 print("prediction", key, k, f_k, f.shape)
         #
-        #     else:
-        #         print("prediction", key, feats.shape)
+        #
 
 
 if __name__ == "__main__":

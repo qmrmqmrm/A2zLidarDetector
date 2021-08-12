@@ -12,7 +12,7 @@ from model.architecture import GeneralizedRCNN
 
 
 def build_model(model_name, backbone_name, neck_name, rpn_name, head_name):
-    backbone = backbone_factory(backbone_name, neck_name)
+    backbone = backbone_factory(backbone_name)
     neck = neck_factory(neck_name, backbone)
     rpn = rpn_factory(rpn_name, neck.output_shape())
     head = head_factory(head_name, neck.output_shape())
@@ -22,7 +22,7 @@ def build_model(model_name, backbone_name, neck_name, rpn_name, head_name):
     return model
 
 
-def backbone_factory(backbone_name, neck_name):
+def backbone_factory(backbone_name):
     """
     try except, split functions, specify inputs
     :param backbone_name:

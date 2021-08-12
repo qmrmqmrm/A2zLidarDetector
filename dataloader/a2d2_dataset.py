@@ -17,7 +17,7 @@ class A2D2Dataset(DatasetBase):
         self.max_box = max_box
         self.calib_dict = get_calibration(root_path)
         self.categories = cfg.Datasets.A2D2.CATEGORIES_TO_USE
-        self.last_sample = self.__getitem__(132)
+        self.last_sample, image_file = self.__getitem__(91)
         del self.last_sample['image']
 
     def list_frames(self, root_dir):
@@ -47,7 +47,7 @@ class A2D2Dataset(DatasetBase):
         features.update(anns)
         # map_anns = self.gather_featmaps(anns["bbox2d"], anns["object"])
         # features.update(map_anns)
-        return features
+        return features, image_file
 
     def convert_bev(self, label, image, calib, vp_res, bins, bvres=0.05, viewpoint=False):
         annotations = list()
@@ -79,9 +79,8 @@ class A2D2Dataset(DatasetBase):
                              ((pts_3d_velo[0][2] + velodyne_h) + obj['size'][0] * 0.5) * 255 / 3.]
             ann["object"] = [1]
             if viewpoint:
-                ann['yaw'] = [rad2bin(obj['rot_angle'], bins), obj['rot_angle']] if vp_res else [
-                    rad2bin(obj['rotation_y'], bins)]
-
+                ann['yaw'] = [rad2bin(obj['rot_angle'], bins)]
+                ann['yaw_rads'] = [obj['rot_angle']]
             annotations.append(ann)
         return annotations
 
@@ -139,9 +138,33 @@ class A2D2Dataset(DatasetBase):
         gathered_anns = {key: torch.tensor(vals, dtype=torch.float32) for key, vals in gathered_anns.items()}
         # zero padding
         for key in gathered_anns:
+
             numbox, channel = gathered_anns[key].shape
-            zeropad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
-            gathered_anns[key] = torch.cat([gathered_anns[key], zeropad], dim=0)
+            if key == 'category':
+                pad = torch.ones((self.max_box - numbox, channel), dtype=torch.float32) * 3
+            elif key == 'yaw':
+                pad = torch.ones((self.max_box - numbox, channel), dtype=torch.float32) * 13
+            else:
+                pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
+
+            gathered_anns[key] = torch.cat([gathered_anns[key], pad], dim=0)
+
+            # if key == 'bbox2d':
+            #     bbox2d = gathered_anns[key]
+            #     weight = bbox2d[:, 2] - bbox2d[:, 0]
+            #     x = torch.where(weight > 0)
+            #     bbox2d = bbox2d[:x[0][-1] + 1, :]
+            #
+            #     print('loader bbox2d.shape :', bbox2d.shape)
+            #     print('loader bbox2d :', bbox2d)
+            # if key == 'category':
+            #     category = gathered_anns[key]
+            #     category_index = torch.where(category < 3)
+            #     category = category[category_index]
+            #     print('\nloader category.shape :', category.shape)
+            #     print('loader category :', category)
+            # elif key == 'yaw':
+            #     print('loader yaw',gathered_anns[key])
 
         return gathered_anns
 
@@ -213,30 +236,3 @@ def drow_box(img, bbox):
         img = cv2.rectangle(img, (x0, y0), (x1, y1), (255, 255, 255), 2)
     cv2.imshow("drow_img", img)
     cv2.waitKey()
-
-
-def test_a2d2_dataset():
-    path = cfg.Datasets.A2D2.PATH
-    dataset = A2D2Dataset(path)
-    data_len = len(dataset)
-    print(data_len)
-    for i in range(data_len):
-        data = dataset[i]
-        for key, val in data.items():
-            print('key , val:', key, val.shape, val.dtype)
-        print("objectness:", torch.squeeze(data["object"]))
-        img = data['image'].detach().numpy().astype(np.uint8)
-        bbox = data['bbox2d']
-        filename = dataset.img_files[i]
-        cam_file = filename.replace("/image", '/camera')
-        org_image = cv2.imread(cam_file)
-        org_image = cv2.resize(org_image, dsize=(int(org_image.shape[1]/2), int(org_image.shape[0]/2)))
-        cv2.imshow('org_image', org_image)
-        drow_box(img, bbox)
-        print('img type', type(img))
-        # cv2.imshow('img', img)
-        # cv2.waitKey()
-
-
-if __name__ == '__main__':
-    test_a2d2_dataset()

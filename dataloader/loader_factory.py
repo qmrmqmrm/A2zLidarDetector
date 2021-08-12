@@ -30,6 +30,7 @@ def test_data_loader():
     train_loader = get_dataset("a2d2", 4)
     for i, features in enumerate(train_loader):
         print("---- frame", i)
+        print('features', features)
         for key, val in features.items():
             print("key val:", key, type(val), val.shape)
 
