@@ -83,8 +83,8 @@ class Config:
             NAMES = [NAME.MODEL_NAME, NAME.BACKBONE_NAME, NAME.NECK_NAME, NAME.RPN_NAME, NAME.HEAD_NAME]
             VP_BINS = 12
             DEVICE = 'cuda'
-            VIEWPOINT = True
-            VIEWPOINT_RESIDUAL = True
+            YAW = True
+            YAW_RESIDUAL = True
             HEIGHT_TRAINING = True
             VP_WEIGHT_LOSS = 1.0
             WEIGHTS_HEIGHT = [5.0, 0.5, 10.0]

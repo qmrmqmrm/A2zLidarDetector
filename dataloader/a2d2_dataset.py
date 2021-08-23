@@ -17,7 +17,7 @@ class A2D2Dataset(DatasetBase):
         self.max_box = max_box
         self.calib_dict = get_calibration(root_path)
         self.categories = cfg.Datasets.A2D2.CATEGORIES_TO_USE
-        self.last_sample, image_file = self.__getitem__(91)
+        self.last_sample = self.__getitem__(91)
         del self.last_sample['image']
 
     def list_frames(self, root_dir):
@@ -38,7 +38,7 @@ class A2D2Dataset(DatasetBase):
         label_file = image_file.replace('image/', 'label/').replace('.png', '.json')
         with open(label_file, 'r') as f:
             label = json.load(f)
-        anns = self.convert_bev(label, image, self.calib_dict, viewpoint=True, vp_res=True, bins=12)
+        anns = self.convert_bev(label, image, self.calib_dict, yaw=True, vp_res=True, bins=12)
         if anns:
             anns = self.gather_and_zeropad(anns)
             self.last_sample = anns
@@ -47,9 +47,9 @@ class A2D2Dataset(DatasetBase):
         features.update(anns)
         # map_anns = self.gather_featmaps(anns["bbox2d"], anns["object"])
         # features.update(map_anns)
-        return features, image_file
+        return features
 
-    def convert_bev(self, label, image, calib, vp_res, bins, bvres=0.05, viewpoint=False):
+    def convert_bev(self, label, image, calib, vp_res, bins, bvres=0.05, yaw=False):
         annotations = list()
 
         for boxes, obj in label.items():
@@ -78,7 +78,7 @@ class A2D2Dataset(DatasetBase):
                              obj['size'][0] * 255 / 3.,
                              ((pts_3d_velo[0][2] + velodyne_h) + obj['size'][0] * 0.5) * 255 / 3.]
             ann["object"] = [1]
-            if viewpoint:
+            if yaw:
                 ann['yaw'] = [rad2bin(obj['rot_angle'], bins)]
                 ann['yaw_rads'] = [obj['rot_angle']]
             annotations.append(ann)
@@ -144,6 +144,8 @@ class A2D2Dataset(DatasetBase):
                 pad = torch.ones((self.max_box - numbox, channel), dtype=torch.float32) * 3
             elif key == 'yaw':
                 pad = torch.ones((self.max_box - numbox, channel), dtype=torch.float32) * 13
+            elif key == 'yaw_rads':
+                pad = torch.ones((self.max_box - numbox, channel), dtype=torch.float32) * -1
             else:
                 pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
 

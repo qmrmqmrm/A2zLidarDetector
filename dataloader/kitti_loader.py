@@ -51,7 +51,7 @@ class KittiDataset(DatasetBase):
                                          'bbox_xmax', 'bbox_ymax', 'dimensions_1', 'dimensions_2', 'dimensions_3',
                                          'location_1', 'location_2', 'location_3', 'rotation_y'], dtype=None)
             # ['2d_bbox', '3d_points', 'alpha', 'axis', 'center', 'class', 'id', 'occlusion', 'rot_angle', 'size', 'truncation']
-            anns = self.convert_bev(label, img_file, calib, viewpoint=True, vp_res=True, bins=12)
+            anns = self.convert_bev(label, img_file, calib, yaw=True, vp_res=True, bins=12)
             if len(anns) != 0:
                 anns_list.append(anns)
             print_progress(f"{i}/{num_img}")
@@ -61,7 +61,7 @@ class KittiDataset(DatasetBase):
             outfile.write(json.dumps(ann_dict))
         return ann_dict
 
-    def convert_bev(self, label, img_file, calib, vp_res, bins, bvres=0.05, viewpoint=False):
+    def convert_bev(self, label, img_file, calib, vp_res, bins, bvres=0.05, yaw=False):
         ann_id = 0
         annotations = list()
         if (label.ndim < 1):
@@ -106,7 +106,7 @@ class KittiDataset(DatasetBase):
                 ann['bbox3d'] = [(bbox_xmin + bbox_xmax) / 2., (bbox_ymin + bbox_ymax) / 2.,
                                  round(obj['dimensions_2'] / bvres, 3), round(obj['dimensions_3'] / bvres, 3)]
                 ann["object"] = 1
-                if viewpoint:
+                if yaw:
                     ann['yaw'] = [rad2bin(obj['rotation_y'], bins), obj['rotation_y']] if vp_res else [
                         rad2bin(obj['rotation_y'], bins)]
 

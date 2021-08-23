@@ -3,9 +3,13 @@ import numpy as np
 import pandas as pd
 from timeit import default_timer as timer
 import torch
+import torch.nn.functional as F
 
-import utils.util_function as uf
 from config import Config as cfg
+from train.loss_util import distribute_box_over_feature_map
+from model.submodules.matcher import Matcher
+
+DEVICE = cfg.Model.Structure.DEVICE
 
 
 class LogFile:
@@ -40,57 +44,39 @@ class LogData:
         self.start = timer()
         self.summary = dict()
         self.nan_grad_count = 0
+        self.anchor_matcher = Matcher(
+            cfg.Model.RPN.IOU_THRESHOLDS, cfg.Model.RPN.IOU_LABELS, allow_low_quality_matches=True
+        )
 
     def append_batch_result(self, step, grtr, pred, total_loss, loss_by_type):
         loss_list = [loss_name for loss_name, loss_tensor in loss_by_type.items() if loss_tensor.ndim == 0]
         batch_data = {loss_name: loss_by_type[loss_name].cpu().detach().numpy() for loss_name in loss_list}
         batch_data["total_loss"] = total_loss.cpu().detach().numpy()
-        # objectness = self.analyze_objectness(grtr, pred)
-        # batch_data.update(objectness)
+        objectness = self.analyze_objectness(grtr, pred)
+        # self.recall_precision(grtr, pred)
+        batch_data.update(objectness)
 
         # self.check_nan(batch_data, grtr, pred)
         batch_data = self.set_precision(batch_data, 5)
         self.batch = self.batch.append(batch_data, ignore_index=True)
-        # print("\n--- batch_data:", batch_data)
-        if step % 200 == 10:
-            print("\n--- batch_data:", batch_data)
+        print("\n--- batch_data:", batch_data)
+        # if step % 200 == 10:
+        #     print("\n--- batch_data:", batch_data)
 
         #     self.check_pred_scales(pred)
 
     def analyze_objectness(self, grtr, pred):
-        pos_obj, neg_obj = 0, 0
-        print(type(grtr))
-        print(len(grtr))
-        print(type(grtr[0]))
-        print((grtr[0].keys()))
-        print(type(pred))
-        print((pred.keys()))
-        print(len(pred['pred_objectness_logits']))
-        # grtr_slices = uf.slice_features(grtr)
-        # pred_slices = uf.slice_features(pred)
-
-        grtr_objs = [gt["gt_object"] for gt in grtr]
-        grtr_obj_mask = torch.cat(grtr_objs,dim=0)
-
-        pred_obj = [obj for obj in pred["pred_objectness_logits"]]
-        print(grtr_objs)
-        print(pred_obj)
-        pred_obj_prob = torch.cat(pred_obj,dim=1)
-        print(grtr_obj_mask.shape)
-        print(pred_obj_prob.shape)
-        obj_num = torch.maximum(torch.sum(grtr_obj_mask))
-        # average positive objectness probability
-        pos_obj += torch.sum(grtr_obj_mask * pred_obj_prob) / obj_num
-        # average top 50 negative objectness probabilities per frame
-        neg_obj_map = (1. - grtr_obj_mask) * pred_obj_prob
-        batch, grid_h, grid_w, anchor, _ = neg_obj_map.shape
-        neg_obj_map = torch.reshape(neg_obj_map, (batch, grid_h * grid_w * anchor))
-        neg_obj_map = torch.sort(neg_obj_map, axis=-1)
-        neg_obj_map = neg_obj_map[:, :50]
-        neg_obj += torch.mean(neg_obj_map)
-        print(pos_obj)
-        print(neg_obj)
-        objectness = {"pos_obj": pos_obj.numpy() / len(scales), "neg_obj": neg_obj.numpy() / len(scales)}
+        anchors = pred['anchors']
+        pred_objectness_logits = pred['pred_objectness_logits']
+        gt_labels, gt_boxes = distribute_box_over_feature_map(anchors, grtr, self.anchor_matcher)
+        num_images = len(gt_labels)
+        gt_labels = torch.stack(gt_labels)  # (N, sum(Hi*Wi*Ai))
+        pos_mask = gt_labels == 1
+        num_pos_anchors = pos_mask.sum().item()
+        num_neg_anchors = (gt_labels == 0).sum().item()
+        num_pos_anchors = num_pos_anchors / num_images
+        num_neg_anchors = num_neg_anchors / num_images
+        objectness = {"pos_obj": num_pos_anchors, "neg_obj": num_neg_anchors}
         return objectness
 
     def check_nan(self, losses, grtr, pred):
@@ -123,8 +109,56 @@ class LogData:
 
     def finalize(self):
         self.summary = self.batch.mean(axis=0).to_dict()
-        self.summary["time_m"] = round((timer() - self.start)/60., 5)
+        self.summary["time_m"] = round((timer() - self.start) / 60., 5)
         print("finalize:", self.summary)
-    
+
     def get_summary(self):
         return self.summary
+
+    #
+    def recall_precision(self, gt, pred):
+        gi_class = torch.cat(pred['batched_input']['category'])
+        print('gt_input')
+        print(gi_class)
+        print(gi_class.shape)
+        gt_shape = gi_class.shape
+        scores = pred['head_class_logits']
+        head_proposals = pred['head_proposals']
+        gt_classes = torch.cat([p['gt_category'] for p in head_proposals], dim=0).type(torch.int64).to(DEVICE)
+        gt_onehot = F.one_hot(gt_classes)
+        max_scores = torch.argmax(scores, dim=1)
+        score_onehot = F.one_hot(max_scores)
+
+        score_slice = scores[:gt_shape[0]]
+        print('score_slice')
+        print(score_slice)
+
+        gt_classes_false = torch.nonzero(gt_onehot[:, -1] > 0)
+        gt_classes_true = torch.nonzero(gt_onehot[:, -1] == 0)
+        score_true = torch.nonzero(score_onehot[:, -1] == 0)
+        score_false = torch.nonzero(score_onehot[:, -1] > 0)
+        print('gt')
+        print(gt_classes_true.shape)
+        print(gt_classes_false.shape)
+        print('score')
+        print(score_true.shape)
+        print(score_false.shape)
+        # print(score_true)
+
+        # filter_mask = scores > 0.05  # R x K
+        # print(filter_mask)
+        # scores = scores[filter_mask]
+        # gt_onehot = gt_onehot[filter_mask]
+        # print(scores.shape)
+        # print(scores)
+        # print(gt_onehot.shape)
+        # print(gt_onehot)
+
+        # gt_ture =
+        # pred_ture =
+        # TP = gt_true and pred_true
+        # TN = gt_true and pred_false
+        # FP = gt_false and pred_true
+        # FN = gt_false and pred_false
+        # precision = TP / (FP + TP)
+        # recall = TP / (TN + TP)

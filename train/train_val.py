@@ -19,7 +19,8 @@ class TrainValBase:
         for step in range(steps):
             # if step > 10:
             #     break
-            features, image_file = next(train_loader_iter)
+            features = next(train_loader_iter)
+            print()
             start = timer()
             prediction, total_loss, loss_by_type, split = self.run_step(features)
             logger.append_batch_result(step, features, prediction, total_loss, loss_by_type)

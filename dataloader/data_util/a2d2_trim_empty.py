@@ -19,7 +19,7 @@ def trim_empty_anno_frames(root_path):
         cam_file = image_file.replace('image/', 'camera/')
         with open(label_file, 'r') as f:
             label = json.load(f)
-        anns = convert_bev(label, image, calib_dict, viewpoint=True, vp_res=True, bins=12)
+        anns = convert_bev(label, image, calib_dict, yaw=True, vp_res=True, bins=12)
         if len(anns) == 0:
             if os.path.isfile(image_file):
                 os.remove(image_file)
@@ -30,7 +30,7 @@ def trim_empty_anno_frames(root_path):
         print_progress(f"{i}/{num_img}")
 
 
-def convert_bev(label, image, calib, vp_res, bins, bvres=0.05, viewpoint=False):
+def convert_bev(label, image, calib, vp_res, bins, bvres=0.05, yaw=False):
     annotations = list()
     categories = cfg.Datasets.A2D2.CATEGORIES_TO_USE
     for boxes, obj in label.items():
@@ -59,7 +59,7 @@ def convert_bev(label, image, calib, vp_res, bins, bvres=0.05, viewpoint=False):
                          obj['size'][0] * 255 / 3.,
                          ((pts_3d_velo[0][2] + velodyne_h) + obj['size'][0] * 0.5) * 255 / 3.]
         ann["object"] = [1]
-        if viewpoint:
+        if yaw:
             ann['yaw'] = [rad2bin(obj['rot_angle'], bins), obj['rot_angle']] if vp_res else [
                 rad2bin(obj['rotation_y'], bins)]
 

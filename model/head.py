@@ -114,44 +114,12 @@ class ROIHeads(torch.nn.Module):
         # convergence and empirically improves box AP on COCO by about 0.5
         # points (under one tested configuration).
         # targets = [image for image in batch[:]]
-        bbox2d_shape = targets['bbox2d'].shape
-        bbox2d_batch = list()
-        category_batch = list()
-        yaw_batch = list()
-        yaw_rads_batch = list()
-        bbox3d_batch = list()
-        for i in range(bbox2d_shape[0]):
-            bbox2d = targets['bbox2d'][i, :]
-            weight = bbox2d[:, 2] - bbox2d[:, 0]
-            x = torch.where(weight > 0)
-            bbox2d = bbox2d[:x[0][-1] + 1, :]
-            bbox2d_batch.append(bbox2d)
-            # print('\nhead bbox2d.shape :', bbox2d.shape)
-            # print('head bbox2d :', bbox2d)
-
-            category = targets['category'][i, :]
-            category = category[torch.where(category < 3)]
-            category_batch.append(category)
-
-            valid_yaw = targets['yaw'][i, :][torch.where(targets['yaw'][i, :] < 13)]
-            yaw_batch.append(valid_yaw)
-
-            valid_yaw_rads = targets['yaw_rads'][i, :][torch.where(targets['yaw_rads'][i, :] < 13)]
-            yaw_rads_batch.append(valid_yaw_rads)
-
-            weight_3d = targets['bbox3d'][i, :, 2]
-            valid_3d = targets['bbox3d'][i, :][torch.where(weight_3d > 0)]
-            bbox3d_batch.append(valid_3d)
-
-
-            # print('head category.shape :', category.shape)
-            # print('head category :', category)
 
         if self.proposal_append_gt:
-            proposals = add_ground_truth_to_proposals(bbox2d_batch, proposals)
+            proposals = add_ground_truth_to_proposals(targets['bbox2d'], proposals)
         proposals_with_gt = []
-        for bbox2d_per_image,bbox3d_per_image, category_per_image, yaw_par_image, yaw_rads_par_image, instance_per_image in zip(
-                bbox2d_batch, bbox3d_batch, category_batch, yaw_batch, yaw_rads_batch, proposals):
+        for bbox2d_per_image, bbox3d_per_image, category_per_image, yaw_par_image, yaw_rads_par_image, instance_per_image in zip(
+                targets['bbox2d'], targets['bbox3d'], targets['category'], targets['yaw'], targets['yaw_rads'], proposals):
             # has_gt = len(targets_per_image) > 0
             match_quality_matrix = pairwise_iou(bbox2d_per_image, instance_per_image.get("proposal_boxes"))
             matched_idxs, matched_labels = self.proposal_matcher(match_quality_matrix)
@@ -175,11 +143,14 @@ class ROIHeads(torch.nn.Module):
                 instance_per_image['yaw'] = yaw_par_image[sampled_targets]
                 instance_per_image['yaw_rads'] = yaw_rads_par_image[sampled_targets]
                 instance_per_image['bbox3d'] = bbox3d_per_image[sampled_targets]
-                for (trg_name, trg_value) in targets.items():
-                    if trg_name != 'image':
-                        if not trg_name in instance_per_image:
-                            val = trg_value[i, :]
-                            instance_per_image[trg_name] = val[sampled_targets]
+                instance_per_image['bbox2d'] = bbox2d_per_image[sampled_targets]
+                # for (trg_name, trg_value) in targets.items():
+                #     if trg_name != 'image':
+                #         if not trg_name in instance_per_image:
+                #             print(trg_name)
+                #             print(trg_value.shape)
+                #             print(sampled_targets.shape)
+                #             instance_per_image[trg_name] = trg_value[sampled_targets]
             proposals_with_gt.append(instance_per_image)
 
         return proposals_with_gt
@@ -259,11 +230,11 @@ class StandardROIHeads(ROIHeads):
         :param proposals: (list[dict[torch.tensor]])
                  [{'proposal_boxes': torch.Size([2000, 4]), 'objectness_logits': torch.Size([2000])} * batch]
         :return:
-            pred :{'pred_class_logits': torch.Size([1024, 4])
-                  'pred_proposal_deltas': torch.Size([1024, 12])
-                  'viewpoint_logits': torch.Size([1024, 36])
-                  'viewpoint_residuals': torch.Size([1024, 36])
-                  'height_logits': torch.Size([1024, 6])
+            pred :{'head_class_logits': torch.Size([1024, 4])
+                  'bbox_3d_logits': torch.Size([1024, 12])
+                  'head_yaw_logits': torch.Size([1024, 36])
+                  'head_yaw_residuals': torch.Size([1024, 36])
+                  'head_height_logits': torch.Size([1024, 6])
 
                   'head_proposals': [{'proposal_boxes': torch.Size([512, 4])
                                       'objectness_logits': torch.Size([512])
@@ -412,20 +383,20 @@ class FastRCNNOutputLayers(nn.Module):
         for l in [self.cls_score, self.bbox_pred]:
             nn.init.constant_(l.bias, 0)
 
-        self.viewpoint = cfg.Model.Structure.VIEWPOINT
+        self.yaw = cfg.Model.Structure.YAW
         viewpoint_bins = cfg.Model.Structure.VP_BINS
-        self.viewpoint_residual = cfg.Model.Structure.VIEWPOINT_RESIDUAL
+        self.yaw_residual = cfg.Model.Structure.YAW_RESIDUAL
         self.height_training = cfg.Model.Structure.HEIGHT_TRAINING
-        if self.viewpoint:
-            self.viewpoint_pred = nn.Linear(input_size, viewpoint_bins * num_classes)
-            # torch.nn.init.kaiming_normal_(self.viewpoint_pred.weight,nonlinearity='relu')
-            nn.init.xavier_normal_(self.viewpoint_pred.weight)
-            nn.init.constant_(self.viewpoint_pred.bias, 0)
-        if self.viewpoint_residual:
-            self.viewpoint_pred_residuals = nn.Linear(input_size, viewpoint_bins * num_classes)
-            nn.init.xavier_normal_(self.viewpoint_pred_residuals.weight)
-            # torch.nn.init.kaiming_normal_(self.viewpoint_pred_residuals.weight,nonlinearity='relu')
-            nn.init.constant_(self.viewpoint_pred_residuals.bias, 0)
+        if self.yaw:
+            self.yaw_pred = nn.Linear(input_size, viewpoint_bins * num_classes)
+            # torch.nn.init.kaiming_normal_(self.yaw_pred.weight,nonlinearity='relu')
+            nn.init.xavier_normal_(self.yaw_pred.weight)
+            nn.init.constant_(self.yaw_pred.bias, 0)
+        if self.yaw_residual:
+            self.yaw_pred_residuals = nn.Linear(input_size, viewpoint_bins * num_classes)
+            nn.init.xavier_normal_(self.yaw_pred_residuals.weight)
+            # torch.nn.init.kaiming_normal_(self.yaw_pred_residuals.weight,nonlinearity='relu')
+            nn.init.constant_(self.yaw_pred_residuals.bias, 0)
         if self.height_training:
             self.height_pred = nn.Linear(input_size, 2 * num_classes)
             nn.init.xavier_normal_(self.height_pred.weight)
@@ -436,12 +407,12 @@ class FastRCNNOutputLayers(nn.Module):
         if x.dim() > 2:
             x = torch.flatten(x, start_dim=1)
         pred = dict()
-        pred["pred_class_logits"] = self.cls_score(x)
-        pred['pred_proposal_deltas'] = self.bbox_pred(x)
-        if self.viewpoint:
-            pred['viewpoint_logits'] = self.viewpoint_pred(x)
-            pred['viewpoint_residuals'] = self.viewpoint_pred_residuals(x) if self.viewpoint_residual else None
+        pred["head_class_logits"] = self.cls_score(x)
+        pred['bbox_3d_logits'] = self.bbox_pred(x)
+        if self.yaw:
+            pred['head_yaw_logits'] = self.yaw_pred(x)
+            pred['head_yaw_residuals'] = self.yaw_pred_residuals(x) if self.yaw_residual else None
             if self.height_training:
-                pred['height_logits'] = self.height_pred(x)
+                pred['head_height_logits'] = self.height_pred(x)
 
         return pred

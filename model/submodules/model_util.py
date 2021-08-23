@@ -2,7 +2,6 @@ import torch
 from torch.nn import functional as F
 
 
-
 class Conv2d(torch.nn.Conv2d):
     """
     A wrapper around :class:`torch.nn.Conv2d` to support zero-size tensor and more features.
@@ -41,3 +40,39 @@ class Conv2d(torch.nn.Conv2d):
         if self.activation is not None:
             x = self.activation(x)
         return x
+
+
+def remove_padding(batch_input):
+    batch, _, _, _ = batch_input['image'].shape
+    print(batch)
+    bbox2d_batch = list()
+    category_batch = list()
+    yaw_batch = list()
+    yaw_rads_batch = list()
+    bbox3d_batch = list()
+    for i in range(batch):
+        bbox2d = batch_input['bbox2d'][i, :]
+        weight = bbox2d[:, 2] - bbox2d[:, 0]
+        x = torch.where(weight > 0)
+        bbox2d = bbox2d[:x[0][-1] + 1, :]
+        bbox2d_batch.append(bbox2d)
+        # print('\nhead bbox2d.shape :', bbox2d.shape)
+        # print('head bbox2d :', bbox2d)
+
+        category = batch_input['category'][i, :]
+        category = category[torch.where(category < 3)]
+        category_batch.append(category)
+
+        valid_yaw = batch_input['yaw'][i, :][torch.where(batch_input['yaw'][i, :] < 13)]
+        yaw_batch.append(valid_yaw)
+
+        valid_yaw_rads = batch_input['yaw_rads'][i, :][torch.where(batch_input['yaw_rads'][i, :] >= 0)]
+        yaw_rads_batch.append(valid_yaw_rads)
+
+        weight_3d = batch_input['bbox3d'][i, :, 2]
+        valid_3d = batch_input['bbox3d'][i, :][torch.where(weight_3d > 0)]
+        bbox3d_batch.append(valid_3d)
+    print(batch_input.keys())
+    new_batch_input = {'bbox2d': bbox2d_batch, 'category': category_batch, 'yaw': yaw_batch, 'yaw_rads': yaw_rads_batch,
+                       'bbox3d': bbox3d_batch, 'image': batch_input['image']}
+    return new_batch_input

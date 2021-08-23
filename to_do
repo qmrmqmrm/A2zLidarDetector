@@ -1,0 +1,40 @@
+--- 8.12
+architecture.preprocess 에서
+input의 image 제외한 나머지 이미지 단위로 쪼개서 list에 담기
+
+
+
+
+
+--- 8.10
+build_model
+	raise customerror name이 없는 경우 에러내기 o
+	backbone_factory 쪼개기 o
+	말단 함수에 입력, 출력 타입 shape 의미 정리
+
+
+convert_bev
+get categories from config o
+
+
+a2d2_trim_empty.py
+a2d2 annotation 있는지 확인해서
+annotation 없는 것 bev 이미지 삭제하기
+
+
+device를 config에서 한번에 바꾸기
+
+
+head는 batch 단위를 for문으로 돌리기 o
+
+
+
+
+--- 8.5
+loader: 박스 잘 그려지게
+backbone, neck, rpn, head 순서대로 구현하고
+	각각에 랜덤텐서 넣어서 원하는 shape의 출력 나오는지 확인
+model factory, architecture 구현
+loss factory, loss pool 구현
+train_val을 pytorch로 변환
+

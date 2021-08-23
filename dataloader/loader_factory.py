@@ -30,10 +30,8 @@ def test_data_loader():
     train_loader = get_dataset("a2d2", 4)
     for i, features in enumerate(train_loader):
         print("---- frame", i)
-        print('features', features)
-        for key, val in features.items():
-            print("key val:", key, type(val), val.shape)
-
+        print('features', type(features))
+        # for key, val in features.items():
         image = features["image"].detach().numpy().astype(np.uint8)[0]
         boxes = features["bbox2d"].detach().numpy()[0]
         box_image = uf.draw_box(image, boxes)
