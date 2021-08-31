@@ -8,6 +8,8 @@ import torch.nn.functional as F
 from config import Config as cfg
 from train.loss_util import distribute_box_over_feature_map
 from model.submodules.matcher import Matcher
+from log.visual_log import VisualLog
+from log.anchor_log import AnchorLog
 
 DEVICE = cfg.Model.Structure.DEVICE
 
@@ -39,9 +41,11 @@ class LogFile:
 
 
 class LogData:
-    def __init__(self):
+    def __init__(self, visual_log, ckpt_path, epoch):
         self.batch = pd.DataFrame()
         self.start = timer()
+        self.visual_logger = VisualLog(ckpt_path, epoch) if visual_log else None
+        self.visual_logger = AnchorLog(ckpt_path, epoch) if visual_log else None
         self.summary = dict()
         self.nan_grad_count = 0
         self.anchor_matcher = Matcher(
@@ -58,12 +62,19 @@ class LogData:
 
         # self.check_nan(batch_data, grtr, pred)
         batch_data = self.set_precision(batch_data, 5)
+        # test = self.prediction_nms(pred)
         self.batch = self.batch.append(batch_data, ignore_index=True)
         print("\n--- batch_data:", batch_data)
+        if self.visual_logger:
+            self.visual_logger(step, grtr, pred)
         # if step % 200 == 10:
         #     print("\n--- batch_data:", batch_data)
 
         #     self.check_pred_scales(pred)
+
+    #
+    # def show_box(self, grtr,pred):
+    #     img =
 
     def analyze_objectness(self, grtr, pred):
         anchors = pred['anchors']
@@ -115,16 +126,31 @@ class LogData:
     def get_summary(self):
         return self.summary
 
-    #
+
+    def prediction_nms(self, pred):
+        print('prediction_nms')
+        pred_objectness_logits = pred['pred_objectness_logits']
+
+        gt_class = torch.cat(pred['batched_input']['category'])
+        num_box = gt_class.shape[0]
+
+        max_ctgr_probs = torch.max(pred['head_class_logits'][:, :-1], dim=-1)
+
+        pred_proposal_deltas = pred['bbox_3d_logits']
+        print(pred_proposal_deltas.shape)
+        filter_mask = scores > 3  # R x K
+        filter_inds = filter_mask.nonzero()
+        scores = scores[filter_mask]
+
+        print(scores.shape)
+
     def recall_precision(self, gt, pred):
-        gi_class = torch.cat(pred['batched_input']['category'])
-        print('gt_input')
-        print(gi_class)
-        print(gi_class.shape)
-        gt_shape = gi_class.shape
+        gt_class = torch.cat(pred['batched_input']['category'])
+        gt_shape = gt_class.shape
         scores = pred['head_class_logits']
         head_proposals = pred['head_proposals']
         gt_classes = torch.cat([p['gt_category'] for p in head_proposals], dim=0).type(torch.int64).to(DEVICE)
+
         gt_onehot = F.one_hot(gt_classes)
         max_scores = torch.argmax(scores, dim=1)
         score_onehot = F.one_hot(max_scores)
@@ -160,5 +186,5 @@ class LogData:
         # TN = gt_true and pred_false
         # FP = gt_false and pred_true
         # FN = gt_false and pred_false
-        # precision = TP / (FP + TP)
-        # recall = TP / (TN + TP)
+        # precision = TP / (FP + TP) pre->1024(not 0
+        # recall = TP / (TN + TP) gt

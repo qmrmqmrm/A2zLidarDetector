@@ -110,11 +110,7 @@ class RPN(nn.Module):
         )
         self.rpn_head = StandardRPNHead([input_shape[f] for f in self.in_features])
 
-    def forward(
-            self,
-            image_shape,
-            features
-    ):
+    def forward(self, image_shape, features):
         """
 
          :param image_shape: (torch.Size): torch.Size([2, 3, 704, 1408])
@@ -125,15 +121,15 @@ class RPN(nn.Module):
          :return:
              proposals (list[dict[torch.tensor]]): [{'proposal_boxes': torch.Size([2000, 4]),
                                                     'objectness_logits': torch.Size([2000])} * batch]
-             auxiliary (dict[list[torch.tensor]]): {'pred_objectness_logits' : [torch.Size([batch, 557568]),
-                                                    torch.Size([batch, 139392]),
-                                                    torch.Size([batch, 34848])]
-                                                    'pred_anchor_deltas' : [torch.Size([batch, 557568, 4]),
-                                                                            torch.Size([batch, 139392, 4]),
-                                                                            torch.Size([batch, 34848, 4])]
-                                                    'anchors' : [torch.Size([557568, 4])
-                                                                 torch.Size([139392, 4])
-                                                                 torch.Size([34848, 4])]}
+             auxiliary (dict[list[torch.tensor]]): {'pred_objectness_logits' : [torch.Size([batch, 557568(176 * 352 * 9)]),
+                                                    torch.Size([batch, 139392(88 * 176 * 9)]),
+                                                    torch.Size([batch, 34848(44 * 88 * 9)])]
+                                                    'pred_anchor_deltas' : [torch.Size([batch, 557568(176 * 352 * 9), 4]),
+                                                                            torch.Size([batch, 139392(88 * 176 * 9), 4]),
+                                                                            torch.Size([batch, 34848(44 * 88 * 9), 4])]
+                                                    'anchors' : [torch.Size([557568(176 * 352 * 9), 4])
+                                                                 torch.Size([139392(88 * 176 * 9), 4])
+                                                                 torch.Size([34848(44 * 88 * 9), 4])]}
         """
         image_sizes = [(image_shape[2], image_shape[3]) for i in range(image_shape[0])]
         features = [features[f] for f in self.in_features]
@@ -162,13 +158,7 @@ class RPN(nn.Module):
         )
         return proposals, aux_outputs
 
-    def predict_proposals(
-            self,
-            anchors,
-            pred_objectness_logits,
-            pred_anchor_deltas,
-            image_sizes,
-    ):
+    def predict_proposals(self, anchors, pred_objectness_logits, pred_anchor_deltas, image_sizes):
         """
         Decode all the predicted box regression deltas to proposals. Find the top proposals
         by applying NMS and removing boxes that are too small.

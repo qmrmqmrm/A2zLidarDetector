@@ -12,16 +12,16 @@ from config import Config as cfg
 
 
 class A2D2Dataset(DatasetBase):
-    def __init__(self, root_path, max_box=cfg.Datasets.A2D2.MAX_NUM):
-        super().__init__(root_path)
+    def __init__(self, root_path, split, max_box=cfg.Datasets.A2D2.MAX_NUM):
+        super().__init__(root_path, split)
         self.max_box = max_box
         self.calib_dict = get_calibration(root_path)
         self.categories = cfg.Datasets.A2D2.CATEGORIES_TO_USE
         self.last_sample = self.__getitem__(91)
         del self.last_sample['image']
 
-    def list_frames(self, root_dir):
-        img_files = sorted(glob.glob(os.path.join(root_dir, 'image', '*.png')))
+    def list_frames(self, root_dir, split):
+        img_files = sorted(glob.glob(os.path.join(root_dir, split, '*/image', '*.png')))
         return img_files
 
     def __getitem__(self, index):
@@ -31,6 +31,7 @@ class A2D2Dataset(DatasetBase):
                     'bbox3d': [fixbox, 6], 'object': [fixbox, 1], 'yaw': [fixbox, 2]}
         """
         image_file = self.img_files[index]
+        print(image_file)
         image = cv2.imread(image_file)
         features = dict()
 
@@ -45,6 +46,7 @@ class A2D2Dataset(DatasetBase):
         else:
             anns = self.zero_annotation()
         features.update(anns)
+        features['image_file'] = image_file
         # map_anns = self.gather_featmaps(anns["bbox2d"], anns["object"])
         # features.update(map_anns)
         return features
@@ -62,7 +64,7 @@ class A2D2Dataset(DatasetBase):
             n = pts_3d_ref.shape[0]
             pts_3d_homo = np.hstack((pts_3d_ref, np.ones((n, 1))))
             pts_3d_velo = np.dot(pts_3d_homo, np.transpose(calib["C2V"]))
-            bbox_xmin, bbox_ymin, bbox_xmax, bbox_ymax = self.obtain_bvbox(obj, image, pts_3d_velo, 0.05)
+            bbox_xmin, bbox_ymin, bbox_xmax, bbox_ymax = self.obtain_bvbox(obj, image, pts_3d_velo, bvres)
             if bbox_xmin < 0:
                 continue
 
@@ -90,7 +92,8 @@ class A2D2Dataset(DatasetBase):
         length = obj['size'][1]
         width = obj['size'][0]
         yaw = obj['rot_angle']
-
+        # print('lwh')
+        # print(length, width, yaw)
         # Compute the four vertexes coordinates
         corners = np.array([[centroid[0] - length / 2., centroid[1] + width / 2.],
                             [centroid[0] + length / 2., centroid[1] + width / 2.],
@@ -158,6 +161,7 @@ class A2D2Dataset(DatasetBase):
             #     bbox2d = bbox2d[:x[0][-1] + 1, :]
             #
             #     print('loader bbox2d.shape :', bbox2d.shape)
+            #     print('loader bbox2d :', bbox2d)
             #     print('loader bbox2d :', bbox2d)
             # if key == 'category':
             #     category = gathered_anns[key]

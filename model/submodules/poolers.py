@@ -32,7 +32,8 @@ def assign_boxes_to_levels(box_lists, min_level, max_level, canonical_box_size, 
             `self.min_level + i`).
     """
     eps = sys.float_info.epsilon
-    box_sizes = torch.sqrt(torch.cat([(boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1]) for boxes in box_lists]))
+    box_sizes = torch.sqrt(
+        torch.cat([(boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1]) for boxes in box_lists]))
     # Eqn.(1) in FPN paper
     level_assignments = torch.floor(
         canonical_level + torch.log2(box_sizes / canonical_box_size + eps)
@@ -213,15 +214,11 @@ class ROIPooler(nn.Module):
         assert isinstance(output_size[0], int) and isinstance(output_size[1], int)
         self.output_size = output_size
 
-        if pooler_type == "ROIAlignV2":
-            self.level_poolers = nn.ModuleList(
-                ROIAlign(
-                    output_size, spatial_scale=scale, sampling_ratio=sampling_ratio, aligned=True
-                )
-                for scale in scales
-            )
-        else:
-            raise ValueError("Unknown pooler type: {}".format(pooler_type))
+        # if pooler_type == "ROIAlignV2":
+        self.level_poolers = nn.ModuleList(
+            ROIAlign(output_size, spatial_scale=scale, sampling_ratio=sampling_ratio, aligned=True) for scale in scales)
+        # else:
+        #     raise ValueError("Unknown pooler type: {}".format(pooler_type))
 
         # Map scale (defined as 1 / stride) to its feature map level under the
         # assumption that stride is a power of 2.
@@ -255,22 +252,19 @@ class ROIPooler(nn.Module):
             box_lists, list
         ), "Arguments to pooler must be lists"
         assert (
-            len(x) == num_level_assignments
+                len(x) == num_level_assignments
         ), "unequal value, num_level_assignments={}, but x is list of {} Tensors".format(
             num_level_assignments, len(x)
         )
 
         assert len(box_lists) == x[0].size(
-            0
-        ), "unequal value, x[0] batch dim 0 is {}, but box_list has length {}".format(
-            x[0].size(0), len(box_lists)
-        )
+            0), "unequal value, x[0] batch dim 0 is {}, but box_list has length {}".format(x[0].size(0), len(box_lists))
         if len(box_lists) == 0:
             return torch.zeros(
                 (0, x[0].shape[1]) + self.output_size, device=x[0].device, dtype=x[0].dtype
             )
 
-        pooler_fmt_boxes = convert_boxes_to_pooler_format(box_lists)
+        pooler_fmt_boxes = convert_boxes_to_pooler_format(box_lists)  # torch.Size([batch * 512, 5(batch idx + box)])
 
         if num_level_assignments == 1:
             return self.level_poolers[0](x[0], pooler_fmt_boxes)

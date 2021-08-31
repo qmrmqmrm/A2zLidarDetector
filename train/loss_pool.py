@@ -1,3 +1,5 @@
+import cv2
+import os
 import torch
 import torch.nn.functional as F
 import numpy as np
@@ -7,6 +9,7 @@ from config import Config as cfg
 from model.submodules.box_regression import Box2BoxTransform
 from model.submodules.matcher import Matcher
 from train.loss_util import distribute_box_over_feature_map
+from utils.util_function import visual
 
 DEVICE = cfg.Model.Structure.DEVICE
 
@@ -30,37 +33,35 @@ class LossBase:
             'bbox2d': [batch, fixbox, 4], 'bbox3d': [batch, fixbox, 6], 'object': [batch, fixbox, 1],
             'yaw': [batch, fixbox, 1], 'yaw_rads': [batch, fixbox, 1]}
         :param pred:
-                {# header outputs
-                'head_class_logits': torch.Size([1024, 4])
-                'bbox_3d_logits': torch.Size([1024, 12])
-                'head_yaw_logits': torch.Size([1024, 36])
-                'head_yaw_residuals': torch.Size([1024, 36])
-                'head_height_logits': torch.Size([1024, 6])
+                pred :{'head_class_logits': torch.Size([batch * 512, 4])
+                      'bbox_3d_logits': torch.Size([batch * 512, 12])
+                      'head_yaw_logits': torch.Size([batch * 512, 36])
+                      'head_yaw_residuals': torch.Size([batch * 512, 36])
+                      'head_height_logits': torch.Size([batch * 512, 6])
 
-                'head_proposals': [{'proposal_boxes': torch.Size([512, 4])
-                                    'objectness_logits': torch.Size([512])
-                                    'category': torch.Size([512, 1])
-                                    'bbox2d': torch.Size([512, 4])
-                                    'bbox3d': torch.Size([512, 6])
-                                    'object': torch.Size([512, 1])
-                                    'yaw': torch.Size([512, 2])} * batch]
+                      'head_proposals': [{'proposal_boxes': torch.Size([512, 4])
+                                          'objectness_logits': torch.Size([512])
+                                          'gt_category': torch.Size([512, 1])
+                                          'bbox2d': torch.Size([512, 4])
+                                          'bbox3d': torch.Size([512, 6])
+                                          'object': torch.Size([512, 1])
+                                          'yaw': torch.Size([512])
+                                          'yaw_rads': torch.Size([512])} * batch]
 
-                # rpn outputs
-                'rpn_proposals': [{'proposal_boxes': torch.Size([2000, 4]),
-                                  'objectness_logits': torch.Size([2000])} * batch]
+                      'rpn_proposals': [{'proposal_boxes': torch.Size([2000, 4]),
+                                        'objectness_logits': torch.Size([2000])} * batch]
 
-                'pred_objectness_logits' : [torch.Size([batch, 557568(176 * 352 * 9)]),
-                                            torch.Size([batch, 139392(88 * 176 * 9)]),
-                                            torch.Size([batch, 34848(44 * 88 * 9)])]
+                      'pred_objectness_logits' : [torch.Size([batch, 557568(176 * 352 * 9)]),
+                                                  torch.Size([batch, 139392(88 * 176 * 9)]),
+                                                  torch.Size([batch, 34848(44 * 88 * 9)])]
 
-                'pred_anchor_deltas' : [torch.Size([batch, 557568(176 * 352 * 9), 4]),
-                                        torch.Size([batch, 139392(88 * 176 * 9), 4]),
-                                        torch.Size([batch, 34848(44 * 88 * 9), 4])]
+                      'pred_anchor_deltas' : [torch.Size([batch, 557568(176 * 352 * 9), 4]),
+                                              torch.Size([batch, 139392(88 * 176 * 9), 4]),
+                                              torch.Size([batch, 34848(44 * 88 * 9), 4])]
 
-                'anchors' : [torch.Size([557568(176 * 352 * 9), 4])
-                             torch.Size([139392(88 * 176 * 9), 4])
-                             torch.Size([34848(44 * 88 * 9), 4])]
-                }
+                      'anchors' : [torch.Size([557568(176 * 352 * 9), 4])
+                                   torch.Size([139392(88 * 176 * 9), 4])
+                                   torch.Size([34848(44 * 88 * 9), 4])]
         :return:
         """
 
@@ -70,7 +71,7 @@ class Box2dRegression(LossBase):
         anchors = pred['anchors']
         pred_anchor_deltas = pred['pred_anchor_deltas']
 
-        gt_labels, gt_boxes = distribute_box_over_feature_map(anchors, features, self.anchor_matcher)
+        gt_labels, gt_boxes = distribute_box_over_feature_map(anchors, pred['batched_input'], self.anchor_matcher)
         gt_labels = torch.stack(gt_labels)  # (N, sum(Hi*Wi*Ai))
         anchors = torch.cat(anchors)
         gt_anchor_deltas = [self.box2box_transform.get_deltas(anchors, k) for k in gt_boxes]
@@ -89,6 +90,7 @@ class Box3dRegression(LossBase):
         bbox_3d_logits = pred['bbox_3d_logits']
         head_proposals = pred['head_proposals']
         gt_boxes3d = torch.cat([p['bbox3d'] for p in head_proposals])
+        gt_bbox2d = torch.cat([p['bbox2d'] for p in head_proposals])
         gt_classes = torch.cat([p['gt_category'] for p in head_proposals], dim=0)
         proposals = torch.cat([p['proposal_boxes'] for p in head_proposals])
 
@@ -99,19 +101,46 @@ class Box3dRegression(LossBase):
         cls_agnostic_bbox_reg = bbox_3d_logits.size(1) == box_dim
 
         bg_class_ind = head_class_logits.shape[1] - 1
-        fg_inds = torch.nonzero((gt_classes >= 0) & (gt_classes < bg_class_ind)).squeeze(
-            1
-        )
+        fg_inds = torch.nonzero((gt_classes >= 0) & (gt_classes < bg_class_ind)).squeeze(1)
+        # for i, image_file in enumerate(features['image_file']):
+        #     # inx = fg_inds[i:]
+        #     index = fg_inds[torch.nonzero((fg_inds >= (512 * i)) & (fg_inds < (512 * (i + 1)))).squeeze(1)]
+        #     li = image_file.split('/')[-3:]
+        #     a = '/'.join(li)
+        #
+        #     pred_path = os.path.join(cfg.Paths.RESULT_ROOT, 'image', cfg.Train.CKPT_NAME, 'pred', a)
+        #
+        #     pred_folder = '/'.join(pred_path.split('/')[:-1])
+        #     if not os.path.exists(pred_folder):
+        #         os.makedirs(pred_folder)
+        #     pred_img = cv2.imread(image_file)
+        #     for idx in index:
+        #         proposal = proposals[idx, :]
+        #         cv2.rectangle(pred_img, (int(proposal[0]), int(proposal[1])), (int(proposal[2]), int(proposal[3])),
+        #                       (255, 255, 255), 2)
+        #     cv2.imwrite(pred_path, pred_img)
+        #
+        #     gt = os.path.join(cfg.Paths.RESULT_ROOT, 'image', cfg.Train.CKPT_NAME, 'gt', a)
+        #     gt_folder = '/'.join(gt.split('/')[:-1])
+        #     if not os.path.exists(gt_folder):
+        #         os.makedirs(gt_folder)
+        #     gt_img = cv2.imread(image_file)
+        #     for idx in index:
+        #         bbox2d = gt_bbox2d[idx, :]
+        #         cv2.rectangle(gt_img, (int(bbox2d[0]), int(bbox2d[1])), (int(bbox2d[2]), int(bbox2d[3])),
+        #                       (255, 255, 255), 2)
+        #     cv2.imwrite(gt, gt_img)
 
         if cls_agnostic_bbox_reg:
             gt_class_cols = torch.arange(box_dim, device=DEVICE)
         else:
             fg_gt_classes = gt_classes[fg_inds]
             gt_class_cols = box_dim * fg_gt_classes[:, None].to(DEVICE) + torch.arange(box_dim, device=DEVICE)
-
+        # print(bbox_3d_logits[fg_inds[:, None].long(), gt_class_cols.long()])
         loss_box_reg = F.smooth_l1_loss(bbox_3d_logits[fg_inds[:, None].long(), gt_class_cols.long()],
                                         gt_proposal_deltas[fg_inds],
-                                        reduction='sum', beta=0.5)
+                                        reduction='sum', beta=0.0)
+
         loss_box_reg = loss_box_reg / gt_classes.numel()
         return loss_box_reg
 
@@ -233,7 +262,7 @@ class ObjectClassification(LossBase):
     def __call__(self, features, pred):
         anchors = pred['anchors']
         pred_objectness_logits = pred['pred_objectness_logits']
-        gt_labels, gt_boxes = distribute_box_over_feature_map(anchors, features, self.anchor_matcher)
+        gt_labels, gt_boxes = distribute_box_over_feature_map(anchors, pred['batched_input'], self.anchor_matcher)
         gt_labels = torch.stack(gt_labels)  # (N, sum(Hi*Wi*Ai))
         valid_mask = gt_labels >= 0
         loss = F.binary_cross_entropy_with_logits(

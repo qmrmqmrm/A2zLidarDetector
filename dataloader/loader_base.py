@@ -25,11 +25,11 @@ class DatasetBase(Dataset):
     """ Diabetes dataset."""
 
     # Initialize your data, download, etc.
-    def __init__(self, root_dir):
+    def __init__(self, root_dir, split):
         self.root_dir = root_dir
-        self.img_files = self.list_frames(root_dir)
+        self.img_files = self.list_frames(root_dir, split)
 
-    def list_frames(self, root_dir):
+    def list_frames(self, root_dir, split):
         raise NotImplementedError
 
     def __getitem__(self, index):

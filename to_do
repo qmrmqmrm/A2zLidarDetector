@@ -1,3 +1,20 @@
+--- 8.25
+- rpn: 2000개에서 pos는 다 포함, neg, ignore 이런건 어떻게 샘플링하는지
+	- rpn proposal pos, neg 구분?
+- head 출력 pos, neg 구분?
+
+- train
+	- pos + neg: 어디까지 pos 어디부터 neg ??
+- test
+	- pos만 출력
+- 그림확인
+	- train: pos only, neg only, gt
+	- test: pos only, gt
+
+- log: epoch별 loss 종류별로 평균치 로깅
+- visual log: box 이미지로 만들어서 저장
+
+
 --- 8.12
 architecture.preprocess 에서
 input의 image 제외한 나머지 이미지 단위로 쪼개서 list에 담기

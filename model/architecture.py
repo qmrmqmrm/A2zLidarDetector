@@ -1,3 +1,6 @@
+import glob
+import os.path
+
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -54,19 +57,20 @@ class GeneralizedRCNN(ModelBase):
             'yaw': [batch, num, 1], 'yaw_rads': [batch, num, 1]}
 
         :return:
-            pred :{'head_class_logits': torch.Size([1024, 4])
-                  'bbox_3d_logits': torch.Size([1024, 12])
-                  'head_yaw_logits': torch.Size([1024, 36])
-                  'head_yaw_residuals': torch.Size([1024, 36])
-                  'head_height_logits': torch.Size([1024, 6])
+             pred :{'head_class_logits': torch.Size([batch * 512, 4])
+                  'bbox_3d_logits': torch.Size([batch * 512, 12])
+                  'head_yaw_logits': torch.Size([batch * 512, 36])
+                  'head_yaw_residuals': torch.Size([batch * 512, 36])
+                  'head_height_logits': torch.Size([batch * 512, 6])
 
                   'head_proposals': [{'proposal_boxes': torch.Size([512, 4])
                                       'objectness_logits': torch.Size([512])
-                                      'category': torch.Size([512, 1])
+                                      'gt_category': torch.Size([512, 1])
                                       'bbox2d': torch.Size([512, 4])
                                       'bbox3d': torch.Size([512, 6])
                                       'object': torch.Size([512, 1])
-                                      'yaw': torch.Size([512, 2])} * batch]
+                                      'yaw': torch.Size([512])
+                                      'yaw_rads': torch.Size([512])} * batch]
 
                   'rpn_proposals': [{'proposal_boxes': torch.Size([2000, 4]),
                                     'objectness_logits': torch.Size([2000])} * batch]
@@ -82,7 +86,6 @@ class GeneralizedRCNN(ModelBase):
                   'anchors' : [torch.Size([557568(176 * 352 * 9), 4])
                                torch.Size([139392(88 * 176 * 9), 4])
                                torch.Size([34848(44 * 88 * 9), 4])]
-                  }
         """
         batched_input = self.preprocess_input(batched_input)
         features = self.backbone(batched_input['image'])
@@ -98,6 +101,8 @@ class GeneralizedRCNN(ModelBase):
         image = self.normalizer(image)
         image = F.pad(image,(4,4,2,2), "constant", 0)
         batched_input['image'] = image
+        batched_input['bbox2d'] += torch.tensor([[[4, 2, 4, 2]]], dtype=torch.float32)
+        batched_input['bbox3d'][:, :, :2] += torch.tensor([[[4, 2]]], dtype=torch.float32)
         batched_input = remove_padding(batched_input)
         return batched_input
 

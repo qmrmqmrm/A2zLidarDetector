@@ -1,9 +1,10 @@
-import sys
+import sys, os
 import torch
 import cv2
 from detectron2.layers import nonzero_tuple
 
 from config import Config as cfg
+
 DEVICE = cfg.Model.Structure.DEVICE
 
 
@@ -138,7 +139,7 @@ def draw_box(img, bboxes_2d):
 
 
 def subsample_labels(
-    labels: torch.Tensor, num_samples: int, positive_fraction: float, bg_label: int
+        labels: torch.Tensor, num_samples: int, positive_fraction: float, bg_label: int
 ):
     """
     Return `num_samples` (or fewer, if not enough found)
@@ -166,6 +167,10 @@ def subsample_labels(
         pos_idx, neg_idx (Tensor):
             1D vector of indices. The total length of both is `num_samples` or fewer.
     """
+    # gt_classes : torch.Size([2000 + gt_num])
+    # self.batch_size_per_image : 512
+    # self.positive_fraction : 0.25
+    # self.num_classes : 3
     positive = nonzero_tuple((labels != -1) & (labels != bg_label))[0]
     negative = nonzero_tuple(labels == bg_label)[0]
 
@@ -183,3 +188,14 @@ def subsample_labels(
     pos_idx = positive[perm1]
     neg_idx = negative[perm2]
     return pos_idx, neg_idx
+
+
+def visual(folder, index):
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+    gt_img = cv2.imread(folder)
+    for ind in ini:
+        boxes3d = gt_boxes3d[ind, :]
+        cv2.rectangle(gt_img, (int(boxes3d[0]), int(boxes3d[1])), (int(boxes3d[2]), int(boxes3d[3])), (255, 255, 255),
+                      2)
+    cv2.imwrite(gt, gt_img)

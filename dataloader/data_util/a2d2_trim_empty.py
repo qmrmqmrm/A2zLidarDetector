@@ -10,24 +10,35 @@ from utils.util_function import print_progress
 
 
 def trim_empty_anno_frames(root_path):
-    img_files = sorted(glob.glob(os.path.join(root_path, 'image', '*.png')))
-    calib_dict = get_calibration(root_path)
-    num_img = len(img_files)
-    for i, image_file in enumerate(img_files):
-        image = cv2.imread(image_file)
-        label_file = image_file.replace('image/', 'label/').replace('.png', '.json')
-        cam_file = image_file.replace('image/', 'camera/')
-        with open(label_file, 'r') as f:
-            label = json.load(f)
-        anns = convert_bev(label, image, calib_dict, yaw=True, vp_res=True, bins=12)
-        if len(anns) == 0:
-            if os.path.isfile(image_file):
-                os.remove(image_file)
-            if os.path.isfile(label_file):
-                os.remove(label_file)
-            if os.path.isfile(cam_file):
-                os.remove(cam_file)
-        print_progress(f"{i}/{num_img}")
+    folders_train = ['20180807_145028', '20180810_142822', '20180925_101535', '20180925_112730', '20180925_124435',
+                     '20180925_135056', '20181008_095521', '20181016_125231', '20181107_132300', '20181107_132730',
+                     '20181107_133258', '20181108_084007', '20181108_091945', '20181108_103155', '20181108_123750']
+
+    folders_test = ['20181204_135952', '20181204_154421', '20181204_170238']
+    splits = {'train': folders_train, 'test': folders_test}
+    for split, folders in splits.items():
+        num_folder = len(folders)
+        for j, folder in enumerate(folders):
+            img_files = sorted(glob.glob(os.path.join(root_path, split, folder, 'image', '*.png')))
+            calib_dict = get_calibration(root_path)
+            num_img = len(img_files)
+            for i, image_file in enumerate(img_files):
+                print(image_file)
+                image = cv2.imread(image_file)
+                label_file = image_file.replace('image/', 'label/').replace('.png', '.json')
+                cam_file = image_file.replace('image/', 'camera/')
+                print(label_file)
+                with open(label_file, 'r') as f:
+                    label = json.load(f)
+                anns = convert_bev(label, image, calib_dict, yaw=True, vp_res=True, bins=12)
+                if len(anns) == 0:
+                    if os.path.isfile(image_file):
+                        os.remove(image_file)
+                    if os.path.isfile(label_file):
+                        os.remove(label_file)
+                    if os.path.isfile(cam_file):
+                        os.remove(cam_file)
+                print_progress(f"{i}/{num_img} {j}/{num_folder}")
 
 
 def convert_bev(label, image, calib, vp_res, bins, bvres=0.05, yaw=False):

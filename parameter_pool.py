@@ -28,6 +28,8 @@ class TrainingPlan:
         ('a2d2', 1, 0.000001, LossComb.BIRDNET, True),
         ('a2d2', 10, 0.0001, LossComb.BIRDNET, True),
         ('a2d2', 10, 0.00001, LossComb.BIRDNET, True),
+        ('a2d2', 1, 0.000001, LossComb.BIRDNET, True),
+        ('a2d2', 1, 0.000001, LossComb.BIRDNET, True)
 
 
 

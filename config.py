@@ -5,7 +5,7 @@ import numpy as np
 
 class Config:
     class Paths:
-        RESULT_ROOT = "/media/dolphin/intHDD/birdnet_data/my_a2d2/result"
+        RESULT_ROOT = "/media/dolphin/intHDD/birdnet_data/bv_a2d2/result"
         TFRECORD = op.join(RESULT_ROOT, "pyloader")
         CHECK_POINT = op.join(RESULT_ROOT, "ckpt")
 
@@ -21,7 +21,7 @@ class Config:
 
         class A2D2:
             NAME = "a2d2"
-            PATH = "/media/dolphin/intHDD/birdnet_data/my_a2d2"
+            PATH = "/media/dolphin/intHDD/birdnet_data/bv_a2d2"
             CATEGORIES_TO_USE = ["Pedestrian", "Car", "Cyclist"]
             CATEGORY_REMAP = {}
             MAX_NUM = 15
@@ -91,6 +91,7 @@ class Config:
             PIXEL_MEAN = [0.0, 0.0, 0.0]
             PIXEL_STD = [1.0, 1.0, 1.0]
             ROTATED_BOX_TRAINING = True
+            NUM_CLASSES = 3
 
             BACKBONE_CONV_ARGS = {"activation": "leaky_relu", "scope": "back"}
             HEAD_CONV_ARGS = {"activation": "leaky_relu", "scope": "head"}
@@ -138,7 +139,7 @@ class Config:
             POSITIVE_FRACTION = 0.25
             SCORE_THRESH_TEST = 0.05
             NMS_THRESH_TEST = 0.5
-            NUM_CLASSES = 3
+
             PROPOSAL_APPEND_GT = True
 
         class ROI_BOX_HEAD:
@@ -155,7 +156,7 @@ class Config:
             NORM = ''
 
     class Train:
-        CKPT_NAME = "birdnet"
+        CKPT_NAME = "bid"
         MODE = ["eager", "graph"][1]
         BATCH_SIZE = 2
         TRAINING_PLAN = params.TrainingPlan.A2D2_SIMPLE

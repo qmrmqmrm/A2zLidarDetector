@@ -44,7 +44,6 @@ class Conv2d(torch.nn.Conv2d):
 
 def remove_padding(batch_input):
     batch, _, _, _ = batch_input['image'].shape
-    print(batch)
     bbox2d_batch = list()
     category_batch = list()
     yaw_batch = list()
@@ -72,7 +71,7 @@ def remove_padding(batch_input):
         weight_3d = batch_input['bbox3d'][i, :, 2]
         valid_3d = batch_input['bbox3d'][i, :][torch.where(weight_3d > 0)]
         bbox3d_batch.append(valid_3d)
-    print(batch_input.keys())
+
     new_batch_input = {'bbox2d': bbox2d_batch, 'category': category_batch, 'yaw': yaw_batch, 'yaw_rads': yaw_rads_batch,
                        'bbox3d': bbox3d_batch, 'image': batch_input['image']}
     return new_batch_input

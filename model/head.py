@@ -32,9 +32,9 @@ class ROIHeads(torch.nn.Module):
         super(ROIHeads, self).__init__()
 
         # fmt: off
-        self.batch_size_per_image = cfg.Model.ROI_HEADS.BATCH_SIZE_PER_IMAGE
-        self.positive_fraction = cfg.Model.ROI_HEADS.POSITIVE_FRACTION
-        self.num_classes = cfg.Model.ROI_HEADS.NUM_CLASSES
+        self.batch_size_per_image = cfg.Model.ROI_HEADS.BATCH_SIZE_PER_IMAGE  # 512
+        self.positive_fraction = cfg.Model.ROI_HEADS.POSITIVE_FRACTION  # 0.25
+        self.num_classes = cfg.Model.Structure.NUM_CLASSES
         self.proposal_append_gt = cfg.Model.ROI_HEADS.PROPOSAL_APPEND_GT
         self.cls_agnostic_bbox_reg = cfg.Model.ROI_BOX_HEAD.CLS_AGNOSTIC_BBOX_REG
         self.weights = cfg.Model.ROI_BOX_HEAD.BBOX_REG_WEIGHTS
@@ -81,13 +81,18 @@ class ROIHeads(torch.nn.Module):
             gt_classes[matched_labels == -1] = -1
         else:
             gt_classes = torch.zeros_like(matched_idxs) + self.num_classes
-
+        # gt_classes : torch.Size([2000 + gt_num])
+        # self.batch_size_per_image : 512
+        # self.positive_fraction : 0.25
+        # self.num_classes : 3
         sampled_fg_idxs, sampled_bg_idxs = subsample_labels(
             gt_classes, self.batch_size_per_image, self.positive_fraction, self.num_classes
         )
-
+        # sampled_fg_idxs : pos indax
+        # sampled_fg_idxs : neg indax
         sampled_idxs = torch.cat([sampled_fg_idxs, sampled_bg_idxs], dim=0)
-        return sampled_idxs, gt_classes[sampled_idxs]
+        # sampled_idxs 512
+        return sampled_idxs, gt_classes[sampled_idxs], sampled_fg_idxs, sampled_bg_idxs, gt_classes[sampled_fg_idxs]
 
     @torch.no_grad()
     def label_and_sample_proposals(self, proposals, targets):
@@ -114,46 +119,53 @@ class ROIHeads(torch.nn.Module):
         # convergence and empirically improves box AP on COCO by about 0.5
         # points (under one tested configuration).
         # targets = [image for image in batch[:]]
-
         if self.proposal_append_gt:
             proposals = add_ground_truth_to_proposals(targets['bbox2d'], proposals)
+            # [{'proposal_boxes': torch.Size([2000+gt_box, 4]), 'objectness_logits': torch.Size([2000+gt_box])} * batch]
         proposals_with_gt = []
-        for bbox2d_per_image, bbox3d_per_image, category_per_image, yaw_par_image, yaw_rads_par_image, instance_per_image in zip(
-                targets['bbox2d'], targets['bbox3d'], targets['category'], targets['yaw'], targets['yaw_rads'], proposals):
-            # has_gt = len(targets_per_image) > 0
-            match_quality_matrix = pairwise_iou(bbox2d_per_image, instance_per_image.get("proposal_boxes"))
-            matched_idxs, matched_labels = self.proposal_matcher(match_quality_matrix)
-            sampled_idxs, gt_classes = self._sample_proposals(
-                matched_idxs, matched_labels, category_per_image
-            )
-            # Set target attributes of the sampled proposals:
+        positive = []
 
-            instance_per_image['proposal_boxes'] = instance_per_image.get("proposal_boxes")[sampled_idxs]
-            instance_per_image['objectness_logits'] = instance_per_image.get("objectness_logits")[sampled_idxs]
+
+        for bbox2d_per_image, bbox3d_per_image, category_per_image, yaw_par_image, yaw_rads_par_image, proposal_per_image in zip(
+                targets['bbox2d'], targets['bbox3d'], targets['category'], targets['yaw'], targets['yaw_rads'],
+                proposals):
+            instance_per_image = dict()
+            # has_gt = len(targets_per_image) > 0
+            match_quality_matrix = pairwise_iou(bbox2d_per_image, proposal_per_image.get("proposal_boxes"))
+            matched_idxs, matched_labels = self.proposal_matcher(match_quality_matrix)
+            # matched_idxs :  torch.Size([2000+gt_box])
+            # matched_labels :  torch.Size([2000+gt_box])
+            sampled_idxs, gt_classes, sampled_fg_idxs, sampled_bg_idxs, gt_pos = self._sample_proposals(matched_idxs, matched_labels, category_per_image)
+            # sampled_idxs : torch.Size([512])
+            # gt_classes : torch.Size([512])
+            # Set target attributes of the sampled proposals:
+            positive_sample =  dict()
+            instance_per_image['proposal_boxes'] = proposal_per_image.get("proposal_boxes")[sampled_idxs]
+            positive_sample['proposal_boxes'] = proposal_per_image.get("proposal_boxes")[sampled_fg_idxs]
+            # torch.Size([512, 4])
+            instance_per_image['objectness_logits'] = proposal_per_image.get("objectness_logits")[sampled_idxs]
+            positive_sample['objectness_logits'] = proposal_per_image.get("objectness_logits")[sampled_fg_idxs]
+            # torch.Size([512])
             instance_per_image['gt_category'] = gt_classes
+            positive_sample['gt_category'] = gt_pos
+            # torch.Size([512])
 
             # We index all the attributes of targets that start with "gt_"
             # and have not been added to proposals yet (="gt_classes").
             if True:
                 sampled_targets = matched_idxs[sampled_idxs]
-                # NOTE: here the indexing waste some compute, because heads
-                # like masks, keypoints, etc, will filter the proposals again,
-                # (by foreground/background, or number of keypoints in the image, etc)
-                # so we essentially index the data twice.
                 instance_per_image['yaw'] = yaw_par_image[sampled_targets]
+                positive_sample['yaw'] = yaw_par_image
                 instance_per_image['yaw_rads'] = yaw_rads_par_image[sampled_targets]
+                positive_sample['yaw_rads'] = yaw_rads_par_image
                 instance_per_image['bbox3d'] = bbox3d_per_image[sampled_targets]
+                positive_sample['bbox3d'] = bbox3d_per_image
                 instance_per_image['bbox2d'] = bbox2d_per_image[sampled_targets]
-                # for (trg_name, trg_value) in targets.items():
-                #     if trg_name != 'image':
-                #         if not trg_name in instance_per_image:
-                #             print(trg_name)
-                #             print(trg_value.shape)
-                #             print(sampled_targets.shape)
-                #             instance_per_image[trg_name] = trg_value[sampled_targets]
+                positive_sample['bbox2d'] = bbox2d_per_image
             proposals_with_gt.append(instance_per_image)
+            positive.append(positive_sample)
 
-        return proposals_with_gt
+        return proposals_with_gt, positive
 
     def forward(self, batch_input, features, proposals):
         """
@@ -230,11 +242,11 @@ class StandardROIHeads(ROIHeads):
         :param proposals: (list[dict[torch.tensor]])
                  [{'proposal_boxes': torch.Size([2000, 4]), 'objectness_logits': torch.Size([2000])} * batch]
         :return:
-            pred :{'head_class_logits': torch.Size([1024, 4])
-                  'bbox_3d_logits': torch.Size([1024, 12])
-                  'head_yaw_logits': torch.Size([1024, 36])
-                  'head_yaw_residuals': torch.Size([1024, 36])
-                  'head_height_logits': torch.Size([1024, 6])
+            pred :{'head_class_logits': torch.Size([batch * 512, 4])
+                  'bbox_3d_logits': torch.Size([batch * 512, 12])
+                  'head_yaw_logits': torch.Size([batch * 512, 36])
+                  'head_yaw_residuals': torch.Size([batch * 512, 36])
+                  'head_height_logits': torch.Size([batch * 512, 6])
 
                   'head_proposals': [{'proposal_boxes': torch.Size([512, 4])
                                       'objectness_logits': torch.Size([512])
@@ -246,9 +258,12 @@ class StandardROIHeads(ROIHeads):
         """
 
         if self.training:
-            proposals = self.label_and_sample_proposals(proposals, batch_input)
+            proposals, gt_pos = self.label_and_sample_proposals(proposals, batch_input)
+        # proposals: [{'proposal_boxes': torch.Size([512, 4]), 'objectness_logits': torch.Size([512])} * batch]
         pred_instances = self._forward_box(features, proposals)
         pred_instances["head_proposals"] = proposals
+        pred_instances["gt_pos"] = gt_pos
+
         return pred_instances
 
     def _forward_box(self, features, proposals):
@@ -258,12 +273,14 @@ class StandardROIHeads(ROIHeads):
                 {'p2': torch.Size([batch, 256, 176, 352]),'p3': torch.Size([batch, 256, 88, 176]),
                 'p4': torch.Size([batch, 256, 44, 88]), 'p5': torch.Size([batch, 256, 22, 44])}
         :param proposals: (list[dict[torch.tensor]])
-                 [{'proposal_boxes': torch.Size([2000, 4]), 'objectness_logits': torch.Size([2000])} * batch]
+                 [{'proposal_boxes': torch.Size([512, 4]), 'objectness_logits': torch.Size([512])} * batch]
         :return:
         """
         features = [features[f] for f in self.in_features]
         box_features = self.box_pooler(features, [x["proposal_boxes"] for x in proposals])
+        # torch.Size([batch * 512, 256, 7, 7])
         box_features = self.box_head(box_features)
+        # torch.Size([batch * 512, 1024])
         pred = self.box_predictor(box_features)
         del box_features
         return pred
@@ -364,7 +381,7 @@ class FastRCNNOutputLayers(nn.Module):
                 Example box dimensions: 4 for regular XYXY boxes and 5 for rotated XYWHA boxes
         """
         super(FastRCNNOutputLayers, self).__init__()
-        num_classes = cfg.Model.ROI_HEADS.NUM_CLASSES
+        num_classes = cfg.Model.Structure.NUM_CLASSES
         cls_agnostic_bbox_reg = cfg.Model.ROI_BOX_HEAD.CLS_AGNOSTIC_BBOX_REG
         if isinstance(input_shape, int):  # some backward compatibility
             input_shape = ShapeSpec(channels=input_shape)
@@ -408,11 +425,16 @@ class FastRCNNOutputLayers(nn.Module):
             x = torch.flatten(x, start_dim=1)
         pred = dict()
         pred["head_class_logits"] = self.cls_score(x)
+        # torch.Size([batch * 512, 4(num_classes(3) + 1)])
         pred['bbox_3d_logits'] = self.bbox_pred(x)
+        # torch.Size([batch * 512, 12(num_bbox_reg_classes(3) * box_dim(4))])
         if self.yaw:
             pred['head_yaw_logits'] = self.yaw_pred(x)
+            # torch.Size([batch * 512, 36(viewpoint_bins(6) * num_classes(3))])
             pred['head_yaw_residuals'] = self.yaw_pred_residuals(x) if self.yaw_residual else None
+            # torch.Size([batch * 512, 36(viewpoint_bins(6) * num_classes(3))])
             if self.height_training:
                 pred['head_height_logits'] = self.height_pred(x)
+                # torch.Size([batch * 512, 6(2 * num_classes(3))])
 
         return pred
