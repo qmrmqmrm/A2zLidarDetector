@@ -229,23 +229,29 @@ class YawClassification(LossBase):
 class ObjectClassification(LossBase):
     def __call__(self, features, pred, auxi):
         gt_boxes_batch = features["bbox2d"]
-        gt_object_batch = torch.squeeze(features["object"])
         anchors_cat = torch.cat(pred['anchors'])
         pred_objectness_logits = torch.cat(pred['pred_objectness_logits'], dim=1)
 
         loss = 0
-        for gt_boxes_i, gt_object_i, pred_objectness_deltas_i in zip(gt_boxes_batch, gt_object_batch, pred_objectness_logits):
+        for gt_boxes_i, pred_objectness_deltas_i in zip(gt_boxes_batch, pred_objectness_logits):
             x2 = gt_boxes_i[:, 2]
             gt_boxes_i = gt_boxes_i[x2 > 0, :]
-            gt_object_i = gt_object_i[x2 > 0]
             match_quality_matrix = uf.pairwise_iou(gt_boxes_i, anchors_cat)  # [num_gt, sum HWA]
-            max_vals, max_inds = match_quality_matrix.max(dim=0)        # max_vals [sum HWA]
-            gt_object_map = gt_object_i[max_inds]
-            valid_mask = torch.logical_or(max_vals < self.anchor_iou_thresh[0], max_vals > self.anchor_iou_thresh[1])
+            max_ious, max_inds = match_quality_matrix.max(dim=0)        # max_ious [sum HWA]
+            gt_matches = (max_ious > self.anchor_iou_thresh[1]).type(torch.float32)
+            valid_mask = torch.logical_or(max_ious < self.anchor_iou_thresh[0], max_ious > self.anchor_iou_thresh[1])
+            pred_object_valid = pred_objectness_deltas_i[valid_mask]
+            gt_object_valid = gt_matches[valid_mask]
 
-            print('pred boxes i:', pred_objectness_deltas_i[valid_mask][0:-1:10000])
-            print('gt_boxes_i:', gt_object_map[valid_mask][0:-1:10000])
+            print('pred object:', pred_object_valid[0:-1:10000])
+            print('gt_matches:', gt_object_valid[0:-1:10000])
 
-            loss += F.binary_cross_entropy_with_logits(pred_objectness_deltas_i[valid_mask], gt_object_map[valid_mask], reduction="sum")
+            loss_map = F.binary_cross_entropy_with_logits(pred_object_valid, gt_object_valid, reduction="none")
+            large_mask = (loss_map > 10)
+            print('pred obj at large loss:', pred_object_valid[large_mask][:100])
+            print('grtr obj at large loss:', gt_object_valid[large_mask][:100])
+            print('large loss:', loss_map[large_mask][:100])
+
+            loss += loss_map.sum()
         print("objectness loss", loss)
         return loss
