@@ -262,7 +262,6 @@ class StandardROIHeads(ROIHeads):
         # proposals: [{'proposal_boxes': torch.Size([512, 4]), 'objectness_logits': torch.Size([512])} * batch]
         pred_instances = self._forward_box(features, proposals)
         pred_instances["head_proposals"] = proposals
-        pred_instances["gt_pos"] = gt_pos
 
         return pred_instances
 

@@ -72,6 +72,7 @@ class GeneralizedRCNN(ModelBase):
                                       'yaw': torch.Size([512])
                                       'yaw_rads': torch.Size([512])} * batch]
 
+                    rpn
                   'rpn_proposals': [{'proposal_boxes': torch.Size([2000, 4]),
                                     'objectness_logits': torch.Size([2000])} * batch]
 

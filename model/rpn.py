@@ -119,8 +119,8 @@ class RPN(nn.Module):
                     'p4': torch.Size([batch, 256, 44, 88]), 'p5': torch.Size([batch, 256, 22, 44])}
 
          :return:
-             proposals (list[dict[torch.tensor]]): [{'proposal_boxes': torch.Size([2000, 4]),
-                                                    'objectness_logits': torch.Size([2000])} * batch]
+             proposals (list[dict[torch.tensor]]): [{'proposal_boxes': torch.Size([A, 4]),
+                                                    'objectness_logits': torch.Size([A])} * batch]
              auxiliary (dict[list[torch.tensor]]): {'pred_objectness_logits' : [torch.Size([batch, 557568(176 * 352 * 9)]),
                                                     torch.Size([batch, 139392(88 * 176 * 9)]),
                                                     torch.Size([batch, 34848(44 * 88 * 9)])]

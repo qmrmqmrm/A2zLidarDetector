@@ -31,7 +31,6 @@ class A2D2Dataset(DatasetBase):
                     'bbox3d': [fixbox, 6], 'object': [fixbox, 1], 'yaw': [fixbox, 2]}
         """
         image_file = self.img_files[index]
-        print(image_file)
         image = cv2.imread(image_file)
         features = dict()
 

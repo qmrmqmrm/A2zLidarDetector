@@ -167,7 +167,7 @@ def subsample_labels(
         pos_idx, neg_idx (Tensor):
             1D vector of indices. The total length of both is `num_samples` or fewer.
     """
-    # gt_classes : torch.Size([2000 + gt_num])
+    # gt_classes : torch.Size([A + gt_num])
     # self.batch_size_per_image : 512
     # self.positive_fraction : 0.25
     # self.num_classes : 3

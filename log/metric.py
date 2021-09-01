@@ -35,17 +35,17 @@ def count_true_positives(grtr, grtr_dontcare, pred, num_ctgr, per_class=False, c
                 "pred" + suffix: pred_count.numpy()}
 
 
-def split_true_false(grtr, pred, grtr_dc, category_key="category"):
+def split_true_false(grtr, pred, category_key="category"):
     """
     1. split pred -> valid pred, far pred
     2. far pred vs grtr -> far grtr, valid grtr
     3. valid pred vs valid grtr -> tp pred, tp grtr, fp pred, fn grtr
     4. fp pred vs dc grtr -> dc pred, fp pred
     """
-    valid_pred, far_pred = split_far_pred(pred)
-    far_grtr, valid_grtr = split_far_grtr(far_pred, grtr)
+    # valid_pred, far_pred = split_far_pred(pred)
+    # far_grtr, valid_grtr = split_far_grtr(far_pred, grtr)
     # split_true_false에서 dontcare 부분만 제거하면 될듯
-    splits = split_tp_fp_fn(valid_pred, valid_grtr, category_key)
+    splits = split_tp_fp_fn(grtr, pred, category_key)
 
     fp_pred, dc_pred = split_dontcare_pred(splits["pred_fp"], grtr_dc)
     splits["pred_fp"] = fp_pred
@@ -76,8 +76,8 @@ def split_far_grtr(far_pred, grtr):
 
 
 def split_tp_fp_fn(valid_pred, valid_grtr, category_key):
-    valid_mask = valid_grtr["object"]
-    batch, M, _ = valid_pred[category_key].shape
+    valid_mask = valid_grtr["object"] # gt (batch , fixed_num , 1)
+    batch, M, _ = valid_pred[category_key].shape  # (batch * 512 , 4)
     iou = uf.compute_iou_general(valid_grtr["yxhw"], valid_pred["yxhw"])  # (batch, N, M)
     best_iou = tf.reduce_max(iou, axis=-1, keepdims=True)  # (batch, N)
     best_idx = tf.cast(tf.argmax(iou, axis=-1), dtype=tf.int32)  # (batch, N)

@@ -90,7 +90,7 @@ class Config:
             WEIGHTS_HEIGHT = [5.0, 0.5, 10.0]
             PIXEL_MEAN = [0.0, 0.0, 0.0]
             PIXEL_STD = [1.0, 1.0, 1.0]
-            ROTATED_BOX_TRAINING = True
+            ROTATED_BOX_TRAINING = False
             NUM_CLASSES = 3
 
             BACKBONE_CONV_ARGS = {"activation": "leaky_relu", "scope": "back"}
@@ -115,7 +115,7 @@ class Config:
         class RPN:
             INPUT_FEATURES = ['p2', 'p3', 'p4']
             MIN_SIZE = 0
-            NMS_THRESH = 0.7
+            NMS_THRESH = 0.2
             IOU_THRESHOLDS = [0.3, 0.7]
             IOU_LABELS = [0, -1, 1]
             BATCH_SIZE_PER_IMAGE = 256
@@ -156,7 +156,7 @@ class Config:
             NORM = ''
 
     class Train:
-        CKPT_NAME = "bid"
+        CKPT_NAME = "nms_2"
         MODE = ["eager", "graph"][1]
         BATCH_SIZE = 2
         TRAINING_PLAN = params.TrainingPlan.A2D2_SIMPLE

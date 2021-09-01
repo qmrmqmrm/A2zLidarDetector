@@ -85,8 +85,6 @@ class Inference:
             list[Tensor]: same as fast_rcnn_inference.
         """
         boxes = self.predict_boxes()
-        print(type(boxes))
-        print(boxes[0].shape)
         scores = self.predict_probs()
         image_shapes = self.image_shapes
         viewpoint = self.predict_viewpoint() if self.viewpoint else None
@@ -113,7 +111,6 @@ class Inference:
             self.proposals.unsqueeze(1).expand(num_pred, K, B).reshape(-1, B),
             self.rotated_box_training
         )
-        print(boxes.view(num_pred, K * B).shape)
         return boxes.view(num_pred, K * B).split(self.num_preds_per_image, dim=0)
 
     def predict_probs(self):
@@ -273,68 +270,57 @@ def fast_rcnn_inference_single_image(
     # R' x 2. First column contains indices of the R predictions;
     # Second column contains indices of classes.
     filter_inds = filter_mask.nonzero()
-    print('num_bbox_reg_classes')
-    print(num_bbox_reg_classes)
     if num_bbox_reg_classes == 1:
-        print('num_bbox_reg_classes == 1')
         boxes = boxes[filter_inds[:, 0], 0]
     else:
-        print('num_bbox_reg_classes != 1')
         boxes = boxes[filter_mask]
     scores = scores[filter_mask]
-
+    #
     # Apply per-class NMS
-    if not rotated_box_training or len(boxes) == 0:
-        print('if not rotated_box_training or len(boxes) == 0')
-        keep = box_ops.batched_nms(boxes, scores, filter_inds[:, 1], nms_thresh)
-    else:
-        print('if not rotated_box_training or len(boxes) == 0 else')
-        # BBox with encoding ctr_x,ctr_y,w,l
-        if vp is not None and vp_bins is not None:
-            print('vp is not None and vp_bins is not None')
-            _vp = vp.view(-1, num_bbox_reg_classes, vp_bins)  # R x C x bins
-            _vp = _vp[filter_mask]
-            if len(_vp) > 0:
-                print('if len(_vp) > 0')
-                _, vp_max = torch.max(_vp, 1)
-                vp_filtered = vp_max
-                if vp_res is not None:
-                    print('if vp_res is not None')
-                    _vp_res = vp_res.view(-1, num_bbox_reg_classes, vp_bins)
-                    _vp_res = _vp_res[filter_mask]
-                    vp_res_filtered = list()
-                    for i, k in enumerate(vp_max):
-                        vp_res_filtered.append(_vp_res[i, k])
-                else:
-                    print('if vp_res is not None else')
-                    vp_filtered = _vp
-            rboxes = []
-            for i in range(boxes.shape[0]):
-                box = boxes[i]
-                angle = anglecorrection(vp_res_filtered[i] * 180 / math.pi).to(box.device)
-                box = torch.cat((box, angle))
-                rboxes.append(box)
-            rboxes = torch.cat(rboxes).reshape(-1, 5).to(vp_filtered.device)
-            # keep = nms_rotated(rboxes, scores, nms_thresh)
-
-            # need check
-            max_coordinate = (
-                    torch.max(rboxes[:, 0], rboxes[:, 1]) + torch.max(rboxes[:, 2], rboxes[:, 3]) / 2
-            ).max()
-            min_coordinate = (
-                    torch.min(rboxes[:, 0], rboxes[:, 1]) - torch.max(rboxes[:, 2], rboxes[:, 3]) / 2
-            ).min()
-            offsets = filter_inds[:, 1].to(rboxes) * (max_coordinate - min_coordinate + 1)
-            boxes_for_nms = rboxes.clone()  # avoid modifying the original values in boxes
-            boxes_for_nms[:, :2] += offsets[:, None]
-            keep = torch.ops.detectron2.nms_rotated(boxes_for_nms, scores, nms_thresh)
-
-            # keep = batched_nms_rotated(rboxes, scores, filter_inds[:, 1], nms_thresh)
-        else:
-            print('vp is not None and vp_bins is not None else')
-            boxes[:, :, 2] = boxes[:, :, 2] + boxes[:, :, 0]  # x2
-            boxes[:, :, 3] = boxes[:, :, 3] + boxes[:, :, 1]  # y2
-            keep = box_ops.batched_nms(boxes, scores, filter_inds[:, 1], nms_thresh)
+    # if not rotated_box_training or len(boxes) == 0:
+    keep = box_ops.batched_nms(boxes, scores, filter_inds[:, 1], nms_thresh)
+    # else:
+    #     # BBox with encoding ctr_x,ctr_y,w,l
+    #     if vp is not None and vp_bins is not None:
+    #         _vp = vp.view(-1, num_bbox_reg_classes, vp_bins)  # R x C x bins
+    #         _vp = _vp[filter_mask]
+    #         if len(_vp) > 0:
+    #             _, vp_max = torch.max(_vp, 1)
+    #             vp_filtered = vp_max
+    #             if vp_res is not None:
+    #                 _vp_res = vp_res.view(-1, num_bbox_reg_classes, vp_bins)
+    #                 _vp_res = _vp_res[filter_mask]
+    #                 vp_res_filtered = list()
+    #                 for i, k in enumerate(vp_max):
+    #                     vp_res_filtered.append(_vp_res[i, k])
+    #             else:
+    #                 vp_filtered = _vp
+    #         rboxes = []
+    #         for i in range(boxes.shape[0]):
+    #             box = boxes[i]
+    #             angle = anglecorrection(vp_res_filtered[i] * 180 / math.pi).to(box.device)
+    #             box = torch.cat((box, angle))
+    #             rboxes.append(box)
+    #         rboxes = torch.cat(rboxes).reshape(-1, 5).to(vp_filtered.device)
+    #         # keep = nms_rotated(rboxes, scores, nms_thresh)
+    #
+    #         # need check
+    #         max_coordinate = (
+    #                 torch.max(rboxes[:, 0], rboxes[:, 1]) + torch.max(rboxes[:, 2], rboxes[:, 3]) / 2
+    #         ).max()
+    #         min_coordinate = (
+    #                 torch.min(rboxes[:, 0], rboxes[:, 1]) - torch.max(rboxes[:, 2], rboxes[:, 3]) / 2
+    #         ).min()
+    #         offsets = filter_inds[:, 1].to(rboxes) * (max_coordinate - min_coordinate + 1)
+    #         boxes_for_nms = rboxes.clone()  # avoid modifying the original values in boxes
+    #         boxes_for_nms[:, :2] += offsets[:, None]
+    #         keep = torch.ops.detectron2.nms_rotated(boxes_for_nms, scores, nms_thresh)
+    #
+    #         # keep = batched_nms_rotated(rboxes, scores, filter_inds[:, 1], nms_thresh)
+    #     else:
+    #         boxes[:, :, 2] = boxes[:, :, 2] + boxes[:, :, 0]  # x2
+    #         boxes[:, :, 3] = boxes[:, :, 3] + boxes[:, :, 1]  # y2
+    #         keep = box_ops.batched_nms(boxes, scores, filter_inds[:, 1], nms_thresh)
 
     if topk_per_image >= 0:
         keep = keep[:topk_per_image]

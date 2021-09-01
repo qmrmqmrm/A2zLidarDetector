@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from config import Config as cfg
 from train.loss_util import distribute_box_over_feature_map
 from model.submodules.matcher import Matcher
-from log.visual_log import VisualLog
+from log.visual_log_ import VisualLog
 from log.anchor_log import AnchorLog
 
 DEVICE = cfg.Model.Structure.DEVICE
@@ -45,7 +45,7 @@ class LogData:
         self.batch = pd.DataFrame()
         self.start = timer()
         self.visual_logger = VisualLog(ckpt_path, epoch) if visual_log else None
-        self.visual_logger = AnchorLog(ckpt_path, epoch) if visual_log else None
+        self.anchor_logger = AnchorLog(ckpt_path, epoch) if visual_log else None
         self.summary = dict()
         self.nan_grad_count = 0
         self.anchor_matcher = Matcher(
@@ -65,6 +65,7 @@ class LogData:
         # test = self.prediction_nms(pred)
         self.batch = self.batch.append(batch_data, ignore_index=True)
         print("\n--- batch_data:", batch_data)
+        # self.anchor_logger(step, grtr, pred)
         if self.visual_logger:
             self.visual_logger(step, grtr, pred)
         # if step % 200 == 10:

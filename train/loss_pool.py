@@ -1,5 +1,3 @@
-import cv2
-import os
 import torch
 import torch.nn.functional as F
 import numpy as np
@@ -9,7 +7,6 @@ from config import Config as cfg
 from model.submodules.box_regression import Box2BoxTransform
 from model.submodules.matcher import Matcher
 from train.loss_util import distribute_box_over_feature_map
-from utils.util_function import visual
 
 DEVICE = cfg.Model.Structure.DEVICE
 
@@ -95,41 +92,14 @@ class Box3dRegression(LossBase):
         proposals = torch.cat([p['proposal_boxes'] for p in head_proposals])
 
         gt_proposal_deltas = self.box2box_transform.get_deltas(
-            proposals, gt_boxes3d[:, :4], self.rotated_box_training
+            proposals, gt_boxes3d[:, :4], True
         )
         box_dim = gt_proposal_deltas.size(1)
         cls_agnostic_bbox_reg = bbox_3d_logits.size(1) == box_dim
 
         bg_class_ind = head_class_logits.shape[1] - 1
         fg_inds = torch.nonzero((gt_classes >= 0) & (gt_classes < bg_class_ind)).squeeze(1)
-        # for i, image_file in enumerate(features['image_file']):
-        #     # inx = fg_inds[i:]
-        #     index = fg_inds[torch.nonzero((fg_inds >= (512 * i)) & (fg_inds < (512 * (i + 1)))).squeeze(1)]
-        #     li = image_file.split('/')[-3:]
-        #     a = '/'.join(li)
-        #
-        #     pred_path = os.path.join(cfg.Paths.RESULT_ROOT, 'image', cfg.Train.CKPT_NAME, 'pred', a)
-        #
-        #     pred_folder = '/'.join(pred_path.split('/')[:-1])
-        #     if not os.path.exists(pred_folder):
-        #         os.makedirs(pred_folder)
-        #     pred_img = cv2.imread(image_file)
-        #     for idx in index:
-        #         proposal = proposals[idx, :]
-        #         cv2.rectangle(pred_img, (int(proposal[0]), int(proposal[1])), (int(proposal[2]), int(proposal[3])),
-        #                       (255, 255, 255), 2)
-        #     cv2.imwrite(pred_path, pred_img)
-        #
-        #     gt = os.path.join(cfg.Paths.RESULT_ROOT, 'image', cfg.Train.CKPT_NAME, 'gt', a)
-        #     gt_folder = '/'.join(gt.split('/')[:-1])
-        #     if not os.path.exists(gt_folder):
-        #         os.makedirs(gt_folder)
-        #     gt_img = cv2.imread(image_file)
-        #     for idx in index:
-        #         bbox2d = gt_bbox2d[idx, :]
-        #         cv2.rectangle(gt_img, (int(bbox2d[0]), int(bbox2d[1])), (int(bbox2d[2]), int(bbox2d[3])),
-        #                       (255, 255, 255), 2)
-        #     cv2.imwrite(gt, gt_img)
+
 
         if cls_agnostic_bbox_reg:
             gt_class_cols = torch.arange(box_dim, device=DEVICE)
