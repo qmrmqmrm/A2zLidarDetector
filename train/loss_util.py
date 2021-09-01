@@ -69,3 +69,14 @@ def _subsample_labels(label,
     label.scatter_(0, pos_idx, 1)
     label.scatter_(0, neg_idx, 0)
     return label
+
+
+def match_gt_with_anchors(gt, anchor):
+    """
+    :param gt: [num_gt, 4]
+    :param anchor: [sum HWA over scale, 4]
+    :return:
+    """
+    match_quality_matrix = pairwise_iou(anchor, gt) # [sum HWA, num_gt]
+    matched_vals, match_anchor_inds = match_quality_matrix.max(dim=0)
+    return match_anchor_inds

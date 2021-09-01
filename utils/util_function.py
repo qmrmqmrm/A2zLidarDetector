@@ -62,7 +62,7 @@ def pairwise_intersection(boxes1, boxes2) -> torch.Tensor:
 
 
 def pairwise_iou(boxes1, boxes2):
-    boxes1 = boxes1.to(DEVICE)
+    # boxes1 = boxes1.to(DEVICE)
     area1 = (boxes1[:, 2] - boxes1[:, 0]) * (boxes1[:, 3] - boxes1[:, 1])
     area2 = (boxes2[:, 2] - boxes2[:, 0]) * (boxes2[:, 3] - boxes2[:, 1])
     inter = pairwise_intersection(boxes1, boxes2)
@@ -190,12 +190,14 @@ def subsample_labels(
     return pos_idx, neg_idx
 
 
-def visual(folder, index):
-    if not os.path.exists(folder):
-        os.makedirs(folder)
-    gt_img = cv2.imread(folder)
-    for ind in ini:
-        boxes3d = gt_boxes3d[ind, :]
-        cv2.rectangle(gt_img, (int(boxes3d[0]), int(boxes3d[1])), (int(boxes3d[2]), int(boxes3d[3])), (255, 255, 255),
-                      2)
-    cv2.imwrite(gt, gt_img)
+def print_structure(title, data, key=""):
+    if isinstance(data, list):
+        for i, datum in enumerate(data):
+            print_structure(title, datum, f"{key}/{i}")
+    elif isinstance(data, dict):
+        for subkey, datum in data.items():
+            print_structure(title, datum, f"{key}/{subkey}")
+    elif isinstance(data, str):
+        print(title, key, data)
+    else:
+        print(title, key, data.shape)

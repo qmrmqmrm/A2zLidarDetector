@@ -98,12 +98,12 @@ class GeneralizedRCNN(ModelBase):
         return pred
 
     def preprocess_input(self, batched_input):
-        image = batched_input['image'].permute(0, 3, 1, 2).to(cfg.Model.Structure.DEVICE)
+        image = batched_input['image'].permute(0, 3, 1, 2).to(self.device)
         image = self.normalizer(image)
         image = F.pad(image,(4,4,2,2), "constant", 0)
         batched_input['image'] = image
-        batched_input['bbox2d'] += torch.tensor([[[4, 2, 4, 2]]], dtype=torch.float32)
-        batched_input['bbox3d'][:, :, :2] += torch.tensor([[[4, 2]]], dtype=torch.float32)
+        batched_input['bbox2d'] += torch.tensor([[[4, 2, 4, 2]]], dtype=torch.float32).to(self.device)
+        batched_input['bbox3d'][:, :, :2] += torch.tensor([[[4, 2]]], dtype=torch.float32).to(self.device)
         batched_input = remove_padding(batched_input)
         return batched_input
 

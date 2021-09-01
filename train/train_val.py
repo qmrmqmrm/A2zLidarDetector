@@ -1,6 +1,7 @@
 from timeit import default_timer as timer
 import os
 import cv2
+import torch
 
 import utils.util_function as uf
 from log.logger import LogData
@@ -14,97 +15,75 @@ class TrainValBase:
         self.loss_object = loss_object
         self.optimizer = optimizer
         self.epoch_steps = epoch_steps
+        self.split = ""
+        self.device = cfg.Model.Structure.DEVICE
 
     def run_epoch(self, visual_log, epoch, data_loader):
         logger = LogData(visual_log, cfg.Paths.CHECK_POINT, epoch)
         train_loader_iter = iter(data_loader)
         steps = len(train_loader_iter)
+        self.mode_set()
         for step in range(steps):
-            # if step > 10:
-            #     break
+            if step > 10:
+                break
             features = next(train_loader_iter)
-            print()
+            features = self.to_device(features)
+
             start = timer()
-            prediction, total_loss, loss_by_type, split = self.run_step(features)
-            logger.append_batch_result(step, features, prediction, total_loss, loss_by_type)
-            uf.print_progress(f"({split}) {step}/{steps} steps in {epoch} epoch, "
+            prediction, total_loss, loss_by_type = self.run_step(features)
+            # uf.print_structure("feat", features)
+            # uf.print_structure("pred", prediction)
+            # logger.append_batch_result(step, features, prediction, total_loss, loss_by_type)
+            uf.print_progress(f"({self.split}) {step}/{steps} steps in {epoch} epoch, "
                               f"time={timer() - start:.3f}, "
                               f"loss={total_loss:.3f}, ")
+            print("")
 
         logger.finalize()
         return logger
 
+    def to_device(self, features):
+        for key in features:
+            if isinstance(features[key], torch.Tensor):
+                features[key] = features[key].to(self.device)
+        return features
+
     def run_step(self, features):
+        raise NotImplementedError()
+
+    def mode_set(self):
         raise NotImplementedError()
 
 
 class ModelTrainer(TrainValBase):
     def __init__(self, model, loss_object, optimizer, epoch_steps=0):
         super().__init__(model, loss_object, optimizer, epoch_steps)
+        self.split = "train"
 
     def run_step(self, features):
-        self.model.train()
         prediction = self.model(features)
-
         total_loss, loss_by_type = self.loss_object(features, prediction)
         self.optimizer.zero_grad()
-
         total_loss.backward()
         self.optimizer.step()
+        return prediction, total_loss, loss_by_type
 
-        return prediction, total_loss, loss_by_type, 'train'
+    def mode_set(self):
+        self.model.train()
 
 
 class ModelValidater(TrainValBase):
     def __init__(self, model, loss_object, epoch_steps=0):
         super().__init__(model, loss_object, None, epoch_steps)
+        self.split = "val"
 
     def run_step(self, features):
-        self.model.eval()
         prediction = self.model(features)
-
-        print(type(prediction))
-        for key, features in prediction.items():
-            if isinstance(features, list):
-                for k, feat in enumerate(features):
-                    if isinstance(feat, dict):
-                        for f_k, f in feat.items():
-                            print("prediction", key, k, f_k, f.shape)
-                    else:
-                        print("prediction", key, k, feat.shape)
-            else:
-
-                if isinstance(features, dict):
-                    for f_k, feat in features.items():
-                        if isinstance(feat, list):
-                            for j, f in enumerate(feat):
-                                print("prediction", key, j, f_k, f.shape)
-                else:
-                    print("prediction", key, features.shape)
-
-        outputs = Inference(prediction)
-        pred_instances, _ = outputs.inference(0.05, 0.5, 100)
-
-        for key, features in pred_instances.items():
-            if isinstance(features, list):
-                for k, feat in enumerate(features):
-                    if isinstance(feat, dict):
-                        for f_k, f in feat.items():
-                            print("pred_instances", key, k, f_k, f.shape)
-                    else:
-                        print("pred_instances", key, k, feat.shape)
-            else:
-
-                if isinstance(features, dict):
-                    for f_k, feat in features.items():
-                        if isinstance(feat, list):
-                            for j, f in enumerate(feat):
-                                print("pred_instances", key, j, f_k, f.shape)
-                else:
-                    print("pred_instances", key, features.shape)
-
         total_loss, loss_by_type = self.loss_object(features, prediction)
-        return prediction, total_loss, loss_by_type, 'valid'
+        return prediction, total_loss, loss_by_type
+
+    def mode_set(self):
+        self.model.eval()
 
 
 def get_train_val(model, loss_object, optimizer, epoch_steps=0):

@@ -16,6 +16,7 @@ from model.submodules.proposal_utils import add_ground_truth_to_proposals
 from model.submodules.weight_init import c2_msra_fill, c2_xavier_fill
 from utils.batch_norm import get_norm
 from utils.util_function import pairwise_iou, subsample_labels
+from utils.util_function import print_structure
 
 
 class ROIHeads(torch.nn.Module):
@@ -92,18 +93,16 @@ class ROIHeads(torch.nn.Module):
         # sampled_fg_idxs : neg indax
         sampled_idxs = torch.cat([sampled_fg_idxs, sampled_bg_idxs], dim=0)
         # sampled_idxs 512
-        return sampled_idxs, gt_classes[sampled_idxs], sampled_fg_idxs, sampled_bg_idxs, gt_classes[sampled_fg_idxs]
+        return sampled_idxs, gt_classes[sampled_idxs]
 
     @torch.no_grad()
     def label_and_sample_proposals(self, proposals, targets):
         """
-
         :param proposals: (list[dict[torch.tensor]])
                  [{'proposal_boxes': torch.Size([2000, 4]), 'objectness_logits': torch.Size([2000])} * batch]
-
         :param targets: {'image': [batch, height, width, channel], 'category': [batch, fixbox, 1],
-                        'bbox2d': [batch, fixbox, 4], 'bbox3d': [batch, fixbox, 6], 'object': [batch, fixbox, 1],
-                        'yaw': [batch, fixbox, 2]}
+                        'bbox2d': [batch, num_gt, 4], 'bbox3d': [batch, num_gt, 6], 'object': [batch, num_gt, 1],
+                        'yaw': [batch, num_gt, 2]}
         :return:
         """
 
@@ -123,49 +122,27 @@ class ROIHeads(torch.nn.Module):
             proposals = add_ground_truth_to_proposals(targets['bbox2d'], proposals)
             # [{'proposal_boxes': torch.Size([2000+gt_box, 4]), 'objectness_logits': torch.Size([2000+gt_box])} * batch]
         proposals_with_gt = []
-        positive = []
-
 
         for bbox2d_per_image, bbox3d_per_image, category_per_image, yaw_par_image, yaw_rads_par_image, proposal_per_image in zip(
-                targets['bbox2d'], targets['bbox3d'], targets['category'], targets['yaw'], targets['yaw_rads'],
-                proposals):
+                targets['bbox2d'], targets['bbox3d'], targets['category'], targets['yaw'], targets['yaw_rads'], proposals):
             instance_per_image = dict()
             # has_gt = len(targets_per_image) > 0
             match_quality_matrix = pairwise_iou(bbox2d_per_image, proposal_per_image.get("proposal_boxes"))
             matched_idxs, matched_labels = self.proposal_matcher(match_quality_matrix)
-            # matched_idxs :  torch.Size([2000+gt_box])
-            # matched_labels :  torch.Size([2000+gt_box])
-            sampled_idxs, gt_classes, sampled_fg_idxs, sampled_bg_idxs, gt_pos = self._sample_proposals(matched_idxs, matched_labels, category_per_image)
+            # matched_idxs : torch.Size([2000+gt_box])
+            # matched_labels : torch.Size([2000+gt_box]) (0: unmatched, -1: ignore, 1: matched)
+            sampled_idxs, gt_classes = self._sample_proposals(matched_idxs, matched_labels, category_per_image)
             # sampled_idxs : torch.Size([512])
             # gt_classes : torch.Size([512])
             # Set target attributes of the sampled proposals:
-            positive_sample =  dict()
             instance_per_image['proposal_boxes'] = proposal_per_image.get("proposal_boxes")[sampled_idxs]
-            positive_sample['proposal_boxes'] = proposal_per_image.get("proposal_boxes")[sampled_fg_idxs]
             # torch.Size([512, 4])
             instance_per_image['objectness_logits'] = proposal_per_image.get("objectness_logits")[sampled_idxs]
-            positive_sample['objectness_logits'] = proposal_per_image.get("objectness_logits")[sampled_fg_idxs]
-            # torch.Size([512])
-            instance_per_image['gt_category'] = gt_classes
-            positive_sample['gt_category'] = gt_pos
             # torch.Size([512])
 
-            # We index all the attributes of targets that start with "gt_"
-            # and have not been added to proposals yet (="gt_classes").
-            if True:
-                sampled_targets = matched_idxs[sampled_idxs]
-                instance_per_image['yaw'] = yaw_par_image[sampled_targets]
-                positive_sample['yaw'] = yaw_par_image
-                instance_per_image['yaw_rads'] = yaw_rads_par_image[sampled_targets]
-                positive_sample['yaw_rads'] = yaw_rads_par_image
-                instance_per_image['bbox3d'] = bbox3d_per_image[sampled_targets]
-                positive_sample['bbox3d'] = bbox3d_per_image
-                instance_per_image['bbox2d'] = bbox2d_per_image[sampled_targets]
-                positive_sample['bbox2d'] = bbox2d_per_image
             proposals_with_gt.append(instance_per_image)
-            positive.append(positive_sample)
 
-        return proposals_with_gt, positive
+        return proposals_with_gt
 
     def forward(self, batch_input, features, proposals):
         """
@@ -258,7 +235,7 @@ class StandardROIHeads(ROIHeads):
         """
 
         if self.training:
-            proposals, gt_pos = self.label_and_sample_proposals(proposals, batch_input)
+            proposals = self.label_and_sample_proposals(proposals, batch_input)
         # proposals: [{'proposal_boxes': torch.Size([512, 4]), 'objectness_logits': torch.Size([512])} * batch]
         pred_instances = self._forward_box(features, proposals)
         pred_instances["head_proposals"] = proposals

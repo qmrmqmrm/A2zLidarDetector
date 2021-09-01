@@ -6,7 +6,8 @@ import math
 from config import Config as cfg
 from model.submodules.box_regression import Box2BoxTransform
 from model.submodules.matcher import Matcher
-from train.loss_util import distribute_box_over_feature_map
+import train.loss_util as lu
+import utils.util_function as uf
 
 DEVICE = cfg.Model.Structure.DEVICE
 
@@ -14,15 +15,13 @@ DEVICE = cfg.Model.Structure.DEVICE
 class LossBase:
     def __init__(self):
         self.box2box_transform = Box2BoxTransform(weights=cfg.Model.RPN.BBOX_REG_WEIGHTS)
-        self.anchor_matcher = Matcher(
-            cfg.Model.RPN.IOU_THRESHOLDS, cfg.Model.RPN.IOU_LABELS, allow_low_quality_matches=True
-        )
+        self.anchor_iou_thresh = cfg.Model.RPN.IOU_THRESHOLDS
         self.vp_bins = cfg.Model.Structure.VP_BINS
         self.rotated_box_training = cfg.Model.Structure.ROTATED_BOX_TRAINING
 
         self.weights_height = cfg.Model.Structure.WEIGHTS_HEIGHT
 
-    def __call__(self, features, pred):
+    def __call__(self, features, pred, auxi):
         """
 
         :param features:
@@ -64,25 +63,24 @@ class LossBase:
 
 
 class Box2dRegression(LossBase):
-    def __call__(self, features, pred):
-        anchors = pred['anchors']
-        pred_anchor_deltas = pred['pred_anchor_deltas']
-
-        gt_labels, gt_boxes = distribute_box_over_feature_map(anchors, pred['batched_input'], self.anchor_matcher)
-        gt_labels = torch.stack(gt_labels)  # (N, sum(Hi*Wi*Ai))
-        anchors = torch.cat(anchors)
-        gt_anchor_deltas = [self.box2box_transform.get_deltas(anchors, k) for k in gt_boxes]
-        gt_anchor_deltas = torch.stack(gt_anchor_deltas)  # (N, R, 4)
-
-        pos_mask = gt_labels == 1
-        loss = F.smooth_l1_loss(torch.cat(pred_anchor_deltas, dim=1)[pos_mask],
-                                gt_anchor_deltas[pos_mask],
-                                reduction='sum', beta=0.5)
+    def __call__(self, features, pred, auxi):
+        pred_anchor_deltas_cat = torch.cat(pred['pred_anchor_deltas'], dim=1)
+        anchors_cat = torch.cat(pred['anchors'])
+        gt_boxes_batch = features["bbox2d"]
+        loss = 0
+        for gt_boxes_i, pred_anchor_deltas_i in zip(gt_boxes_batch, pred_anchor_deltas_cat):
+            w = gt_boxes_i[:, 2] - gt_boxes_i[:, 0]
+            gt_boxes_i = gt_boxes_i[w > 0, :]
+            anchor_inds = lu.match_gt_with_anchors(gt_boxes_i, anchors_cat)
+            pred_anchor_deltas = pred_anchor_deltas_i[anchor_inds]
+            gt_anchor_deltas = self.box2box_transform.get_deltas(anchors_cat[anchor_inds], gt_boxes_i)
+            loss += F.smooth_l1_loss(pred_anchor_deltas, gt_anchor_deltas, reduction='sum', beta=0.5)
+        print("box2d loss", loss)
         return loss
 
 
 class Box3dRegression(LossBase):
-    def __call__(self, features, pred):
+    def __call__(self, features, pred, auxi):
         head_class_logits = pred['head_class_logits']
         bbox_3d_logits = pred['bbox_3d_logits']
         head_proposals = pred['head_proposals']
@@ -116,7 +114,7 @@ class Box3dRegression(LossBase):
 
 
 class HeightRegression(LossBase):
-    def __call__(self, features, pred):
+    def __call__(self, features, pred, auxi):
         head_class_logits = pred['head_class_logits']
         head_height_logits = pred['head_height_logits']
         head_proposals = pred['head_proposals']
@@ -154,7 +152,7 @@ class HeightRegression(LossBase):
 
 
 class YawRegression(LossBase):
-    def __call__(self, features, pred):
+    def __call__(self, features, pred, auxi):
         head_class_logits = pred['head_class_logits']
         head_proposals = pred['head_proposals']
 
@@ -195,7 +193,7 @@ class YawRegression(LossBase):
 
 
 class CategoryClassification(LossBase):
-    def __call__(self, features, pred):
+    def __call__(self, features, pred, auxi):
         head_class_logits = pred['head_class_logits'].type(torch.float32)
         head_proposals = pred['head_proposals']
         gt_classes = torch.cat([p['gt_category'] for p in head_proposals], dim=0).to(DEVICE).type(torch.int64)
@@ -204,7 +202,7 @@ class CategoryClassification(LossBase):
 
 
 class YawClassification(LossBase):
-    def __call__(self, features, pred):
+    def __call__(self, features, pred, auxi):
         head_class_logits = pred['head_class_logits']
         head_proposals = pred['head_proposals']
         head_yaw_logits = pred['head_yaw_logits']
@@ -229,15 +227,25 @@ class YawClassification(LossBase):
 
 
 class ObjectClassification(LossBase):
-    def __call__(self, features, pred):
-        anchors = pred['anchors']
-        pred_objectness_logits = pred['pred_objectness_logits']
-        gt_labels, gt_boxes = distribute_box_over_feature_map(anchors, pred['batched_input'], self.anchor_matcher)
-        gt_labels = torch.stack(gt_labels)  # (N, sum(Hi*Wi*Ai))
-        valid_mask = gt_labels >= 0
-        loss = F.binary_cross_entropy_with_logits(
-            torch.cat(pred_objectness_logits, dim=1)[valid_mask],
-            gt_labels[valid_mask].to(torch.float32),
-            reduction="sum",
-        )
+    def __call__(self, features, pred, auxi):
+        gt_boxes_batch = features["bbox2d"]
+        gt_object_batch = torch.squeeze(features["object"])
+        anchors_cat = torch.cat(pred['anchors'])
+        pred_objectness_logits = torch.cat(pred['pred_objectness_logits'], dim=1)
+
+        loss = 0
+        for gt_boxes_i, gt_object_i, pred_objectness_deltas_i in zip(gt_boxes_batch, gt_object_batch, pred_objectness_logits):
+            x2 = gt_boxes_i[:, 2]
+            gt_boxes_i = gt_boxes_i[x2 > 0, :]
+            gt_object_i = gt_object_i[x2 > 0]
+            match_quality_matrix = uf.pairwise_iou(gt_boxes_i, anchors_cat)  # [num_gt, sum HWA]
+            max_vals, max_inds = match_quality_matrix.max(dim=0)        # max_vals [sum HWA]
+            gt_object_map = gt_object_i[max_inds]
+            valid_mask = torch.logical_or(max_vals < self.anchor_iou_thresh[0], max_vals > self.anchor_iou_thresh[1])
+
+            print('pred boxes i:', pred_objectness_deltas_i[valid_mask][0:-1:10000])
+            print('gt_boxes_i:', gt_object_map[valid_mask][0:-1:10000])
+
+            loss += F.binary_cross_entropy_with_logits(pred_objectness_deltas_i[valid_mask], gt_object_map[valid_mask], reduction="sum")
+        print("objectness loss", loss)
         return loss

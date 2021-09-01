@@ -44,10 +44,10 @@ def train_by_plan(dataset_name, end_epoch, learning_rate, loss_weights, model_sa
     log_file = LogFile()
     for epoch in range(start_epoch, end_epoch):
         print(f"========== Start dataset : {dataset_name} epoch: {epoch + 1}/{end_epoch} ==========")
-        # train_result = trainer.run_epoch(False, epoch, train_data_loader)
+        train_result = trainer.run_epoch(False, epoch, train_data_loader)
         val_result = validator.run_epoch(True, epoch, test_data_loader)
         save_model_ckpt(ckpt_path, model)
-        log_file.save_log(epoch, train_result, val_result)
+        # log_file.save_log(epoch, train_result, val_result)
 
     if model_save:
         save_model_ckpt(ckpt_path, model, f"ep{end_epoch:02d}")

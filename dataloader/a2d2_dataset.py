@@ -140,7 +140,6 @@ class A2D2Dataset(DatasetBase):
         gathered_anns = {key: torch.tensor(vals, dtype=torch.float32) for key, vals in gathered_anns.items()}
         # zero padding
         for key in gathered_anns:
-
             numbox, channel = gathered_anns[key].shape
             if key == 'category':
                 pad = torch.ones((self.max_box - numbox, channel), dtype=torch.float32) * 3
@@ -152,24 +151,6 @@ class A2D2Dataset(DatasetBase):
                 pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
 
             gathered_anns[key] = torch.cat([gathered_anns[key], pad], dim=0)
-
-            # if key == 'bbox2d':
-            #     bbox2d = gathered_anns[key]
-            #     weight = bbox2d[:, 2] - bbox2d[:, 0]
-            #     x = torch.where(weight > 0)
-            #     bbox2d = bbox2d[:x[0][-1] + 1, :]
-            #
-            #     print('loader bbox2d.shape :', bbox2d.shape)
-            #     print('loader bbox2d :', bbox2d)
-            #     print('loader bbox2d :', bbox2d)
-            # if key == 'category':
-            #     category = gathered_anns[key]
-            #     category_index = torch.where(category < 3)
-            #     category = category[category_index]
-            #     print('\nloader category.shape :', category.shape)
-            #     print('loader category :', category)
-            # elif key == 'yaw':
-            #     print('loader yaw',gathered_anns[key])
 
         return gathered_anns
 

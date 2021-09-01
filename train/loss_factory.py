@@ -1,6 +1,7 @@
 # from  utils.util_function import
 import torch
 import train.loss_pool as loss
+import train.loss_util as lu
 
 class IntegratedLoss:
     def __init__(self, loss_weights, valid_category):
@@ -34,12 +35,14 @@ class IntegratedLoss:
         loss_by_type = {loss_name: 0 for loss_name in self.loss_objects}
 
         for loss_name, loss_object in self.loss_objects.items():
-
-            scalar_loss = loss_object(features, predictions)
+            auxi = self.prepare_box_auxiliary_data(features, predictions)
+            scalar_loss = loss_object(features, predictions, auxi)
             weight = self.loss_weights[loss_name] if loss_name in self.loss_weights \
                                                      else self.loss_weights[loss_name]
             total_loss += scalar_loss * weight
             loss_by_type[loss_name] += scalar_loss
         return total_loss, loss_by_type
 
-
+    def prepare_box_auxiliary_data(self, grtr_feat, pred_feat):
+        auxiliary = dict()
+        return auxiliary
