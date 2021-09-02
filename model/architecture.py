@@ -9,7 +9,7 @@ import numpy as np
 import cv2
 
 from config import Config as cfg
-from model.submodules.model_util import remove_padding
+import model.submodules.model_util as mu
 from utils.image_list import ImageList
 
 
@@ -93,7 +93,7 @@ class GeneralizedRCNN(ModelBase):
         rpn_proposals, auxiliary = self.proposal_generator(batched_input['image'].shape, features)
         pred = self.roi_heads(batched_input, features, rpn_proposals)
         pred['rpn_proposals'] = rpn_proposals
-        pred['batched_input'] = batched_input
+        # pred['batched_input'] = batched_input
         pred.update(auxiliary)
         return pred
 
@@ -104,7 +104,7 @@ class GeneralizedRCNN(ModelBase):
         batched_input['image'] = image
         batched_input['bbox2d'] += torch.tensor([[[4, 2, 4, 2]]], dtype=torch.float32).to(self.device)
         batched_input['bbox3d'][:, :, :2] += torch.tensor([[[4, 2]]], dtype=torch.float32).to(self.device)
-        batched_input = remove_padding(batched_input)
+        batched_input = mu.remove_padding(batched_input)
         return batched_input
 
 

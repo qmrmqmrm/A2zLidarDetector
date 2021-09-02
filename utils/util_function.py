@@ -4,6 +4,7 @@ import cv2
 from detectron2.layers import nonzero_tuple
 
 from config import Config as cfg
+from model.submodules.matcher import Matcher
 
 DEVICE = cfg.Model.Structure.DEVICE
 
@@ -199,5 +200,93 @@ def print_structure(title, data, key=""):
             print_structure(title, datum, f"{key}/{subkey}")
     elif isinstance(data, str):
         print(title, key, data)
+    elif isinstance(data, tuple):
+        for i, datum in enumerate(data):
+            print_structure(title, datum, f"{key}/{i}")
     else:
         print(title, key, data.shape)
+
+
+def align_gt_with_pred(proposals, targets):
+    """
+    :param proposals: (list[dict[torch.tensor]])
+             [{'proposal_boxes': torch.Size([2000, 4]), 'objectness_logits': torch.Size([2000])} * batch]
+    :param targets: {'image': [batch, height, width, channel], 'category': [batch, fixbox, 1],
+                    'bbox2d': [batch, num_gt, 4], 'bbox3d': [batch, num_gt, 6], 'object': [batch, num_gt, 1],
+                    'yaw': [batch, num_gt, 2]}
+    :return:
+    """
+
+    proposal_matcher = Matcher(
+        cfg.Model.ROI_HEADS.IOU_THRESHOLDS,
+        cfg.Model.ROI_HEADS.IOU_LABELS,
+        allow_low_quality_matches=False,
+    )
+    gt_aligned = {'gt_category': [], 'yaw': [], 'yaw_rads': [], 'bbox3d': [], 'bbox2d': []}
+    match_result = []
+    for bbox2d_per_image, bbox3d_per_image, category_per_image, yaw_par_image, yaw_rads_par_image, proposal_per_image in zip(
+            targets['bbox2d'], targets['bbox3d'], targets['category'], targets['yaw'], targets['yaw_rads'], proposals):
+        match_quality_matrix = pairwise_iou(bbox2d_per_image, proposal_per_image.get("proposal_boxes"))
+        matched_idxs, matched_labels = proposal_matcher(match_quality_matrix)
+        # matched_idxs : torch.Size([512])
+        # matched_labels : torch.Size([512]) (0: unmatched, -1: ignore, 1: matched)
+        # NOTE: here the indexing waste some compute, because heads
+        # like masks, keypoints, etc, will filter the proposals again,
+        # (by foreground/background, or number of keypoints in the image, etc)
+        # so we essentially index the data twice.
+        match_result.append(matched_labels)
+        gt_aligned['gt_category'].append(category_per_image[matched_idxs])
+        gt_aligned['yaw'].append(yaw_par_image[matched_idxs])
+        gt_aligned['yaw_rads'].append(yaw_rads_par_image[matched_idxs])
+        gt_aligned['bbox3d'].append(bbox3d_per_image[matched_idxs])
+        gt_aligned['bbox2d'].append(bbox2d_per_image[matched_idxs])
+
+    for key in gt_aligned:
+        gt_aligned[key] = torch.cat(gt_aligned[key])
+    match_result = torch.cat(match_result)
+    return gt_aligned, match_result
+
+
+def _sample_proposals(matched_idxs, matched_labels, gt_classes):
+    """
+    Based on the matching between N proposals and M groundtruth,
+    sample the proposals and set their classification labels.
+
+    Args:
+        matched_idxs (Tensor): a vector of length N, each is the best-matched
+            gt index in [0, M) for each proposal.
+        matched_labels (Tensor): a vector of length N, the matcher's label
+            (one of cfg.MODEL.ROI_HEADS.IOU_LABELS) for each proposal.
+        gt_classes (Tensor): a vector of length M.
+
+    Returns:
+        Tensor: a vector of indices of sampled proposals. Each is in [0, N).
+        Tensor: a vector of the same length, the classification label for
+            each sampled proposal. Each sample is labeled as either a category in
+            [0, num_classes) or the background (num_classes).
+    """
+    has_gt = gt_classes.numel() > 0
+    num_classes = cfg.Model.Structure.NUM_CLASSES
+    batch_size_per_image = cfg.Model.ROI_HEADS.BATCH_SIZE_PER_IMAGE
+    positive_fraction = cfg.Model.ROI_HEADS.POSITIVE_FRACTION
+    # Get the corresponding GT for each proposal
+    if has_gt:
+        gt_classes = gt_classes[matched_idxs]
+        # Label unmatched proposals (0 label from matcher) as background (label=num_classes)
+        gt_classes[matched_labels == 0] = num_classes
+        # Label ignore proposals (-1 label)
+        gt_classes[matched_labels == -1] = -1
+    else:
+        gt_classes = torch.zeros_like(matched_idxs) + num_classes
+    # gt_classes : torch.Size([2000 + gt_num])
+    # self.batch_size_per_image : 512
+    # self.positive_fraction : 0.25
+    # self.num_classes : 3
+    sampled_fg_idxs, sampled_bg_idxs = subsample_labels(
+        gt_classes, batch_size_per_image, positive_fraction, num_classes
+    )
+    # sampled_fg_idxs : pos indax
+    # sampled_fg_idxs : neg indax
+    sampled_idxs = torch.cat([sampled_fg_idxs, sampled_bg_idxs], dim=0)
+    # sampled_idxs 512
+    return sampled_idxs, gt_classes[sampled_idxs]

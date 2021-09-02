@@ -1,4 +1,21 @@
 
+--- 9.1
+distribute_over_Feature map 함수
+- bbox2d padding 제거후 feature로 입력 
+
+
+label_and_sample_proposals()
+	여기서 나온 instance_per_image['proposal_boxes']로 다시 gt와 매칭하여
+	proposal 기준으로 정렬된 gt 만들기 (loss factory에서)
+
+나머지 loss들을 정렬된 gt로 다시 계산
+
+logger에서 val 모드일때만 nms 하고
+nms 결과와 gt 매칭하여 true positive 개수 세기
+-> history에 grtr, pred, trpo, recall, precision 추가
+
+
+
 loggin loss 종류별로 저장
 
 

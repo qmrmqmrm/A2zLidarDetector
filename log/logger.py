@@ -8,7 +8,8 @@ import torch.nn.functional as F
 from config import Config as cfg
 from train.loss_util import distribute_box_over_feature_map
 from model.submodules.matcher import Matcher
-from log.visual_log_ import VisualLog
+from log.history_log import HistoryLog
+from log.visual_log import VisualLog
 from log.anchor_log import AnchorLog
 
 DEVICE = cfg.Model.Structure.DEVICE
@@ -42,8 +43,8 @@ class LogFile:
 
 class LogData:
     def __init__(self, visual_log, ckpt_path, epoch):
-        self.batch = pd.DataFrame()
         self.start = timer()
+        self.history_logger = HistoryLog()
         self.visual_logger = VisualLog(ckpt_path, epoch) if visual_log else None
         self.anchor_logger = AnchorLog(ckpt_path, epoch) if visual_log else None
         self.summary = dict()
@@ -53,43 +54,10 @@ class LogData:
         )
 
     def append_batch_result(self, step, grtr, pred, total_loss, loss_by_type):
-        loss_list = [loss_name for loss_name, loss_tensor in loss_by_type.items() if loss_tensor.ndim == 0]
-        batch_data = {loss_name: loss_by_type[loss_name].cpu().detach().numpy() for loss_name in loss_list}
-        batch_data["total_loss"] = total_loss.cpu().detach().numpy()
-        objectness = self.analyze_objectness(grtr, pred)
-        # self.recall_precision(grtr, pred)
-        batch_data.update(objectness)
-
-        # self.check_nan(batch_data, grtr, pred)
-        batch_data = self.set_precision(batch_data, 5)
-        # test = self.prediction_nms(pred)
-        self.batch = self.batch.append(batch_data, ignore_index=True)
-        print("\n--- batch_data:", batch_data)
-        # self.anchor_logger(step, grtr, pred)
+        # nms_boxes = self.nms(pred)
+        self.history_logger(step, grtr, pred, total_loss, loss_by_type)
         if self.visual_logger:
             self.visual_logger(step, grtr, pred)
-        # if step % 200 == 10:
-        #     print("\n--- batch_data:", batch_data)
-
-        #     self.check_pred_scales(pred)
-
-    #
-    # def show_box(self, grtr,pred):
-    #     img =
-
-    def analyze_objectness(self, grtr, pred):
-        anchors = pred['anchors']
-        pred_objectness_logits = pred['pred_objectness_logits']
-        gt_labels, gt_boxes = distribute_box_over_feature_map(anchors, grtr, self.anchor_matcher)
-        num_images = len(gt_labels)
-        gt_labels = torch.stack(gt_labels)  # (N, sum(Hi*Wi*Ai))
-        pos_mask = gt_labels == 1
-        num_pos_anchors = pos_mask.sum().item()
-        num_neg_anchors = (gt_labels == 0).sum().item()
-        num_pos_anchors = num_pos_anchors / num_images
-        num_neg_anchors = num_neg_anchors / num_images
-        objectness = {"pos_obj": num_pos_anchors, "neg_obj": num_neg_anchors}
-        return objectness
 
     def check_nan(self, losses, grtr, pred):
         valid_result = True
@@ -108,25 +76,15 @@ class LogData:
 
         assert valid_result
 
-    def check_pred_scales(self, pred):
-        raw_features = {key: tensor for key, tensor in pred.items() if key.endswith("raw")}
-        pred_scales = dict()
-        for key, feat in raw_features.items():
-            pred_scales[key] = np.quantile(feat.numpy(), np.array([0.05, 0.5, 0.95]))
-        print("--- pred_scales:", pred_scales)
-
     def set_precision(self, logs, precision):
         new_logs = {key: np.around(val, precision) for key, val in logs.items()}
         return new_logs
 
     def finalize(self):
-        self.summary = self.batch.mean(axis=0).to_dict()
-        self.summary["time_m"] = round((timer() - self.start) / 60., 5)
-        print("finalize:", self.summary)
+        self.history_logger.make_summary()
 
     def get_summary(self):
-        return self.summary
-
+        return self.history_logger.get_summary()
 
     def prediction_nms(self, pred):
         print('prediction_nms')

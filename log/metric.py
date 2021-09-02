@@ -1,4 +1,5 @@
-import log.util_function as uf
+import utils.util_function as uf
+
 
 def count_true_positives(grtr, grtr_dontcare, pred, num_ctgr, per_class=False, category_key="category", suffix=""):
     """

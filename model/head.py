@@ -123,10 +123,8 @@ class ROIHeads(torch.nn.Module):
             # [{'proposal_boxes': torch.Size([2000+gt_box, 4]), 'objectness_logits': torch.Size([2000+gt_box])} * batch]
         proposals_with_gt = []
 
-        for bbox2d_per_image, bbox3d_per_image, category_per_image, yaw_par_image, yaw_rads_par_image, proposal_per_image in zip(
-                targets['bbox2d'], targets['bbox3d'], targets['category'], targets['yaw'], targets['yaw_rads'], proposals):
+        for bbox2d_per_image, category_per_image, proposal_per_image in zip(targets['bbox2d'], targets['category'], proposals):
             instance_per_image = dict()
-            # has_gt = len(targets_per_image) > 0
             match_quality_matrix = pairwise_iou(bbox2d_per_image, proposal_per_image.get("proposal_boxes"))
             matched_idxs, matched_labels = self.proposal_matcher(match_quality_matrix)
             # matched_idxs : torch.Size([2000+gt_box])
@@ -139,6 +137,7 @@ class ROIHeads(torch.nn.Module):
             # torch.Size([512, 4])
             instance_per_image['objectness_logits'] = proposal_per_image.get("objectness_logits")[sampled_idxs]
             # torch.Size([512])
+            # instance_per_image['gt_category'] = gt_classes
 
             proposals_with_gt.append(instance_per_image)
 

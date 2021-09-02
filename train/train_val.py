@@ -7,6 +7,7 @@ import utils.util_function as uf
 from log.logger import LogData
 from train.inference import Inference
 from config import Config as cfg
+import model.submodules.model_util as mu
 
 
 class TrainValBase:
@@ -33,7 +34,7 @@ class TrainValBase:
             prediction, total_loss, loss_by_type = self.run_step(features)
             # uf.print_structure("feat", features)
             # uf.print_structure("pred", prediction)
-            # logger.append_batch_result(step, features, prediction, total_loss, loss_by_type)
+            logger.append_batch_result(step, features, prediction, total_loss, loss_by_type)
             uf.print_progress(f"({self.split}) {step}/{steps} steps in {epoch} epoch, "
                               f"time={timer() - start:.3f}, "
                               f"loss={total_loss:.3f}, ")
@@ -62,7 +63,9 @@ class ModelTrainer(TrainValBase):
 
     def run_step(self, features):
         prediction = self.model(features)
-        total_loss, loss_by_type = self.loss_object(features, prediction)
+        features = mu.remove_padding(features)
+
+        total_loss, loss_by_type = self.loss_object(features, prediction, True)
         self.optimizer.zero_grad()
         total_loss.backward()
         self.optimizer.step()
@@ -79,7 +82,14 @@ class ModelValidater(TrainValBase):
 
     def run_step(self, features):
         prediction = self.model(features)
-        total_loss, loss_by_type = self.loss_object(features, prediction)
+
+        # uf.print_structure('prediction', prediction)
+        features = mu.remove_padding(features)
+        output = Inference(prediction)
+        inference = output.inference(0.05, 0.5, 100)
+        uf.print_structure('features', inference)
+
+        total_loss, loss_by_type = self.loss_object(features, prediction, False)
         return prediction, total_loss, loss_by_type
 
     def mode_set(self):

@@ -4,8 +4,8 @@ import numpy as np
 class LossComb:
     STANDARD = {"ciou": 1., "object": 1., "category": 1.}
     SCALE_WEIGHT = {"ciou": 1., "object_l": 1., "object_m": 1., "object_s": 4., "category": 1.}
-    BIRDNET_ = {'bbox2d': 1., 'object': 1., 'bbox3d': 100., 'height': 1., 'yaw_reg': 1., 'yaw_cls': 1., "category": 1}
-    BIRDNET = {'bbox2d': 1., 'object': 1}
+    BIRDNET = {'bbox2d': 1., 'object': 1., 'bbox3d': 100., 'height': 1., 'yaw_reg': 1., 'yaw_cls': 1., "category": 1}
+    BIRDNET_ = {'bbox2d': 1., 'object': 1}
 
 
 class Anchor:
@@ -26,7 +26,7 @@ class TrainingPlan:
     ]
     A2D2_SIMPLE = [
         ('a2d2', 1, 0.000001, LossComb.BIRDNET, True),
-        ('a2d2', 10, 0.0001, LossComb.BIRDNET, True),
+        ('a2d2', 10, 0.000001, LossComb.BIRDNET, True),
         ('a2d2', 10, 0.00001, LossComb.BIRDNET, True),
         ('a2d2', 1, 0.000001, LossComb.BIRDNET, True),
         ('a2d2', 1, 0.000001, LossComb.BIRDNET, True)

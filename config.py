@@ -156,7 +156,7 @@ class Config:
             NORM = ''
 
     class Train:
-        CKPT_NAME = "birdnet"
+        CKPT_NAME = "loss_test"
         MODE = ["eager", "graph"][1]
         BATCH_SIZE = 2
         TRAINING_PLAN = params.TrainingPlan.A2D2_SIMPLE

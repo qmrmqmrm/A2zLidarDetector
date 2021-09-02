@@ -41,6 +41,7 @@ def add_ground_truth_to_proposals_single_image(gt_boxes, proposals):
     Returns:
         Same as `add_ground_truth_to_proposals`, but for only one image.
     """
+
     gt_boxes = gt_boxes.to(cfg.Model.Structure.DEVICE)
     device = proposals.get('objectness_logits').device
     # device = proposals.objectness_logits.device

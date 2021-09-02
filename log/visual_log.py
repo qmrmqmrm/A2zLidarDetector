@@ -5,6 +5,7 @@ import numpy as np
 import cv2
 
 from config import Config as cfg
+import utils.util_function as uf
 
 
 class VisualLog:
@@ -19,6 +20,8 @@ class VisualLog:
         :param grtr: slices of GT data {'image': (B,H,W,3), 'bboxes': {'yxhw': (B,N,4), ...}, 'feature_l': {'bbox': (B,HWA,4), ...}, ...}
         :param pred: slices of pred. data {'bboxes': {'yxhw': (B,N,4), ...}, 'feature_l': {'bbox': (B,HWA,4), ...}, ...}
         """
+        uf.print_structure('log pred',pred)
+        uf.print_structure('log grtr',grtr)
         head_proposals = pred['head_proposals']
         gt_bbox2d = torch.cat([p['bbox2d'] for p in head_proposals])
         gt_classes = torch.cat([p['gt_category'] for p in head_proposals], dim=0)
@@ -87,3 +90,4 @@ class VisualLog:
             cv2.rectangle(draw_img, (box[0], box[1]), (box[2], box[3]), color, 2)
         cv2.imwrite(save_path, draw_img)
         return draw_img
+

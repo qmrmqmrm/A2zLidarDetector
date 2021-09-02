@@ -14,37 +14,28 @@ class Inference:
         """
         :param features:
         :param pred:
-                {# header outputs
-                'head_class_logits': torch.Size([batch * 512, 4]) pred_class_logits
-                'bbox_3d_logits': torch.Size([batch * 512, 12]) pred_proposal_deltas
-                'head_yaw_logits': torch.Size([batch * 512, 36]) viewpoint_logits
-                'head_yaw_residuals': torch.Size([batch * 512, 36]) viewpoint_residuals
-                'head_height_logits': torch.Size([batch * 512, 6]) height_logits
-
-                'head_proposals': [{'proposal_boxes': torch.Size([512, 4])
-                                    'objectness_logits': torch.Size([512])
-                                    'category': torch.Size([512, 1])
-                                    'bbox2d': torch.Size([512, 4])
-                                    'bbox3d': torch.Size([512, 6])
-                                    'object': torch.Size([512, 1])
-                                    'yaw': torch.Size([512, 2])} * batch]
-
-                # rpn outputs
-                'rpn_proposals': [{'proposal_boxes': torch.Size([2000, 4]),
-                                  'objectness_logits': torch.Size([2000])} * batch]
-
-                'pred_objectness_logits' : [torch.Size([batch, 557568(176 * 352 * 9)]),
-                                            torch.Size([batch, 139392(88 * 176 * 9)]),
-                                            torch.Size([batch, 34848(44 * 88 * 9)])]
-
-                'pred_anchor_deltas' : [torch.Size([batch, 557568(176 * 352 * 9), 4]),
-                                        torch.Size([batch, 139392(88 * 176 * 9), 4]),
-                                        torch.Size([batch, 34848(44 * 88 * 9), 4])]
-
-                'anchors' : [torch.Size([557568(176 * 352 * 9), 4])
-                             torch.Size([139392(88 * 176 * 9), 4])
-                             torch.Size([34848(44 * 88 * 9), 4])]
-                }
+            prediction /head_class_logits torch.Size([1502, 4])
+            prediction /bbox_3d_logits torch.Size([1502, 12])
+            prediction /head_yaw_logits torch.Size([1502, 36])
+            prediction /head_yaw_residuals torch.Size([1502, 36])
+            prediction /head_height_logits torch.Size([1502, 6])
+            prediction /head_proposals/0/proposal_boxes torch.Size([781, 4])
+            prediction /head_proposals/0/objectness_logits torch.Size([781])
+            prediction /head_proposals/1/proposal_boxes torch.Size([721, 4])
+            prediction /head_proposals/1/objectness_logits torch.Size([721])
+            prediction /rpn_proposals/0/proposal_boxes torch.Size([781, 4])
+            prediction /rpn_proposals/0/objectness_logits torch.Size([781])
+            prediction /rpn_proposals/1/proposal_boxes torch.Size([721, 4])
+            prediction /rpn_proposals/1/objectness_logits torch.Size([721])
+            prediction /pred_objectness_logits/0 torch.Size([2, 557568])
+            prediction /pred_objectness_logits/1 torch.Size([2, 139392])
+            prediction /pred_objectness_logits/2 torch.Size([2, 34848])
+            prediction /pred_anchor_deltas/0 torch.Size([2, 557568, 4])
+            prediction /pred_anchor_deltas/1 torch.Size([2, 139392, 4])
+            prediction /pred_anchor_deltas/2 torch.Size([2, 34848, 4])
+            prediction /anchors/0 torch.Size([557568, 4])
+            prediction /anchors/1 torch.Size([139392, 4])
+            prediction /anchors/2 torch.Size([34848, 4])
         """
         head_proposals = pred['head_proposals']
         self.box2box_transform = Box2BoxTransform(weights=cfg.Model.RPN.BBOX_REG_WEIGHTS)
@@ -68,11 +59,6 @@ class Inference:
         # assert not self.proposals.tensor.requires_grad, "Proposals should not require gradients!"
         self.image_shapes = [[700, 1400] for x in head_proposals]
 
-        self.gt_boxes = torch.cat([p['bbox3d'] for p in head_proposals])
-        self.gt_classes = torch.cat([p['gt_category'] for p in head_proposals], dim=0)
-        self.gt_viewpoint = torch.cat([p['yaw'] for p in head_proposals], dim=0)
-        self.gt_viewpoint_rads = torch.cat([p['yaw_rads'] for p in head_proposals], dim=0)
-        self.gt_height = torch.cat([p['bbox3d'][:, - 2:] for p in head_proposals], dim=0)
 
     def inference(self, score_thresh, nms_thresh, topk_per_image):
         """
@@ -134,7 +120,6 @@ class Inference:
         return probs.split(self.num_preds_per_image, dim=0)
 
     def predict_viewpoint_residual(self):
-        num_pred = len(self.proposals)
         vp_residuals = self.apply_vp_deltas()
         return vp_residuals.split(self.num_preds_per_image, dim=0)
 
@@ -277,50 +262,50 @@ def fast_rcnn_inference_single_image(
     scores = scores[filter_mask]
     #
     # Apply per-class NMS
-    # if not rotated_box_training or len(boxes) == 0:
-    keep = box_ops.batched_nms(boxes, scores, filter_inds[:, 1], nms_thresh)
-    # else:
-    #     # BBox with encoding ctr_x,ctr_y,w,l
-    #     if vp is not None and vp_bins is not None:
-    #         _vp = vp.view(-1, num_bbox_reg_classes, vp_bins)  # R x C x bins
-    #         _vp = _vp[filter_mask]
-    #         if len(_vp) > 0:
-    #             _, vp_max = torch.max(_vp, 1)
-    #             vp_filtered = vp_max
-    #             if vp_res is not None:
-    #                 _vp_res = vp_res.view(-1, num_bbox_reg_classes, vp_bins)
-    #                 _vp_res = _vp_res[filter_mask]
-    #                 vp_res_filtered = list()
-    #                 for i, k in enumerate(vp_max):
-    #                     vp_res_filtered.append(_vp_res[i, k])
-    #             else:
-    #                 vp_filtered = _vp
-    #         rboxes = []
-    #         for i in range(boxes.shape[0]):
-    #             box = boxes[i]
-    #             angle = anglecorrection(vp_res_filtered[i] * 180 / math.pi).to(box.device)
-    #             box = torch.cat((box, angle))
-    #             rboxes.append(box)
-    #         rboxes = torch.cat(rboxes).reshape(-1, 5).to(vp_filtered.device)
-    #         # keep = nms_rotated(rboxes, scores, nms_thresh)
-    #
-    #         # need check
-    #         max_coordinate = (
-    #                 torch.max(rboxes[:, 0], rboxes[:, 1]) + torch.max(rboxes[:, 2], rboxes[:, 3]) / 2
-    #         ).max()
-    #         min_coordinate = (
-    #                 torch.min(rboxes[:, 0], rboxes[:, 1]) - torch.max(rboxes[:, 2], rboxes[:, 3]) / 2
-    #         ).min()
-    #         offsets = filter_inds[:, 1].to(rboxes) * (max_coordinate - min_coordinate + 1)
-    #         boxes_for_nms = rboxes.clone()  # avoid modifying the original values in boxes
-    #         boxes_for_nms[:, :2] += offsets[:, None]
-    #         keep = torch.ops.detectron2.nms_rotated(boxes_for_nms, scores, nms_thresh)
-    #
-    #         # keep = batched_nms_rotated(rboxes, scores, filter_inds[:, 1], nms_thresh)
-    #     else:
-    #         boxes[:, :, 2] = boxes[:, :, 2] + boxes[:, :, 0]  # x2
-    #         boxes[:, :, 3] = boxes[:, :, 3] + boxes[:, :, 1]  # y2
-    #         keep = box_ops.batched_nms(boxes, scores, filter_inds[:, 1], nms_thresh)
+    if not rotated_box_training or len(boxes) == 0:
+        keep = box_ops.batched_nms(boxes, scores, filter_inds[:, 1], nms_thresh)
+    else:
+        # BBox with encoding ctr_x,ctr_y,w,l
+        if vp is not None and vp_bins is not None:
+            _vp = vp.view(-1, num_bbox_reg_classes, vp_bins)  # R x C x bins
+            _vp = _vp[filter_mask]
+            if len(_vp) > 0:
+                _, vp_max = torch.max(_vp, 1)
+                vp_filtered = vp_max
+                if vp_res is not None:
+                    _vp_res = vp_res.view(-1, num_bbox_reg_classes, vp_bins)
+                    _vp_res = _vp_res[filter_mask]
+                    vp_res_filtered = list()
+                    for i, k in enumerate(vp_max):
+                        vp_res_filtered.append(_vp_res[i, k])
+                else:
+                    vp_filtered = _vp
+            rboxes = []
+            for i in range(boxes.shape[0]):
+                box = boxes[i]
+                angle = anglecorrection(vp_res_filtered[i] * 180 / math.pi).to(box.device)
+                box = torch.cat((box, angle))
+                rboxes.append(box)
+            rboxes = torch.cat(rboxes).reshape(-1, 5).to(vp_filtered.device)
+            # keep = nms_rotated(rboxes, scores, nms_thresh)
+
+            # need check
+            max_coordinate = (
+                    torch.max(rboxes[:, 0], rboxes[:, 1]) + torch.max(rboxes[:, 2], rboxes[:, 3]) / 2
+            ).max()
+            min_coordinate = (
+                    torch.min(rboxes[:, 0], rboxes[:, 1]) - torch.max(rboxes[:, 2], rboxes[:, 3]) / 2
+            ).min()
+            offsets = filter_inds[:, 1].to(rboxes) * (max_coordinate - min_coordinate + 1)
+            boxes_for_nms = rboxes.clone()  # avoid modifying the original values in boxes
+            boxes_for_nms[:, :2] += offsets[:, None]
+            keep = torch.ops.detectron2.nms_rotated(boxes_for_nms, scores, nms_thresh)
+
+            # keep = batched_nms_rotated(rboxes, scores, filter_inds[:, 1], nms_thresh)
+        else:
+            boxes[:, :, 2] = boxes[:, :, 2] + boxes[:, :, 0]  # x2
+            boxes[:, :, 3] = boxes[:, :, 3] + boxes[:, :, 1]  # y2
+            keep = box_ops.batched_nms(boxes, scores, filter_inds[:, 1], nms_thresh)
 
     if topk_per_image >= 0:
         keep = keep[:topk_per_image]
