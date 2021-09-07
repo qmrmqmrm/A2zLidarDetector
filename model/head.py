@@ -44,11 +44,8 @@ class ROIHeads(torch.nn.Module):
         self.rotated_box_training = cfg.Model.Structure.ROTATED_BOX_TRAINING
         self.weights_height = cfg.Model.Structure.WEIGHTS_HEIGHT
         self.vp_weight_loss = cfg.Model.Structure.VP_WEIGHT_LOSS
-        self.test_score_thresh = cfg.Model.ROI_HEADS.SCORE_THRESH_TEST
-        self.test_nms_thresh = cfg.Model.ROI_HEADS.NMS_THRESH_TEST
-        self.test_detections_per_img = 100
         self.proposal_matcher = Matcher(
-            cfg.Model.ROI_HEADS.IOU_THRESHOLDS,
+            cfg.Model.ROI_HEADS.MATCHER_IOU_THRESHOLDS,
             cfg.Model.ROI_HEADS.IOU_LABELS,
             allow_low_quality_matches=False,
         )

@@ -11,58 +11,68 @@ import utils.util_function as uf
 class VisualLog:
     def __init__(self, ckpt_path, epoch):
         self.vlog_path = op.join(ckpt_path, cfg.Train.CKPT_NAME, "vlog", f"ep{epoch:02d}")
+
         if not op.isdir(self.vlog_path):
             os.makedirs(self.vlog_path)
 
-    def __call__(self, step, grtr, pred):
+    def __call__(self, step, grtr, pred, title):
         """
         :param step: integer step index
         :param grtr: slices of GT data {'image': (B,H,W,3), 'bboxes': {'yxhw': (B,N,4), ...}, 'feature_l': {'bbox': (B,HWA,4), ...}, ...}
         :param pred: slices of pred. data {'bboxes': {'yxhw': (B,N,4), ...}, 'feature_l': {'bbox': (B,HWA,4), ...}, ...}
         """
-        uf.print_structure('log pred',pred)
-        uf.print_structure('log grtr',grtr)
-        head_proposals = pred['head_proposals']
-        gt_bbox2d = torch.cat([p['bbox2d'] for p in head_proposals])
-        gt_classes = torch.cat([p['gt_category'] for p in head_proposals], dim=0)
-        proposals = torch.cat([p['proposal_boxes'] for p in head_proposals])
+        # uf.print_structure('VisualLog pred', pred)
+        # uf.print_structure('VisualLog grtr', grtr)
 
-        bg_class_ind = cfg.Model.Structure.NUM_CLASSES
-        fg_inds = torch.nonzero((gt_classes >= 0) & (gt_classes < bg_class_ind)).squeeze(1)
-        fg_car_inds = torch.nonzero((gt_classes == 0)).squeeze(1)
-        fg_pad_inds = torch.nonzero((gt_classes == 1)).squeeze(1)
-        fg_cyc_inds = torch.nonzero((gt_classes == 2)).squeeze(1)
-
-        print('fg_inds', fg_inds)
-        print('fg_car_inds', fg_car_inds)
-        print('fg_pad_inds', fg_pad_inds)
-        print('fg_cyc_inds', fg_cyc_inds)
         for i, image_file in enumerate(grtr['image_file']):
-            index = fg_inds[torch.nonzero((fg_inds >= (512 * i)) & (fg_inds < (512 * (i + 1)))).squeeze(1)]
-            index_car = fg_car_inds[torch.nonzero((fg_car_inds >= (512 * i)) & (fg_car_inds < (512 * (i + 1)))).squeeze(1)]
-            index_pad = fg_pad_inds[torch.nonzero((fg_pad_inds >= (512 * i)) & (fg_pad_inds < (512 * (i + 1)))).squeeze(1)]
-            index_cyc = fg_cyc_inds[torch.nonzero((fg_cyc_inds >= (512 * i)) & (fg_cyc_inds < (512 * (i + 1)))).squeeze(1)]
+            if title == 'pred_nms':
+                proposals = pred[0][i]
+                gt_bbox2d = grtr['bbox2d'][i]
+                gt_classes = grtr['category'][i]
+                proposals_box = proposals['pred_boxes']
+                proposals_class = proposals['pred_classes']
 
-            img_filename = '/'.join(image_file.split('/')[-3:])
+            elif title == 'gt_proposal':
+                uf.print_structure('grtr', grtr)
+                uf.print_structure('pred', pred)
+                proposals = pred[i]
+                gt_bbox2d = grtr['bbox2d'][i]
+                gt_classes = grtr['category'][i]
+                uf.print_structure('gt_class', gt_classes)
+                uf.print_structure('proposals', proposals)
+                proposals_box = proposals['gt_proposal_box']
+                proposals_class = proposals['gt_proposals_class']
+
+            fg_car_inds = torch.nonzero((gt_classes == 0)).squeeze(1)
+            fg_pad_inds = torch.nonzero((gt_classes == 1)).squeeze(1)
+            fg_cyc_inds = torch.nonzero((gt_classes == 2)).squeeze(1)
+            pre_car_inds = torch.nonzero((proposals_class == 0)).squeeze(1)
+            pre_pad_inds = torch.nonzero((proposals_class == 1)).squeeze(1)
+            pre_cyc_inds = torch.nonzero((proposals_class == 2)).squeeze(1)
+
             img = cv2.imread(image_file)
+
             camera_file = image_file.replace('/image', '/camera')
             camera = cv2.imread(camera_file)
             camera = cv2.resize(camera, dsize=(1400, 700))
-            save_path = os.path.join(self.vlog_path, 'total', img_filename)
+            img_filename = '/'.join(image_file.split('/')[-3:])
+            save_path = os.path.join(self.vlog_path, 'total_img', img_filename)
             pred_folder = '/'.join(save_path.split('/')[:-1])
             if not os.path.exists(pred_folder):
                 os.makedirs(pred_folder)
 
-            pred_img = self.draw_boxes(img, img_filename, proposals, index_car, 'pred', (0, 0, 255))
-            pred_img = self.draw_boxes(pred_img, img_filename, proposals, index_pad, 'pred', (0, 255, 0))
-            pred_img = self.draw_boxes(pred_img, img_filename, proposals, index_cyc, 'pred', (255, 0, 0))
-            gt_img = self.draw_boxes(img, img_filename, gt_bbox2d, index_car, 'gt', (0, 0, 255))
-            gt_img = self.draw_boxes(gt_img, img_filename, gt_bbox2d, index_pad, 'gt', (0, 255, 0))
-            gt_img = self.draw_boxes(gt_img, img_filename, gt_bbox2d, index_cyc, 'gt', (255, 0, 0))
+            pred_img = self.draw_boxes(img, img_filename, proposals_box, pre_car_inds, 'pred', (0, 0, 255))
+            pred_img = self.draw_boxes(pred_img, img_filename, proposals_box, pre_pad_inds, 'pred', (0, 255, 0))
+            pred_img = self.draw_boxes(pred_img, img_filename, proposals_box, pre_cyc_inds, 'pred', (255, 0, 255))
+            gt_img = self.draw_boxes(img, img_filename, gt_bbox2d, fg_car_inds, 'gt', (0, 0, 255))
+            gt_img = self.draw_boxes(gt_img, img_filename, gt_bbox2d, fg_pad_inds, 'gt', (0, 255, 0))
+            gt_img = self.draw_boxes(gt_img, img_filename, gt_bbox2d, fg_cyc_inds, 'gt', (255, 0, 0))
             total_img = cv2.vconcat([camera, pred_img, gt_img])
             cv2.imwrite(save_path, total_img)
 
-    def draw_boxes(self, img, file_name, boxes, index, split, color, rotation='xyxy'):
+    def draw_boxes(self, img, file_name, boxes, idx, split, color, rotation='xyxy'):
+        if idx.numel() == 0:
+            return img
         draw_img = img.copy()
         draw_boxes = boxes
         if rotation == 'xywh':
@@ -85,9 +95,8 @@ class VisualLog:
 
         if not os.path.exists(pred_folder):
             os.makedirs(pred_folder)
-        for idx in index:
-            box = draw_boxes[idx, :].type(torch.int32).cpu().numpy()
+        for box in draw_boxes:
+            box = box.type(torch.int32).cpu().numpy()
             cv2.rectangle(draw_img, (box[0], box[1]), (box[2], box[3]), color, 2)
         cv2.imwrite(save_path, draw_img)
         return draw_img
-

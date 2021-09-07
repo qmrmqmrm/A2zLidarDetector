@@ -24,13 +24,17 @@ def distribute_box_over_feature_map(anchors, bbox2d, anchor_matcher):
     anchors = torch.cat(anchors)
     gt_labels = []
     matched_gt_boxes = []
+
+    print('anchors shape', anchors.shape)
     for i, box in enumerate(bbox2d):
         """
         image_size_i: (h, w) for the i-th image
         gt_boxes_i: ground-truth boxes for i-th image
         """
+        print('box shape', box.shape)
         match_quality_matrix = pairwise_iou(box, anchors)
         matched_idxs, gt_labels_i = anchor_matcher(match_quality_matrix)
+        print('gt_labels_i.shape', gt_labels_i.shape)
 
         # Matching is memory-expensive and may result in CPU tensors. But the result is small
         gt_labels_i = gt_labels_i.to(device=DEVICE)

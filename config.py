@@ -17,7 +17,7 @@ class Config:
             CATEGORIES_TO_USE = ["Pedestrian", "Car", "Van", "Truck", "Cyclist"]
             CATEGORY_REMAP = {"Pedestrian": "Person", "Cyclist": "Bicycle"}
             INPUT_RESOLUTION = (256, 832)  # (4,13) * 64
-            CROP_TLBR = [0, 0, 0, 0]  # crop [top, left, bottom, right] or [y1 x1 y2 x2]
+            CROP_TLBR = [0, 0, 0, 0]  # crop [top, left, bottom, right] or [y1 x1 y2 x2]m m
 
         class A2D2:
             NAME = "a2d2"
@@ -134,11 +134,11 @@ class Config:
         class ROI_HEADS:
             INPUT_FEATURES = ['p2', 'p3', 'p4']
             IOU_LABELS = [0, 1]
-            IOU_THRESHOLDS = [0.5]
+            MATCHER_IOU_THRESHOLDS = [0.5]
             BATCH_SIZE_PER_IMAGE = 512
             POSITIVE_FRACTION = 0.25
-            SCORE_THRESH_TEST = 0.05
-            NMS_THRESH_TEST = 0.5
+            NMS_SCORE_THRESH = 0.5
+            NMS_IOU_THRESH = 0.5
 
             PROPOSAL_APPEND_GT = True
 
@@ -156,7 +156,7 @@ class Config:
             NORM = ''
 
     class Train:
-        CKPT_NAME = "loss_test"
+        CKPT_NAME = "final"
         MODE = ["eager", "graph"][1]
         BATCH_SIZE = 2
         TRAINING_PLAN = params.TrainingPlan.A2D2_SIMPLE

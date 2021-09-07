@@ -59,7 +59,6 @@ class Inference:
         # assert not self.proposals.tensor.requires_grad, "Proposals should not require gradients!"
         self.image_shapes = [[700, 1400] for x in head_proposals]
 
-
     def inference(self, score_thresh, nms_thresh, topk_per_image):
         """
         Args:

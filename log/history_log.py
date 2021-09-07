@@ -4,15 +4,18 @@ import pandas as pd
 from timeit import default_timer as timer
 
 from log.metric import count_true_positives
+from config import Config as cfg
+import utils.util_function as uf
 
 
 class HistoryLog:
-    def __init__(self):
+    def __init__(self,  training):
         self.batch_data_table = pd.DataFrame()
         self.start = timer()
         self.summary = dict()
+        self.training = training
 
-    def __call__(self, step, grtr, pred, total_loss, loss_by_type):
+    def __call__(self, step, grtr, pred, total_loss, loss_by_type, pred_nms= None):
         """
         :param step: integer step index
         :param grtr: slices of GT data {'image': (B,H,W,3), 'bboxes': {'yxhw': (B,N,4), ...}, 'feature_l': {'bbox': (B,HWA,4), ...}, ...}
@@ -28,8 +31,9 @@ class HistoryLog:
         # batch_data.update(box_objectness)
         # 
         # num_ctgr = pred["feature_l"]["category"].shape[-1]
-        # metric = self.compute_metrics(grtr["bboxes"], grtr["dontcare"], pred["bboxes"], num_ctgr)
-        # batch_data.update(metric)
+        if not self.training:
+            metric = self.compute_metrics(grtr['bbox2d'], grtr['category'], pred_nms)
+            batch_data.update(metric)
 
         batch_data = self.set_precision(batch_data, 5)
         col_order = list(batch_data.keys())
@@ -39,11 +43,27 @@ class HistoryLog:
         if step % 200 == 10:
             print("\n--- batch_data:", batch_data)
 
-    def compute_metrics(self, grtr_bbox, grtr_dc, pred_bbox, num_ctgr):
-        metric = {}
-        major_metric = count_true_positives(grtr_bbox, grtr_dc, pred_bbox, num_ctgr, per_class=False)
-        metric.update(major_metric)
+    def compute_metrics(self, grtr_bbox, grtr_cate, prediction):
+        trpo_list = list()
+        grtr_list = list()
+        pred_list = list()
+        batch = 0
+        for i, (gt_box, gt_cate) in enumerate(zip(grtr_bbox, grtr_cate)):
+            proposals = prediction[0][i]
+            proposals_box = proposals['pred_boxes']
+            proposals_class = proposals['pred_classes']
+            trpo, grtr, pred = uf.count_true_positives(gt_box, gt_cate, proposals_box, proposals_class)
+            print("metric image i:", i, trpo, grtr, pred)
+            trpo_list.append(trpo)
+            grtr_list.append(grtr)
+            pred_list.append(pred)
+            batch = i + 1
+
+        metric = {"trpo": sum(trpo_list), "grtr": sum(grtr_list), "pred": sum(pred_list)}
+        print("metric:", metric)
+        # metric = {"trpo": 1, "grtr": 2, "pred": 3}
         return metric
+
 
     def analyze_box_objectness(self, grtr, pred):
         pos_obj, neg_obj = 0, 0
@@ -53,32 +73,6 @@ class HistoryLog:
             pos_obj += pos_obj_sc
             neg_obj += neg_obj_sc
         objectness = {"pos_obj": pos_obj.numpy() / len(scales), "neg_obj": neg_obj.numpy() / len(scales)}
-        return objectness
-
-    def pos_neg_obj(self, grtr_obj_mask, pred_obj_prob):
-        obj_num = tf.maximum(tf.reduce_sum(grtr_obj_mask), 1)
-        pos_obj = tf.reduce_sum(grtr_obj_mask * pred_obj_prob) / obj_num
-        # average top 50 negative objectness probabilities per frame
-        neg_obj_map = (1. - grtr_obj_mask) * pred_obj_prob
-        batch, hwa, _ = neg_obj_map.shape
-        neg_obj_map = tf.reshape(neg_obj_map, (batch * hwa, -1))
-        neg_obj_map = tf.sort(neg_obj_map, axis=-1, direction="DESCENDING")
-        neg_obj_map = neg_obj_map[:, :50]
-        neg_obj = tf.reduce_mean(neg_obj_map)
-        return pos_obj, neg_obj
-
-    def analyze_objectness(self, grtr, pred):
-        anchors = pred['anchors']
-        pred_objectness_logits = pred['pred_objectness_logits']
-        gt_labels, gt_boxes = distribute_box_over_feature_map(anchors, grtr, self.anchor_matcher)
-        num_images = len(gt_labels)
-        gt_labels = torch.stack(gt_labels)  # (N, sum(Hi*Wi*Ai))
-        pos_mask = gt_labels == 1
-        num_pos_anchors = pos_mask.sum().item()
-        num_neg_anchors = (gt_labels == 0).sum().item()
-        num_pos_anchors = num_pos_anchors / num_images
-        num_neg_anchors = num_neg_anchors / num_images
-        objectness = {"pos_obj": num_pos_anchors, "neg_obj": num_neg_anchors}
         return objectness
 
     def check_pred_scales(self, pred):

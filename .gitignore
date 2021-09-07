@@ -2,7 +2,10 @@
 output
 instant_test_output
 inference_test_output
-
+configs
+projects
+detectron2
+setup.*
 
 *.jpg
 *.png

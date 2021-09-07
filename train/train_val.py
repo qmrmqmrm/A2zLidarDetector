@@ -20,25 +20,26 @@ class TrainValBase:
         self.device = cfg.Model.Structure.DEVICE
 
     def run_epoch(self, visual_log, epoch, data_loader):
-        logger = LogData(visual_log, cfg.Paths.CHECK_POINT, epoch)
+
+        self.mode_set()
+        logger = LogData(visual_log, cfg.Paths.CHECK_POINT, epoch, self.model.training)
         train_loader_iter = iter(data_loader)
         steps = len(train_loader_iter)
-        self.mode_set()
+
         for step in range(steps):
-            if step > 10:
-                break
+            # if step > 100:
+            #     break
             features = next(train_loader_iter)
             features = self.to_device(features)
 
             start = timer()
-            prediction, total_loss, loss_by_type = self.run_step(features)
-            # uf.print_structure("feat", features)
-            # uf.print_structure("pred", prediction)
+            file_name = features['image_file']
+            prediction, total_loss, loss_by_type, features = self.run_step(features)
+            features['image_file'] = file_name
             logger.append_batch_result(step, features, prediction, total_loss, loss_by_type)
             uf.print_progress(f"({self.split}) {step}/{steps} steps in {epoch} epoch, "
                               f"time={timer() - start:.3f}, "
                               f"loss={total_loss:.3f}, ")
-            print("")
 
         logger.finalize()
         return logger
@@ -69,7 +70,7 @@ class ModelTrainer(TrainValBase):
         self.optimizer.zero_grad()
         total_loss.backward()
         self.optimizer.step()
-        return prediction, total_loss, loss_by_type
+        return prediction, total_loss, loss_by_type, features
 
     def mode_set(self):
         self.model.train()
@@ -82,15 +83,9 @@ class ModelValidater(TrainValBase):
 
     def run_step(self, features):
         prediction = self.model(features)
-
-        # uf.print_structure('prediction', prediction)
         features = mu.remove_padding(features)
-        output = Inference(prediction)
-        inference = output.inference(0.05, 0.5, 100)
-        uf.print_structure('features', inference)
-
         total_loss, loss_by_type = self.loss_object(features, prediction, False)
-        return prediction, total_loss, loss_by_type
+        return prediction, total_loss, loss_by_type, features
 
     def mode_set(self):
         self.model.eval()

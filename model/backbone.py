@@ -8,6 +8,7 @@ from config import Config as cfg
 from model.submodules.model_util import Conv2d
 from utils.batch_norm import get_norm ,FrozenBatchNorm2d
 from utils.util_class import ShapeSpec
+import utils.util_function as uf
 from model.submodules.weight_init import c2_msra_fill, c2_xavier_fill
 
 

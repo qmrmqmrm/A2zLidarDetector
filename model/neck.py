@@ -10,6 +10,7 @@ from config import Config as cfg
 from model.submodules.model_util import Conv2d
 from utils.batch_norm import get_norm
 from utils.util_class import ShapeSpec
+import utils.util_function as uf
 
 
 def _assert_strides_are_log2_contiguous(strides):
@@ -159,6 +160,7 @@ class FPN(Backbone):
                 top_block_in_feature = results[self._out_features.index(self.top_block.in_feature)]
             results.extend(self.top_block(top_block_in_feature))
         assert len(self._out_features) == len(results)
+        uf.print_structure('fpn', results)
         return dict(zip(self._out_features, results))
 
     def output_shape(self):

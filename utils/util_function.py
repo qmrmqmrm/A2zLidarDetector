@@ -218,7 +218,7 @@ def align_gt_with_pred(proposals, targets):
     """
 
     proposal_matcher = Matcher(
-        cfg.Model.ROI_HEADS.IOU_THRESHOLDS,
+        cfg.Model.ROI_HEADS.MATCHER_IOU_THRESHOLDS,
         cfg.Model.ROI_HEADS.IOU_LABELS,
         allow_low_quality_matches=False,
     )
@@ -247,7 +247,26 @@ def align_gt_with_pred(proposals, targets):
     return gt_aligned, match_result
 
 
-def _sample_proposals(matched_idxs, matched_labels, gt_classes):
+def count_true_positives(gt_box, gt_classes,proposal, proposals_class):
+    match_quality_matrix = pairwise_iou(gt_box, proposal)
+    val, idx = torch.max(match_quality_matrix, 1)
+    gt_proposals_class = proposals_class[idx]
+    trpo_bool = torch.logical_and(val > 0.01, gt_proposals_class == gt_classes)
+    print("iou max:", val)
+    print("max index:", gt_proposals_class, gt_classes)
+    print("trpo_bool:", trpo_bool, torch.sum(trpo_bool).item())
+    return torch.sum(trpo_bool).item(), gt_classes.shape[0], proposal.shape[0]
+
+
+def matched_category_gt_with_pred( gt_bbox2d, gt_classes, proposals_box, proposals_class):
+    match_quality_matrix = pairwise_iou(gt_bbox2d, proposals_box)
+    val, idx = torch.max(match_quality_matrix, 1)
+    gt_proposals_class = proposals_class[idx]
+    gt_proposal_box = proposals_box[idx]
+    return gt_proposal_box, gt_proposals_class
+
+
+def _sample_proposals(matched_idxs, matched_labels, gt_classes, num_classes, batch_size_per_image, positive_fraction):
     """
     Based on the matching between N proposals and M groundtruth,
     sample the proposals and set their classification labels.
@@ -266,9 +285,7 @@ def _sample_proposals(matched_idxs, matched_labels, gt_classes):
             [0, num_classes) or the background (num_classes).
     """
     has_gt = gt_classes.numel() > 0
-    num_classes = cfg.Model.Structure.NUM_CLASSES
-    batch_size_per_image = cfg.Model.ROI_HEADS.BATCH_SIZE_PER_IMAGE
-    positive_fraction = cfg.Model.ROI_HEADS.POSITIVE_FRACTION
+
     # Get the corresponding GT for each proposal
     if has_gt:
         gt_classes = gt_classes[matched_idxs]
@@ -287,6 +304,5 @@ def _sample_proposals(matched_idxs, matched_labels, gt_classes):
     )
     # sampled_fg_idxs : pos indax
     # sampled_fg_idxs : neg indax
-    sampled_idxs = torch.cat([sampled_fg_idxs, sampled_bg_idxs], dim=0)
-    # sampled_idxs 512
-    return sampled_idxs, gt_classes[sampled_idxs]
+
+    return sampled_fg_idxs, sampled_bg_idxs

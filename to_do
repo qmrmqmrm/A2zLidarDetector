@@ -1,4 +1,24 @@
 
+
+layer 재구현
+layers = [conv, relu, pool]
+for layer:
+	if layer.name.startwith("conv")
+		nn.init....
+
+forward:
+	for
+
+
+vals, inds = max(tensor)
+mask = vals > 0.4
+new_tensor = tensor[inds] * mask
+
+inds = sort(tensor)
+inds[:, :100]
+
+
+
 --- 9.1
 distribute_over_Feature map 함수
 - bbox2d padding 제거후 feature로 입력 

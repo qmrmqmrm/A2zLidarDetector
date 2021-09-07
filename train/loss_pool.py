@@ -84,18 +84,19 @@ class Box2dRegression(LossBase):
 
 class Box3dRegression(LossBase):
     def __call__(self, features, pred, auxi):
-
         gt_box3d = auxi["gt_matched"]["bbox3d"][:, :4]
         gt_classes = auxi["gt_matched"]["gt_category"]
         pred_box3d = auxi["pred_matched"]["bbox_3d_logits"]
         proposal_boxes = auxi['pred_matched']['bbox2d']
+        if gt_classes.numel() == 0:
+            return torch.tensor(0)
+
         gt_proposal_deltas = self.box2box_transform.get_deltas(proposal_boxes, gt_box3d, True)
-        print('gt_classes', gt_classes.shape)
         box_dim = gt_box3d.size(1)
         category_cols = (box_dim * torch.unsqueeze(gt_classes, 1) + torch.arange(box_dim).to(self.device)).type(torch.int64)
         rows = [[i] * category_cols.size(1) for i in range(category_cols.size(0))]
         pred_box3d_extracted = pred_box3d[rows, category_cols]
-        loss = F.smooth_l1_loss(pred_box3d_extracted, gt_proposal_deltas, reduction='sum', beta=0.5)
+        loss = F.smooth_l1_loss(pred_box3d_extracted, gt_proposal_deltas, reduction='sum', beta=0.0)
         return loss / gt_classes.numel()
 
 
@@ -104,6 +105,9 @@ class HeightRegression(LossBase):
         gt_height = auxi["gt_matched"]["bbox3d"][:, -2:]
         gt_classes = auxi["gt_matched"]["gt_category"]
         pred_height = auxi["pred_matched"]["height"]
+        if gt_classes.numel() == 0:
+            return torch.tensor(0)
+
         gt_height_deltas = self.get_h_deltas(gt_height, gt_classes)
         box_dim = gt_height_deltas.size(1)
         category_cols = (box_dim * torch.unsqueeze(gt_classes, 1) + torch.arange(box_dim).to(self.device)).type(torch.int64)
@@ -132,8 +136,10 @@ class YawRegression(LossBase):
         gt_yaw_rads = auxi["gt_matched"]["yaw_rads"]
         gt_classes = auxi["gt_matched"]["gt_category"]
         pred_yaw_residuals = auxi["pred_matched"]["yaw_residuals"]
-        gt_yaw_deltas = self.get_vp_deltas(gt_yaw, gt_yaw_rads)
+        if gt_classes.numel() == 0:
+            return torch.tensor(0)
 
+        gt_yaw_deltas = self.get_vp_deltas(gt_yaw, gt_yaw_rads)
         category_cols = (self.vp_bins * gt_classes + gt_yaw).type(torch.int64)
         rows = list(range(category_cols.size(0)))
         pred_yaw_rads_extracted = pred_yaw_residuals[rows, category_cols]
@@ -160,6 +166,9 @@ class CategoryClassification(LossBase):
     def __call__(self, features, pred, auxi):
         gt_classes = auxi["gt_matched"]["gt_category"].type(torch.int64)
         pred_classes = auxi["pred_matched"]["class_logits"]
+        if gt_classes.numel() == 0:
+            return torch.tensor(0)
+
         loss = F.cross_entropy(pred_classes, gt_classes, reduction="sum")
         return loss
 
@@ -169,6 +178,8 @@ class YawClassification(LossBase):
         gt_yaw = auxi["gt_matched"]["yaw"].type(torch.int64)
         gt_classes = auxi["gt_matched"]["gt_category"]
         pred_yaw = auxi["pred_matched"]["yaw_logits"]
+        if gt_classes.numel() == 0:
+            return torch.tensor(0)
 
         category_cols = (self.vp_bins * torch.unsqueeze(gt_classes, 1) + torch.arange(self.vp_bins).to(self.device)).type(torch.int64)
         rows = [[i] * category_cols.size(1) for i in range(category_cols.size(0))]

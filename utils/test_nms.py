@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import cv2
 from torchvision.ops import boxes as box_ops
+from detectron2.layers import ShapeSpec, batched_nms, cat, cross_entropy, nonzero_tuple, batched_nms_rotated
 from torchvision.ops import nms  # BC-compat
 
 
@@ -45,5 +46,19 @@ def test_nms():
     print(iou)
 
 
+def nms_rotated_test():
+    boxes1 = [[[0, 0, 20, 20, 0], [14, 14, 20, 20, 0], [50, 50, 20, 20, 0]],
+              [[0, 0, 20, 20, 0], [14, 14, 20, 20, 0], [50, 50, 20, 20, 0]]]
+    boxes2 = [[0, 0, 20, 20, 45], [14, 14, 20, 20, 45], [50, 50, 20, 20, 0]]
+    boxes1 = torch.tensor(boxes1).type(torch.float32)
+    boxes2 = torch.tensor(boxes2).type(torch.float32)
+    score1 = torch.tensor([[0.9, 0.7, 0.99],
+                           [0.9, 0.7, 0.5]])
+    score2 = torch.tensor([0.7, 0.9, 0.99])
+    inds_1 = torch.ops.detectron2.nms_rotated(boxes1, score1, 0.01)
+    inds_2 = torch.ops.detectron2.nms_rotated(boxes2, score2, 0.01)
+    print(inds_1, inds_2)
+
+
 if __name__ == '__main__':
-    test_nms()
+    nms_rotated_test()

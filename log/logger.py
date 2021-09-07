@@ -4,13 +4,16 @@ import pandas as pd
 from timeit import default_timer as timer
 import torch
 import torch.nn.functional as F
+from torchvision.ops import boxes as box_ops
 
 from config import Config as cfg
-from train.loss_util import distribute_box_over_feature_map
+from train.inference import Inference
 from model.submodules.matcher import Matcher
+from model.nms import NonMaximumSuppresion
 from log.history_log import HistoryLog
 from log.visual_log import VisualLog
 from log.anchor_log import AnchorLog
+import utils.util_function as uf
 
 DEVICE = cfg.Model.Structure.DEVICE
 
@@ -42,22 +45,31 @@ class LogFile:
 
 
 class LogData:
-    def __init__(self, visual_log, ckpt_path, epoch):
+    def __init__(self, visual_log, ckpt_path, epoch, training):
         self.start = timer()
-        self.history_logger = HistoryLog()
+        self.training = training
+        self.history_logger = HistoryLog(self.training)
+
         self.visual_logger = VisualLog(ckpt_path, epoch) if visual_log else None
         self.anchor_logger = AnchorLog(ckpt_path, epoch) if visual_log else None
+        self.nms = NonMaximumSuppresion()
+
         self.summary = dict()
         self.nan_grad_count = 0
-        self.anchor_matcher = Matcher(
-            cfg.Model.RPN.IOU_THRESHOLDS, cfg.Model.RPN.IOU_LABELS, allow_low_quality_matches=True
-        )
+        self.anchor_matcher = Matcher(cfg.Model.RPN.IOU_THRESHOLDS, cfg.Model.RPN.IOU_LABELS,
+                                      allow_low_quality_matches=True)
+        self.score_thresh = cfg.Model.ROI_HEADS.NMS_SCORE_THRESH
+        self.iou_thresh = cfg.Model.ROI_HEADS.NMS_IOU_THRESH
 
     def append_batch_result(self, step, grtr, pred, total_loss, loss_by_type):
-        # nms_boxes = self.nms(pred)
-        self.history_logger(step, grtr, pred, total_loss, loss_by_type)
+        pred_nms = None
+        if not self.training:
+            out = Inference(pred)
+            pred_nms = out.inference(self.score_thresh, self.iou_thresh, 100)
+
+        self.history_logger(step, grtr, pred, total_loss, loss_by_type, pred_nms)
         if self.visual_logger:
-            self.visual_logger(step, grtr, pred)
+            self.visual_logger(step, grtr, pred_nms, 'pred_nms')
 
     def check_nan(self, losses, grtr, pred):
         valid_result = True
@@ -86,64 +98,25 @@ class LogData:
     def get_summary(self):
         return self.history_logger.get_summary()
 
-    def prediction_nms(self, pred):
-        print('prediction_nms')
-        pred_objectness_logits = pred['pred_objectness_logits']
+    def matched_nms(self, grtr, pred):
+        uf.print_structure('grtr', grtr)
+        uf.print_structure('pred', pred)
 
-        gt_class = torch.cat(pred['batched_input']['category'])
-        num_box = gt_class.shape[0]
+        gt_proposal = list()
+        for i, image_file in enumerate(grtr['image_file']):
+            proposals = pred[0][i]
+            gt_bbox2d = grtr['bbox2d'][i]
+            gt_classes = grtr['category'][i]
 
-        max_ctgr_probs = torch.max(pred['head_class_logits'][:, :-1], dim=-1)
+            proposals_box = proposals['pred_boxes']
+            proposals_class = proposals['pred_classes']
+            uf.print_structure('gt_bbox2d', gt_bbox2d)
+            uf.print_structure('gt_classes', gt_classes)
+            uf.print_structure('proposals_box', proposals_box)
+            uf.print_structure('proposals_class', proposals_class)
 
-        pred_proposal_deltas = pred['bbox_3d_logits']
-        print(pred_proposal_deltas.shape)
-        filter_mask = scores > 3  # R x K
-        filter_inds = filter_mask.nonzero()
-        scores = scores[filter_mask]
-
-        print(scores.shape)
-
-    def recall_precision(self, gt, pred):
-        gt_class = torch.cat(pred['batched_input']['category'])
-        gt_shape = gt_class.shape
-        scores = pred['head_class_logits']
-        head_proposals = pred['head_proposals']
-        gt_classes = torch.cat([p['gt_category'] for p in head_proposals], dim=0).type(torch.int64).to(DEVICE)
-
-        gt_onehot = F.one_hot(gt_classes)
-        max_scores = torch.argmax(scores, dim=1)
-        score_onehot = F.one_hot(max_scores)
-
-        score_slice = scores[:gt_shape[0]]
-        print('score_slice')
-        print(score_slice)
-
-        gt_classes_false = torch.nonzero(gt_onehot[:, -1] > 0)
-        gt_classes_true = torch.nonzero(gt_onehot[:, -1] == 0)
-        score_true = torch.nonzero(score_onehot[:, -1] == 0)
-        score_false = torch.nonzero(score_onehot[:, -1] > 0)
-        print('gt')
-        print(gt_classes_true.shape)
-        print(gt_classes_false.shape)
-        print('score')
-        print(score_true.shape)
-        print(score_false.shape)
-        # print(score_true)
-
-        # filter_mask = scores > 0.05  # R x K
-        # print(filter_mask)
-        # scores = scores[filter_mask]
-        # gt_onehot = gt_onehot[filter_mask]
-        # print(scores.shape)
-        # print(scores)
-        # print(gt_onehot.shape)
-        # print(gt_onehot)
-
-        # gt_ture =
-        # pred_ture =
-        # TP = gt_true and pred_true
-        # TN = gt_true and pred_false
-        # FP = gt_false and pred_true
-        # FN = gt_false and pred_false
-        # precision = TP / (FP + TP) pre->1024(not 0
-        # recall = TP / (TN + TP) gt
+            gt_proposal_box, gt_proposals_class = uf.matched_category_gt_with_pred(proposals_box, gt_bbox2d, gt_classes,
+                                                                                   proposals_class)
+            gt_proposal_per_image = {'gt_proposal_box': gt_proposal_box, 'gt_proposals_class': gt_proposals_class}
+            gt_proposal.append(gt_proposal_per_image)
+        return gt_proposal
