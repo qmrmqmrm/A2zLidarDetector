@@ -5,8 +5,6 @@ import torch.distributed as dist
 from torch import nn
 from torch.autograd.function import Function
 
-from detectron2.utils import comm
-
 class FrozenBatchNorm2d(nn.Module):
     """
     BatchNorm2d where the batch statistics and the affine parameters are fixed.

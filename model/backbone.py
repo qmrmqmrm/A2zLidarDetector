@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch import nn
 from abc import ABCMeta, abstractmethod
 
-from config import Config as cfg
+import config as cfg
 from model.submodules.model_util import Conv2d
 from utils.batch_norm import get_norm ,FrozenBatchNorm2d
 from utils.util_class import ShapeSpec

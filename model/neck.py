@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from torch import nn
 
 from model.backbone import Backbone
-from config import Config as cfg
+import config as cfg
 
 from model.submodules.model_util import Conv2d
 from utils.batch_norm import get_norm
@@ -114,11 +114,11 @@ class FPN(Backbone):
         self.in_features = in_features
         self.bottom_up = bottom_up
         # Return feature names are "p<stage>", like ["p2", "p3", ..., "p6"]
-        self._out_feature_strides = {"p{}".format(int(math.log2(s))): s for s in in_strides}
+        self._out_feature_strides = {cfg.Model.Neck.OUT_FEATURES[i] : s for i,s in enumerate(in_strides)}
         # top block output feature maps.
         if self.top_block is not None:
             for s in range(stage, stage + self.top_block.num_levels):
-                self._out_feature_strides["p{}".format(s + 1)] = 2 ** (s + 1)
+                self._out_feature_strides["neck{}".format(s + 1)] = 2 ** (s + 1)
 
         self._out_features = list(self._out_feature_strides.keys())
         self._out_feature_channels = {k: out_channels for k in self._out_features}
@@ -130,7 +130,7 @@ class FPN(Backbone):
     def size_divisibility(self):
         return self._size_divisibility
 
-    def forward(self, x):
+    def forward(self, bottom_up_features):
         """
 
         :param x: (torch.Tensor): torch.Size([2, 3, 704, 1408])
@@ -139,7 +139,6 @@ class FPN(Backbone):
                     'p4': torch.Size([batch, 256, 44, 88]), 'p5': torch.Size([batch, 256, 22, 44])}
         """
         # Reverse feature maps into top-down order (from low to high resolution)
-        bottom_up_features = self.bottom_up(x)
         x = [bottom_up_features[f] for f in self.in_features[::-1]]
         results = []
         prev_features = self.lateral_convs[0](x[0])
@@ -160,7 +159,6 @@ class FPN(Backbone):
                 top_block_in_feature = results[self._out_features.index(self.top_block.in_feature)]
             results.extend(self.top_block(top_block_in_feature))
         assert len(self._out_features) == len(results)
-        uf.print_structure('fpn', results)
         return dict(zip(self._out_features, results))
 
     def output_shape(self):

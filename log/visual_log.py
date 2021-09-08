@@ -4,7 +4,7 @@ import torch
 import numpy as np
 import cv2
 
-from config import Config as cfg
+import config as cfg
 import utils.util_function as uf
 
 

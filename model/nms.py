@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 
-from config import Config as cfg
+import config as cfg
 from model.submodules.box_regression import Box2BoxTransform
 
 

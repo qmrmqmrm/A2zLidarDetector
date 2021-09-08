@@ -4,7 +4,7 @@ import pandas as pd
 from timeit import default_timer as timer
 
 from log.metric import count_true_positives
-from config import Config as cfg
+import config as cfg
 import utils.util_function as uf
 
 

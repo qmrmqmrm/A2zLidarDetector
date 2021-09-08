@@ -5,8 +5,8 @@ import torch
 
 import utils.util_function as uf
 from log.logger import LogData
-from train.inference import Inference
-from config import Config as cfg
+# from train.inference import Inference
+import config as cfg
 import model.submodules.model_util as mu
 
 
@@ -29,14 +29,13 @@ class TrainValBase:
         for step in range(steps):
             # if step > 100:
             #     break
-            features = next(train_loader_iter)
+            features, anchor = next(train_loader_iter)
             features = self.to_device(features)
-
             start = timer()
             file_name = features['image_file']
             prediction, total_loss, loss_by_type, features = self.run_step(features)
             features['image_file'] = file_name
-            logger.append_batch_result(step, features, prediction, total_loss, loss_by_type)
+            # logger.append_batch_result(step, features, prediction, total_loss, loss_by_type)
             uf.print_progress(f"({self.split}) {step}/{steps} steps in {epoch} epoch, "
                               f"time={timer() - start:.3f}, "
                               f"loss={total_loss:.3f}, ")

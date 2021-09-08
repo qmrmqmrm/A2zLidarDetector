@@ -1,9 +1,8 @@
 import sys, os
 import torch
 import cv2
-from detectron2.layers import nonzero_tuple
 
-from config import Config as cfg
+import config as cfg
 from model.submodules.matcher import Matcher
 
 DEVICE = cfg.Model.Structure.DEVICE
@@ -172,9 +171,11 @@ def subsample_labels(
     # self.batch_size_per_image : 512
     # self.positive_fraction : 0.25
     # self.num_classes : 3
-    positive = nonzero_tuple((labels != -1) & (labels != bg_label))[0]
-    negative = nonzero_tuple(labels == bg_label)[0]
-
+    print('label', labels.shape)
+    positive = torch.nonzero((labels != -1) & (labels != bg_label))
+    negative = torch.nonzero(labels == bg_label)
+    print('negative', negative.shape)
+    print('positive', positive.shape)
     num_pos = int(num_samples * positive_fraction)
     # protect against not enough positive examples
     num_pos = min(positive.numel(), num_pos)
@@ -185,7 +186,8 @@ def subsample_labels(
     # randomly select positive and negative examples
     perm1 = torch.randperm(positive.numel(), device=positive.device)[:num_pos]
     perm2 = torch.randperm(negative.numel(), device=negative.device)[:num_neg]
-
+    print('perm1', perm1.shape)
+    print('positive', positive.shape)
     pos_idx = positive[perm1]
     neg_idx = negative[perm2]
     return pos_idx, neg_idx
@@ -203,6 +205,8 @@ def print_structure(title, data, key=""):
     elif isinstance(data, tuple):
         for i, datum in enumerate(data):
             print_structure(title, datum, f"{key}/{i}")
+    elif data == None :
+        print(f'{title} : None')
     else:
         print(title, key, data.shape)
 
@@ -247,7 +251,7 @@ def align_gt_with_pred(proposals, targets):
     return gt_aligned, match_result
 
 
-def count_true_positives(gt_box, gt_classes,proposal, proposals_class):
+def count_true_positives(gt_box, gt_classes, proposal, proposals_class):
     match_quality_matrix = pairwise_iou(gt_box, proposal)
     val, idx = torch.max(match_quality_matrix, 1)
     gt_proposals_class = proposals_class[idx]
@@ -258,7 +262,7 @@ def count_true_positives(gt_box, gt_classes,proposal, proposals_class):
     return torch.sum(trpo_bool).item(), gt_classes.shape[0], proposal.shape[0]
 
 
-def matched_category_gt_with_pred( gt_bbox2d, gt_classes, proposals_box, proposals_class):
+def matched_category_gt_with_pred(gt_bbox2d, gt_classes, proposals_box, proposals_class):
     match_quality_matrix = pairwise_iou(gt_bbox2d, proposals_box)
     val, idx = torch.max(match_quality_matrix, 1)
     gt_proposals_class = proposals_class[idx]

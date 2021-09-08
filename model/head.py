@@ -7,7 +7,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from utils.util_class import ShapeSpec
-from config import Config as cfg
+import config as cfg
 from model.submodules.matcher import Matcher
 from model.submodules.model_util import Conv2d
 from model.submodules.poolers import ROIPooler
@@ -31,114 +31,6 @@ class ROIHeads(torch.nn.Module):
 
     def __init__(self, input_shape: Dict[str, ShapeSpec]):
         super(ROIHeads, self).__init__()
-
-        # fmt: off
-        self.batch_size_per_image = cfg.Model.ROI_HEADS.BATCH_SIZE_PER_IMAGE  # 512
-        self.positive_fraction = cfg.Model.ROI_HEADS.POSITIVE_FRACTION  # 0.25
-        self.num_classes = cfg.Model.Structure.NUM_CLASSES
-        self.proposal_append_gt = cfg.Model.ROI_HEADS.PROPOSAL_APPEND_GT
-        self.cls_agnostic_bbox_reg = cfg.Model.ROI_BOX_HEAD.CLS_AGNOSTIC_BBOX_REG
-        self.weights = cfg.Model.ROI_BOX_HEAD.BBOX_REG_WEIGHTS
-        self.smooth_l1_beta = cfg.Model.ROI_BOX_HEAD.SMOOTH_L1_BETA
-        self.vp_bins = cfg.Model.Structure.VP_BINS
-        self.rotated_box_training = cfg.Model.Structure.ROTATED_BOX_TRAINING
-        self.weights_height = cfg.Model.Structure.WEIGHTS_HEIGHT
-        self.vp_weight_loss = cfg.Model.Structure.VP_WEIGHT_LOSS
-        self.proposal_matcher = Matcher(
-            cfg.Model.ROI_HEADS.MATCHER_IOU_THRESHOLDS,
-            cfg.Model.ROI_HEADS.IOU_LABELS,
-            allow_low_quality_matches=False,
-        )
-        self.box2box_transform = Box2BoxTransform(weights=cfg.Model.ROI_BOX_HEAD.BBOX_REG_WEIGHTS)
-
-    def _sample_proposals(self, matched_idxs, matched_labels, gt_classes):
-        """
-        Based on the matching between N proposals and M groundtruth,
-        sample the proposals and set their classification labels.
-
-        Args:
-            matched_idxs (Tensor): a vector of length N, each is the best-matched
-                gt index in [0, M) for each proposal.
-            matched_labels (Tensor): a vector of length N, the matcher's label
-                (one of cfg.MODEL.ROI_HEADS.IOU_LABELS) for each proposal.
-            gt_classes (Tensor): a vector of length M.
-
-        Returns:
-            Tensor: a vector of indices of sampled proposals. Each is in [0, N).
-            Tensor: a vector of the same length, the classification label for
-                each sampled proposal. Each sample is labeled as either a category in
-                [0, num_classes) or the background (num_classes).
-        """
-        has_gt = gt_classes.numel() > 0
-        # Get the corresponding GT for each proposal
-        if has_gt:
-            gt_classes = gt_classes[matched_idxs]
-            # Label unmatched proposals (0 label from matcher) as background (label=num_classes)
-            gt_classes[matched_labels == 0] = self.num_classes
-            # Label ignore proposals (-1 label)
-            gt_classes[matched_labels == -1] = -1
-        else:
-            gt_classes = torch.zeros_like(matched_idxs) + self.num_classes
-        # gt_classes : torch.Size([2000 + gt_num])
-        # self.batch_size_per_image : 512
-        # self.positive_fraction : 0.25
-        # self.num_classes : 3
-        sampled_fg_idxs, sampled_bg_idxs = subsample_labels(
-            gt_classes, self.batch_size_per_image, self.positive_fraction, self.num_classes
-        )
-        # sampled_fg_idxs : pos indax
-        # sampled_fg_idxs : neg indax
-        sampled_idxs = torch.cat([sampled_fg_idxs, sampled_bg_idxs], dim=0)
-        # sampled_idxs 512
-        return sampled_idxs, gt_classes[sampled_idxs]
-
-    @torch.no_grad()
-    def label_and_sample_proposals(self, proposals, targets):
-        """
-        :param proposals: (list[dict[torch.tensor]])
-                 [{'proposal_boxes': torch.Size([2000, 4]), 'objectness_logits': torch.Size([2000])} * batch]
-        :param targets: {'image': [batch, height, width, channel], 'category': [batch, fixbox, 1],
-                        'bbox2d': [batch, num_gt, 4], 'bbox3d': [batch, num_gt, 6], 'object': [batch, num_gt, 1],
-                        'yaw': [batch, num_gt, 2]}
-        :return:
-        """
-
-        # Augment proposals with ground-truth boxes.
-        # In the case of learned proposals (e.g., RPN), when training starts
-        # the proposals will be low quality due to random initialization.
-        # It's possible that none of these initial
-        # proposals have high enough overlap with the gt objects to be used
-        # as positive examples for the second stage components (box head,
-        # cls head, mask head). Adding the gt boxes to the set of proposals
-        # ensures that the second stage components will have some positive
-        # examples from the start of training. For RPN, this augmentation improves
-        # convergence and empirically improves box AP on COCO by about 0.5
-        # points (under one tested configuration).
-        # targets = [image for image in batch[:]]
-        if self.proposal_append_gt:
-            proposals = add_ground_truth_to_proposals(targets['bbox2d'], proposals)
-            # [{'proposal_boxes': torch.Size([2000+gt_box, 4]), 'objectness_logits': torch.Size([2000+gt_box])} * batch]
-        proposals_with_gt = []
-
-        for bbox2d_per_image, category_per_image, proposal_per_image in zip(targets['bbox2d'], targets['category'], proposals):
-            instance_per_image = dict()
-            match_quality_matrix = pairwise_iou(bbox2d_per_image, proposal_per_image.get("proposal_boxes"))
-            matched_idxs, matched_labels = self.proposal_matcher(match_quality_matrix)
-            # matched_idxs : torch.Size([2000+gt_box])
-            # matched_labels : torch.Size([2000+gt_box]) (0: unmatched, -1: ignore, 1: matched)
-            sampled_idxs, gt_classes = self._sample_proposals(matched_idxs, matched_labels, category_per_image)
-            # sampled_idxs : torch.Size([512])
-            # gt_classes : torch.Size([512])
-            # Set target attributes of the sampled proposals:
-            instance_per_image['proposal_boxes'] = proposal_per_image.get("proposal_boxes")[sampled_idxs]
-            # torch.Size([512, 4])
-            instance_per_image['objectness_logits'] = proposal_per_image.get("objectness_logits")[sampled_idxs]
-            # torch.Size([512])
-            # instance_per_image['gt_category'] = gt_classes
-
-            proposals_with_gt.append(instance_per_image)
-
-        return proposals_with_gt
 
     def forward(self, batch_input, features, proposals):
         """
@@ -203,59 +95,15 @@ class StandardROIHeads(ROIHeads):
         self.box_predictor = FastRCNNOutputLayers(self.box_head.output_shape)
 
     def forward(self, batch_input, features, proposals):
-        """
-
-        :param batch_input:
-            {'image': [batch, height, width, channel], 'category': [batch, fixbox, 1],
-            'bbox2d': [batch, fixbox, 4], 'bbox3d': [batch, fixbox, 6], 'object': [batch, fixbox, 1],
-            'yaw': [batch, fixbox, 1], 'yaw_rads': [batch, fixbox, 1]}
-        :param features: (dict[torch.Tensor]):
-                {'p2': torch.Size([batch, 256, 176, 352]),'p3': torch.Size([batch, 256, 88, 176]),
-                'p4': torch.Size([batch, 256, 44, 88]), 'p5': torch.Size([batch, 256, 22, 44])}
-        :param proposals: (list[dict[torch.tensor]])
-                 [{'proposal_boxes': torch.Size([2000, 4]), 'objectness_logits': torch.Size([2000])} * batch]
-        :return:
-            pred :{'head_class_logits': torch.Size([batch * 512, 4])
-                  'bbox_3d_logits': torch.Size([batch * 512, 12])
-                  'head_yaw_logits': torch.Size([batch * 512, 36])
-                  'head_yaw_residuals': torch.Size([batch * 512, 36])
-                  'head_height_logits': torch.Size([batch * 512, 6])
-
-                  'head_proposals': [{'proposal_boxes': torch.Size([512, 4])
-                                      'objectness_logits': torch.Size([512])
-                                      'category': torch.Size([512, 1])
-                                      'bbox2d': torch.Size([512, 4])
-                                      'bbox3d': torch.Size([512, 6])
-                                      'object': torch.Size([512, 1])
-                                      'yaw': torch.Size([512, 2])} * batch]}
-        """
-
-        if self.training:
-            proposals = self.label_and_sample_proposals(proposals, batch_input)
         # proposals: [{'proposal_boxes': torch.Size([512, 4]), 'objectness_logits': torch.Size([512])} * batch]
-        pred_instances = self._forward_box(features, proposals)
-        pred_instances["head_proposals"] = proposals
-
-        return pred_instances
-
-    def _forward_box(self, features, proposals):
-        """
-
-        :param features: (dict[torch.Tensor]):
-                {'p2': torch.Size([batch, 256, 176, 352]),'p3': torch.Size([batch, 256, 88, 176]),
-                'p4': torch.Size([batch, 256, 44, 88]), 'p5': torch.Size([batch, 256, 22, 44])}
-        :param proposals: (list[dict[torch.tensor]])
-                 [{'proposal_boxes': torch.Size([512, 4]), 'objectness_logits': torch.Size([512])} * batch]
-        :return:
-        """
         features = [features[f] for f in self.in_features]
         box_features = self.box_pooler(features, [x["proposal_boxes"] for x in proposals])
         # torch.Size([batch * 512, 256, 7, 7])
         box_features = self.box_head(box_features)
         # torch.Size([batch * 512, 1024])
-        pred = self.box_predictor(box_features)
-        del box_features
-        return pred
+        pred_instances = self.box_predictor(box_features)
+        pred_instances["head_proposals"] = proposals
+        return pred_instances
 
 
 class FastRCNNConvFCHead(nn.Module):

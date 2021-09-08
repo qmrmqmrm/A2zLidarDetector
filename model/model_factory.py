@@ -2,11 +2,11 @@ import torch
 from torch import nn
 import numpy as np
 
-from config import Config as cfg
+import config as cfg
 from utils.util_class import ShapeSpec, MyExceptionToCatch
 from model.backbone import ResNet, BasicStem, BottleneckBlock, make_stage
 from model.neck import FPN, LastLevelMaxPool
-from model.rpn import RPN
+from model.rpn import RPN, RPN_
 from model.head import StandardROIHeads
 from model.architecture import GeneralizedRCNN
 
@@ -14,10 +14,11 @@ from model.architecture import GeneralizedRCNN
 def build_model(model_name, backbone_name, neck_name, rpn_name, head_name):
     backbone = backbone_factory(backbone_name)
     neck = neck_factory(neck_name, backbone)
+    print(neck.output_shape())
     rpn = rpn_factory(rpn_name, neck.output_shape())
-    head = head_factory(head_name, neck.output_shape())
+    # head = head_factory(head_name, neck.output_shape())
     ModelClass = select_model(model_name)
-    model = ModelClass(backbone=neck, rpn=rpn, head=head)
+    model = ModelClass(backbone=backbone,neck=neck, rpn=rpn, head=None)
     # print(model)
     return model
 
@@ -32,7 +33,7 @@ def backbone_factory(backbone_name):
     if backbone_name == "ResNet":
         # need registration of new blocks/stems?
         input_shape = ShapeSpec(channels=len(cfg.Model.Structure.PIXEL_MEAN))
-        norm = cfg.Model.RESNET.NORM
+        norm = cfg.Model.Backbone.NORM
         stem = BasicStem(
             in_channels=input_shape.channels,
             out_channels=cfg.Model.RESNET.STEM_OUT_CHANNELS,
@@ -86,21 +87,23 @@ def backbone_factory(backbone_name):
 def neck_factory(neck_name, bottom_up):
     if neck_name == "FPN":
         in_features = cfg.Model.RESNET.OUT_FEATURES
-        out_channels = cfg.Model.FPN.OUTPUT_CHANNELS
-        backbone = FPN(
+        out_channels = cfg.Model.Neck.OUTPUT_CHANNELS
+        neck = FPN(
             bottom_up=bottom_up,
             in_features=in_features,
             out_channels=out_channels,
-            norm=cfg.Model.FPN.NORM,
-            top_block=LastLevelMaxPool(cfg.Model.ROI_HEADS.INPUT_FEATURES[-1]),
-            fuse_type=cfg.Model.FPN.FUSE_TYPE,
+            norm=cfg.Model.Neck.NORM,
+            top_block=LastLevelMaxPool(cfg.Model.Neck.OUT_FEATURES[-1]),
+            fuse_type='sum',
         )
-        return backbone
+        return neck
     else:
         raise MyExceptionToCatch(f"[neck] EMPTY")
 
 
 def rpn_factory(rpn_name, output_shape):
+    if rpn_name == 'RPN_':
+        return RPN_(output_shape)
     if rpn_name == 'RPN':
         return RPN(output_shape)
     else:

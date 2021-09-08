@@ -2,7 +2,7 @@ import torch
 
 from utils.util_function import subsample_labels
 from utils.util_function import pairwise_iou, print_structure
-from config import Config as cfg
+import config as cfg
 
 DEVICE = cfg.Model.Structure.DEVICE
 
@@ -68,6 +68,8 @@ def _subsample_labels(label,
         label, batch_size_per_image, positive_fraction, 0
     )
     # Fill with the ignore label (-1), then set positive and negative labels
+    print(pos_idx.shape)
+    print(neg_idx.shape)
     label.fill_(-1)
     label.scatter_(0, pos_idx, 1)
     label.scatter_(0, neg_idx, 0)

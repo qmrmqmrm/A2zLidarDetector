@@ -9,7 +9,7 @@ import torch
 from dataloader.loader_base import DatasetBase
 from dataloader.data_util.a2d2_calib_reader import get_calibration
 from dataloader.utils_calib import Calibration
-from config import Config as cfg
+import config as cfg
 from utils.util_function import print_progress
 
 max_box = 512

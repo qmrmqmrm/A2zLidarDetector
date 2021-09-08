@@ -3,7 +3,7 @@ import torch.nn.functional as F
 import numpy as np
 import math
 
-from config import Config as cfg
+import config as cfg
 from model.submodules.box_regression import Box2BoxTransform
 from model.submodules.matcher import Matcher
 import train.loss_util as lu

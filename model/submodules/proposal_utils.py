@@ -1,7 +1,7 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 import math
 import torch
-from config import Config as cfg
+import config as cfg
 
 
 def add_ground_truth_to_proposals(gt_boxes, proposals):

@@ -6,7 +6,7 @@ from torch.autograd import Function
 from torchvision.ops import roi_align
 from torch.nn.modules.utils import _pair
 
-from config import Config as cfg
+import config as cfg
 
 
 def assign_boxes_to_levels(box_lists, min_level, max_level, canonical_box_size, canonical_level):

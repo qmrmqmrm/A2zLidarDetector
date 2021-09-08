@@ -4,7 +4,7 @@ import json
 import cv2
 import math
 
-from config import Config as cfg
+import config as cfg
 from dataloader.data_util.a2d2_calib_reader import get_calibration
 from utils.util_function import print_progress
 

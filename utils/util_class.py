@@ -1,7 +1,7 @@
 import torch
 
 from collections import namedtuple
-from config import Config as cfg
+import config as cfg
 from model.submodules.matcher import Matcher
 from model.submodules.box_regression import Box2BoxTransform
 from utils.util_function import subsample_labels, pairwise_iou

@@ -8,7 +8,9 @@ import torch
 
 from dataloader.loader_base import DatasetBase
 from dataloader.data_util.a2d2_calib_reader import get_calibration
-from config import Config as cfg
+from dataloader.anchor import Anchor
+import config as cfg
+import utils.util_function as uf
 
 
 class A2D2Dataset(DatasetBase):
@@ -17,6 +19,16 @@ class A2D2Dataset(DatasetBase):
         self.max_box = max_box
         self.calib_dict = get_calibration(root_path)
         self.categories = cfg.Datasets.A2D2.CATEGORIES_TO_USE
+        self.device = cfg.Model.Structure.DEVICE
+
+        image_shape = torch.tensor(cfg.Model.Structure.IMAGE_SHAPE)
+        strides = torch.tensor(cfg.Model.Structure.STRIDE_SHAPE)
+        feature_shape = list()
+        for stride in strides:
+            feature_shape.append((image_shape / stride).to(device=self.device, dtype=torch.int64))
+        self.anchor_generator = Anchor('a2d2')
+
+        self.anchor = self.anchor_generator()
         self.last_sample = self.__getitem__(91)
         del self.last_sample['image']
 
@@ -46,6 +58,7 @@ class A2D2Dataset(DatasetBase):
             anns = self.zero_annotation()
         features.update(anns)
         features['image_file'] = image_file
+        features['anchors'] = self.anchor
         # map_anns = self.gather_featmaps(anns["bbox2d"], anns["object"])
         # features.update(map_anns)
         return features
@@ -175,7 +188,7 @@ class A2D2Dataset(DatasetBase):
         box2D_map_dict = dict()
         object_map_dict = dict()
         anchor_map_dict = dict()
-        # anchor = self.anchor.make_anchor_map(heights)
+        anchor = self.anchor.make_anchor_map(heights)
         feature_names = cfg.Model.Output.FEATURE_ORDER
         for i, (height, feature_name) in enumerate(zip(heights, feature_names)):
             ratio = 700 / height

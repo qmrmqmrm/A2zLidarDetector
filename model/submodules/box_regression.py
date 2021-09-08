@@ -2,7 +2,7 @@
 import math
 import torch
 
-from config import Config as cfg
+import config as cfg
 
 # Value for clamping large dw and dh predictions. The heuristic is that we clamp
 # such that dw and dh are no larger than what would transform a 16px box into a

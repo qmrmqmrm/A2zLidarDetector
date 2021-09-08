@@ -6,8 +6,8 @@ import torch
 import torch.nn.functional as F
 from torchvision.ops import boxes as box_ops
 
-from config import Config as cfg
-from train.inference import Inference
+import config as cfg
+# from train.inference import Inference
 from model.submodules.matcher import Matcher
 from model.nms import NonMaximumSuppresion
 from log.history_log import HistoryLog

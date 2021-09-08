@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 from dataloader.a2d2_dataset import A2D2Dataset
 from dataloader.kitti_loader import KittiDataset
 import utils.util_function as uf
-from config import Config as cfg
+import config as cfg
 
 
 def loader_factory(dataset_name, split):

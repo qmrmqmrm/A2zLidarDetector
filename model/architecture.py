@@ -8,16 +8,17 @@ import copy
 import numpy as np
 import cv2
 
-from config import Config as cfg
+import config as cfg
 import model.submodules.model_util as mu
 from utils.image_list import ImageList
-
+import utils.util_function as uf
 
 class ModelBase(nn.Module):
-    def __init__(self, backbone, rpn, head):
+    def __init__(self, backbone,neck, rpn, head):
         super(ModelBase, self).__init__()
         self.device = torch.device(cfg.Model.Structure.DEVICE)
         self.backbone = backbone
+        self.neck = neck
         self.proposal_generator = rpn
         self.roi_heads = head
         self.to(cfg.Model.Structure.DEVICE)
@@ -39,8 +40,8 @@ class GeneralizedRCNN(ModelBase):
     3. Per-region feature extraction and prediction
     """
 
-    def __init__(self, backbone, rpn, head):
-        super().__init__(backbone, rpn, head)
+    def __init__(self, backbone,neck, rpn, head):
+        super().__init__(backbone,neck, rpn, head)
         assert len(cfg.Model.Structure.PIXEL_MEAN) == len(cfg.Model.Structure.PIXEL_STD)
         num_channels = len(cfg.Model.Structure.PIXEL_MEAN)
         pixel_mean = torch.Tensor(cfg.Model.Structure.PIXEL_MEAN).to(self.device).view(num_channels, 1, 1)
@@ -88,24 +89,27 @@ class GeneralizedRCNN(ModelBase):
                                torch.Size([139392(88 * 176 * 9), 4])
                                torch.Size([34848(44 * 88 * 9), 4])]
         """
-        batched_input = self.preprocess_input(batched_input)
-        features = self.backbone(batched_input['image'])
-        rpn_proposals, auxiliary = self.proposal_generator(batched_input['image'].shape, features)
-        pred = self.roi_heads(batched_input, features, rpn_proposals)
-        pred['rpn_proposals'] = rpn_proposals
-        # pred['batched_input'] = batched_input
-        pred.update(auxiliary)
-        return pred
+        image = self.preprocess_input(batched_input)
+        backbone_features = self.backbone(image)
+        neck_features = self.neck(backbone_features)
+        # uf.print_structure('batched_input', batched_input)
+        #
+        rpn_proposals, auxiliary = self.proposal_generator(image.shape, neck_features, batched_input)
+        # pred = self.roi_heads(batched_input, features, rpn_proposals)
+        # pred['rpn_proposals'] = rpn_proposals
+        # # pred['batched_input'] = batched_input
+        # pred.update(auxiliary)
+        return rpn_proposals, auxiliary
 
-    def preprocess_input(self, batched_input):
+    def preprocess_input(self, batched_input):  ## image
         image = batched_input['image'].permute(0, 3, 1, 2).to(self.device)
         image = self.normalizer(image)
-        image = F.pad(image,(4,4,2,2), "constant", 0)
-        batched_input['image'] = image
-        batched_input['bbox2d'] += torch.tensor([[[4, 2, 4, 2]]], dtype=torch.float32).to(self.device)
-        batched_input['bbox3d'][:, :, :2] += torch.tensor([[[4, 2]]], dtype=torch.float32).to(self.device)
-        batched_input = mu.remove_padding(batched_input)
-        return batched_input
+        # image = F.pad(image,(4,4,2,2), "constant", 0)
+        # batched_input['image'] = image
+        # batched_input['bbox2d'] += torch.tensor([[[4, 2, 4, 2]]], dtype=torch.float32).to(self.device)
+        # batched_input['bbox3d'][:, :, :2] += torch.tensor([[[4, 2]]], dtype=torch.float32).to(self.device)
+        # batched_input = mu.remove_padding(batched_input)
+        return image
 
 
 class YOLO(ModelBase):
