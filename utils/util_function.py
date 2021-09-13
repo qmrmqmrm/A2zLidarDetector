@@ -5,9 +5,6 @@ import cv2
 import config as cfg
 from model.submodules.matcher import Matcher
 
-DEVICE = cfg.Model.Structure.DEVICE
-
-
 def print_progress(status_msg):
     # NOTE: the \r which means the line should overwrite itself.
     msg = "\r" + status_msg
@@ -62,7 +59,6 @@ def pairwise_intersection(boxes1, boxes2) -> torch.Tensor:
 
 
 def pairwise_iou(boxes1, boxes2):
-    # boxes1 = boxes1.to(DEVICE)
     area1 = (boxes1[:, 2] - boxes1[:, 0]) * (boxes1[:, 3] - boxes1[:, 1])
     area2 = (boxes2[:, 2] - boxes2[:, 0]) * (boxes2[:, 3] - boxes2[:, 1])
     inter = pairwise_intersection(boxes1, boxes2)
@@ -232,12 +228,7 @@ def align_gt_with_pred(proposals, targets):
             targets['bbox2d'], targets['bbox3d'], targets['category'], targets['yaw'], targets['yaw_rads'], proposals):
         match_quality_matrix = pairwise_iou(bbox2d_per_image, proposal_per_image.get("proposal_boxes"))
         matched_idxs, matched_labels = proposal_matcher(match_quality_matrix)
-        # matched_idxs : torch.Size([512])
-        # matched_labels : torch.Size([512]) (0: unmatched, -1: ignore, 1: matched)
-        # NOTE: here the indexing waste some compute, because heads
-        # like masks, keypoints, etc, will filter the proposals again,
-        # (by foreground/background, or number of keypoints in the image, etc)
-        # so we essentially index the data twice.
+
         match_result.append(matched_labels)
         gt_aligned['gt_category'].append(category_per_image[matched_idxs])
         gt_aligned['yaw'].append(yaw_par_image[matched_idxs])

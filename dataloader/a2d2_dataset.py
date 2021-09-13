@@ -19,7 +19,7 @@ class A2D2Dataset(DatasetBase):
         self.max_box = max_box
         self.calib_dict = get_calibration(root_path)
         self.categories = cfg.Datasets.A2D2.CATEGORIES_TO_USE
-        self.device = cfg.Model.Structure.DEVICE
+        self.device = cfg.Hardware.DEVICE
 
         image_shape = torch.tensor(cfg.Model.Structure.IMAGE_SHAPE)
         strides = torch.tensor(cfg.Model.Structure.STRIDE_SHAPE)
@@ -28,9 +28,8 @@ class A2D2Dataset(DatasetBase):
             feature_shape.append((image_shape / stride).to(device=self.device, dtype=torch.int64))
         self.anchor_generator = Anchor('a2d2')
 
-        self.anchor = self.anchor_generator()
-        self.last_sample = self.__getitem__(91)
-        del self.last_sample['image']
+        # self.last_sample = self.__getitem__(91)
+        # del self.last_sample['image']
 
     def list_frames(self, root_dir, split):
         img_files = sorted(glob.glob(os.path.join(root_dir, split, '*/image', '*.png')))
@@ -50,20 +49,26 @@ class A2D2Dataset(DatasetBase):
         label_file = image_file.replace('image/', 'label/').replace('.png', '.json')
         with open(label_file, 'r') as f:
             label = json.load(f)
-        anns = self.convert_bev(label, image, self.calib_dict, yaw=True, vp_res=True, bins=12)
+        anns = self.convert_bev(label, image, self.calib_dict, bins=12, yaw=True)
         if anns:
             anns = self.gather_and_zeropad(anns)
             self.last_sample = anns
         else:
             anns = self.zero_annotation()
+
         features.update(anns)
         features['image_file'] = image_file
-        features['anchors'] = self.anchor
-        # map_anns = self.gather_featmaps(anns["bbox2d"], anns["object"])
-        # features.update(map_anns)
+        anchors_ = list()
+        anchor = self.anchor_generator()
+        for anc in anchor:
+            anc = anc.view(-1, 4)
+            anchors_.append(anc)
+
+        anchors = torch.cat(anchors_, dim=0)
+        features['anchors'] = anchors
         return features
 
-    def convert_bev(self, label, image, calib, vp_res, bins, bvres=0.05, yaw=False):
+    def convert_bev(self, label, image, calib, bins, bvres=0.05, yaw=False):
         annotations = list()
 
         for boxes, obj in label.items():
@@ -159,6 +164,8 @@ class A2D2Dataset(DatasetBase):
             elif key == 'yaw':
                 pad = torch.ones((self.max_box - numbox, channel), dtype=torch.float32) * 13
             elif key == 'yaw_rads':
+                pad = torch.ones((self.max_box - numbox, channel), dtype=torch.float32) * -1
+            elif key == 'object':
                 pad = torch.ones((self.max_box - numbox, channel), dtype=torch.float32) * -1
             else:
                 pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)

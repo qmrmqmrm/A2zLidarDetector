@@ -5,6 +5,7 @@ import torch.distributed as dist
 from torch import nn
 from torch.autograd.function import Function
 
+
 class FrozenBatchNorm2d(nn.Module):
     """
     BatchNorm2d where the batch statistics and the affine parameters are fixed.
@@ -44,7 +45,7 @@ class FrozenBatchNorm2d(nn.Module):
         return x * scale + bias
 
     def _load_from_state_dict(
-        self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs
+            self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs
     ):
         version = local_metadata.get("version", None)
 
@@ -121,4 +122,3 @@ def get_norm(norm, out_channels):
             "nnSyncBN": nn.SyncBatchNorm,  # keep for debugging
         }[norm]
     return norm(out_channels)
-

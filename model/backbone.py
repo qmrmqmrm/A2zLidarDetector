@@ -9,7 +9,7 @@ from model.submodules.model_util import Conv2d
 from utils.batch_norm import get_norm ,FrozenBatchNorm2d
 from utils.util_class import ShapeSpec
 import utils.util_function as uf
-from model.submodules.weight_init import c2_msra_fill, c2_xavier_fill
+from model.submodules.weight_init import c2_msra_fill
 
 
 class Backbone(nn.Module, metaclass=ABCMeta):
@@ -262,7 +262,7 @@ class ResNet(Backbone):
                 assert isinstance(block, ResNetBlockBase), block
                 curr_channels = block.out_channels
             stage = nn.Sequential(*blocks)
-            name = "res" + str(i + 2)
+            name = "backbone_s" + str(i + 2)
             self.add_module(name, stage)
             self.stages_and_names.append((stage, name))
             self._out_feature_strides[name] = current_stride = int(

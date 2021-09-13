@@ -10,8 +10,9 @@ class Anchor:
         self.aspect_ratio = cfg.Model.RPN.ANCHOR_RATIOS
         self.anc_sizes = cfg.Model.RPN.ANCHOR_SIZES
         self.strides = cfg.Model.RPN.OUT_SCALES
+        print('anchor')
         self.feature_shapes = [cfg.get_img_shape("HW", dataset_name, s) for s in cfg.Model.RPN.OUT_SCALES]
-        self.device = cfg.Hardware.DEVICE
+        self.device = [cfg.Hardware.DEVICE, 'cpu'][1]
 
     def __call__(self):
         """
@@ -25,7 +26,7 @@ class Anchor:
             anc_area = size ** 2
             anchor_hws = [[math.sqrt(anc_area * aratio), math.sqrt(anc_area / aratio)] for aratio in self.aspect_ratio]
             anchor_hws = torch.tensor(anchor_hws, device=self.device)
-            anchor_hws = anchor_hws.view(1,1,3,2)
+            anchor_hws = anchor_hws.view(1, 1, 3, 2)
             anchor_hws = zeros + anchor_hws
             pos_y = torch.arange(0, hw_shape[0] * stride, step=stride, dtype=torch.float32, device=self.device)
             pos_x = torch.arange(0, hw_shape[1] * stride, step=stride, dtype=torch.float32, device=self.device)
@@ -35,5 +36,4 @@ class Anchor:
 
             anchor_box2d = torch.cat((pos_yxs, anchor_hws), dim=-1)
             anchors.append(anchor_box2d)
-        uf.print_structure('anchor', anchors)
         return anchors

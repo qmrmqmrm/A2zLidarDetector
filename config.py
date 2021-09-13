@@ -34,29 +34,48 @@ class Hardware:
     DEVICE = ['cuda', 'cpu'][1]
 
 
+class Scales:
+    DEFAULT_FEATURE_SCALES = [4, 8, 16]
+
+
 class Model:
+    MODEL_NAME = 'RCNN'
     class Backbone:
-        ARCHITECTURE = "ResNet50"
+        ARCHITECTURE = "ResNet"
+        DEPTH = 50
+        NUM_GROUPS = 1
+        WIDTH_PER_GROUP = 64
+        STEM_OUT_CHANNELS = 64
+        RES_OUT_CHANNELS = 256
+        STRIDE_IN_1X1 = True
+        RES5_DILATION = 1
         NORM = "FrozenBN"
-        OUT_SCALES = [4, 8, 16]
+        OUT_SCALES = Scales.DEFAULT_FEATURE_SCALES
         OUT_FEATURES = ["backbone_s2", "backbone_s3", "backbone_s4"]
 
     class Neck:
         ARCHITECTURE = "FPN"
-        OUT_SCALES = [4, 8, 16]
+        OUT_SCALES = Scales.DEFAULT_FEATURE_SCALES
         NORM = ''
         OUT_FEATURES = ["neck_s2", "neck_s3", "neck_s4"]
         OUTPUT_CHANNELS = 256
 
     class RPN:
-        ARCHITECTURE = "FRCNN"
-        OUT_SCALES = [4, 8, 16]
-
-
+        ARCHITECTURE = "RPN"
+        OUT_SCALES = Scales.DEFAULT_FEATURE_SCALES
         OUT_FEATURES = ["rpn_s2", "rpn_s3", "rpn_s4"]
         ANCHOR_SIZES = [16, 64, 80]
         ANCHOR_RATIOS = [0.5, 1., 2.]
+        NMS_IOU_THRESH = 0.5
+        BBOX_REG_WEIGHTS = (1.0, 1.0, 1.0, 1.0)
 
+    class Head:
+        ARCHITECTURE = "FRCNN"
+        NUM_FC = 2
+        FC_DIM = 1024
+        POOLER_RESOLUTION = 7
+        POOLER_SAMPLING_RATIO = 0
+        BBOX_REG_WEIGHTS = (10.0, 10.0, 5.0, 5.0)
 
     class Output:
         FEATURE_SCALES = {"feature_s": 4, "feature_m": 8, "feature_l": 16}
@@ -70,23 +89,8 @@ class Model:
         MOMENTUM = 0.9
         MAX_ITER = 30000
 
-        @classmethod
-        def set_out_channel(cls):
-            num_cats = len(Tfrdata.CATEGORY_NAMES)
-            Model.Output.OUT_COMPOSITION = [('bbox', 4), ('object', 1), ('category', num_cats)]
-            Model.Output.OUT_CHANNELS = sum([val for key, val in Config.Model.Output.OUT_COMPOSITION])
-
     class Structure:
-        class NAME:
-            MODEL_NAME = 'RCNN'
-            BACKBONE_NAME = "ResNet"
-            NECK_NAME = "FPN"
-            RPN_NAME = 'RPN'
-            HEAD_NAME = 'ROI'
-
-        NAMES = [NAME.MODEL_NAME, NAME.BACKBONE_NAME, NAME.NECK_NAME, NAME.RPN_NAME, NAME.HEAD_NAME]
         VP_BINS = 12
-        DEVICE = ['cuda', 'cpu'][1]
         YAW = True
         YAW_RESIDUAL = True
         HEIGHT_TRAINING = True
@@ -107,16 +111,16 @@ class Model:
     #     NORM = ''
     #     FUSE_TYPE = 'sum'
 
-    class RESNET:
-        OUT_FEATURES = ['res2', 'res3', 'res4']
-
-        STEM_OUT_CHANNELS = 64
-        DEPTH = 50
-        NUM_GROUPS = 1
-        WIDTH_PER_GROUP = 64
-        RES2_OUT_CHANNELS = 256
-        STRIDE_IN_1X1 = True
-        RES5_DILATION = 1
+    # class RESNET:
+    #     OUT_FEATURES = ['res2', 'res3', 'res4']
+    #
+    #     STEM_OUT_CHANNELS = 64
+    #     DEPTH = 50
+    #     NUM_GROUPS = 1
+    #     WIDTH_PER_GROUP = 64
+    #     RES2_OUT_CHANNELS = 256
+    #     STRIDE_IN_1X1 = True
+    #     RES5_DILATION = 1
     #
     # class RPN:
     #     INPUT_FEATURES = ['neck2', 'neck3', 'neck4']

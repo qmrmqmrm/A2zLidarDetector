@@ -16,12 +16,12 @@ import utils.util_function as uf
 class ModelBase(nn.Module):
     def __init__(self, backbone,neck, rpn, head):
         super(ModelBase, self).__init__()
-        self.device = torch.device(cfg.Model.Structure.DEVICE)
+        self.device = torch.device(cfg.Hardware.DEVICE)
         self.backbone = backbone
         self.neck = neck
         self.proposal_generator = rpn
         self.roi_heads = head
-        self.to(cfg.Model.Structure.DEVICE)
+        self.to(cfg.Hardware.DEVICE)
 
         pass
 
@@ -89,26 +89,23 @@ class GeneralizedRCNN(ModelBase):
                                torch.Size([139392(88 * 176 * 9), 4])
                                torch.Size([34848(44 * 88 * 9), 4])]
         """
+
         image = self.preprocess_input(batched_input)
         backbone_features = self.backbone(image)
         neck_features = self.neck(backbone_features)
         # uf.print_structure('batched_input', batched_input)
         #
-        rpn_proposals, auxiliary = self.proposal_generator(image.shape, neck_features, batched_input)
-        # pred = self.roi_heads(batched_input, features, rpn_proposals)
+
+        rpn_proposals = self.proposal_generator(neck_features, batched_input)
+        pred = self.roi_heads(neck_features, rpn_proposals)
         # pred['rpn_proposals'] = rpn_proposals
         # # pred['batched_input'] = batched_input
         # pred.update(auxiliary)
-        return rpn_proposals, auxiliary
+        return pred
 
     def preprocess_input(self, batched_input):  ## image
         image = batched_input['image'].permute(0, 3, 1, 2).to(self.device)
         image = self.normalizer(image)
-        # image = F.pad(image,(4,4,2,2), "constant", 0)
-        # batched_input['image'] = image
-        # batched_input['bbox2d'] += torch.tensor([[[4, 2, 4, 2]]], dtype=torch.float32).to(self.device)
-        # batched_input['bbox3d'][:, :, :2] += torch.tensor([[[4, 2]]], dtype=torch.float32).to(self.device)
-        # batched_input = mu.remove_padding(batched_input)
         return image
 
 
