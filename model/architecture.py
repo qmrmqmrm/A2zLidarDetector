@@ -89,7 +89,8 @@ class GeneralizedRCNN(ModelBase):
                                torch.Size([139392(88 * 176 * 9), 4])
                                torch.Size([34848(44 * 88 * 9), 4])]
         """
-
+        print('device',batched_input['bbox2d'].device)
+        print('device',batched_input['anchors'][0].device)
         image = self.preprocess_input(batched_input)
         backbone_features = self.backbone(image)
         neck_features = self.neck(backbone_features)

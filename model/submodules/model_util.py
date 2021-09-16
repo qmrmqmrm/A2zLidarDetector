@@ -1,5 +1,9 @@
 import torch
 from torch.nn import functional as F
+import numpy as np
+
+import config as cfg
+import utils.util_function as uf
 
 
 class Conv2d(torch.nn.Conv2d):
@@ -75,3 +79,62 @@ def remove_padding(batch_input):
     new_batch_input = {'bbox2d': bbox2d_batch, 'category': category_batch, 'yaw': yaw_batch, 'yaw_rads': yaw_rads_batch,
                        'bbox3d': bbox3d_batch, 'image': batch_input['image']}
     return new_batch_input
+
+
+def convert_box_format_tlbr_to_yxhw(boxes_tlbr):
+    """
+    :param boxes_tlbr: any tensor type, shape=(numbox, dim) or (batch, numbox, dim)
+    :return:
+    """
+    boxes_yx = (boxes_tlbr[..., 0:2] + boxes_tlbr[..., 2:4]) / 2  # center y,x
+    boxes_hw = boxes_tlbr[..., 2:4] - boxes_tlbr[..., 0:2]  # y2,x2 = y1,x1 + h,w
+    output = [boxes_yx, boxes_hw]
+    output = concat_box_output(output, boxes_tlbr)
+    return output
+
+
+def convert_box_format_yxhw_to_tlbr(boxes_yxhw):
+    """
+    :param boxes_yxhw: any tensor type, shape=(numbox, dim) or (batch, numbox, dim)
+    :return:
+    """
+    boxes_tl = boxes_yxhw[..., 0:2] - (boxes_yxhw[..., 2:4] / 2)  # y1,x1 = cy,cx + h/2,w/2
+    boxes_br = boxes_tl + boxes_yxhw[..., 2:4]  # y2,x2 = y1,x1 + h,w
+    output = [boxes_tl, boxes_br]
+    output = concat_box_output(output, boxes_yxhw)
+    return output
+
+
+def concat_box_output(output, boxes):
+    num, dim = boxes.shape[-2:]
+
+    # if there is more than bounding box, append it  e.g. category, distance
+    if dim > 4:
+        auxi_data = boxes[..., 4:]
+        output.append(auxi_data)
+
+    if torch.is_tensor(boxes):
+        output = torch.cat(output, dim=-1)
+        # output = output.to(dtype=boxes.type)
+    else:
+        output = np.concatenate(output, axis=-1)
+        output = output.astype(boxes.dtype)
+    return output
+
+
+def apply_box_deltas(anchors, deltas):
+    """
+    :param anchors: anchor boxes in image pixel in yxhw format (batch,height,width,4)
+    :param deltas: box conv output corresponding to dy,dx,dh,dw
+    :return:
+    """
+    anchor_yx, anchor_hw = anchors[..., :2], anchors[..., 2:4]
+    stride = anchor_yx[0, 1, 0, 0, 0] - anchor_yx[0, 0, 0, 0, 0]
+    delta_yx, delta_hw = deltas[..., :2], deltas[..., 2:4]
+    delta_hw = torch.clamp(delta_hw, -2, 2)
+    anchor_yx = anchor_yx.view(delta_yx.shape)
+    anchor_hw = anchor_hw.view(delta_hw.shape)
+    bbox_yx = anchor_yx + torch.sigmoid(delta_yx) * stride * 2 - (stride / 2)
+    bbox_hw = anchor_hw * torch.exp(delta_hw)
+    bbox = torch.cat([bbox_yx, bbox_hw], dim=-1)
+    return bbox

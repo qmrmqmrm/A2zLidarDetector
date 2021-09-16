@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
+from torchvision.ops import roi_align
 from typing import Dict
 import numpy as np
 
@@ -22,37 +23,45 @@ class Head(nn.Module):
 class FastRCNNHead(Head):
     def __init__(self, input_shape: Dict[str, ShapeSpec]):
         super(FastRCNNHead, self).__init__(input_shape)
+        self.device = cfg.Hardware.DEVICE
         self.in_features = cfg.Model.Neck.OUT_FEATURES
-        pooler_resolution = cfg.Model.Head.POOLER_RESOLUTION
-        pooler_scales = tuple(1.0 / input_shape[k].stride for k in self.in_features)
-        sampling_ratio = cfg.Model.Head.POOLER_SAMPLING_RATIO
-
-        pooler_type = "ROIAlignV2"
+        self.pooler_resolution = cfg.Model.Head.POOLER_RESOLUTION
+        self.pooler_scales = tuple(1.0 / input_shape[k].stride for k in self.in_features)
+        self.sampling_ratio = cfg.Model.Head.POOLER_SAMPLING_RATIO
+        self.aligned = cfg.Model.Head.ALIGNED
 
         in_channels = [input_shape[f].channels for f in self.in_features]
-        # Check all channel counts are equal
         assert len(set(in_channels)) == 1, in_channels
         in_channels = in_channels[0]
-        self.box_pooler = ROIPooler(
-            output_size=pooler_resolution,
-            scales=pooler_scales,
-            sampling_ratio=sampling_ratio,
-            pooler_type=pooler_type,
-            canonical_level=int((cfg.Model.Neck.OUT_FEATURES[-1].split('neck_s'))[1])
-        )
+
         self.box_predictor = FastRCNNFCOutputHead(
-            ShapeSpec(channels=in_channels, height=pooler_resolution, width=pooler_resolution)
+            ShapeSpec(channels=in_channels, height=self.pooler_resolution, width=self.pooler_resolution)
         )
 
     def forward(self, features, proposals):
         features = [features[f] for f in self.in_features]
-        uf.print_structure('features',features)
-        uf.print_structure('proposals',proposals)
-        box_features = self.box_pooler(features, proposals["bbox2d"])
+        box_features = self.box_pooler(features, proposals)
         # torch.Size([batch * 512, 256, 7, 7])
+        uf.print_structure('bboxfeature',box_features)
         pred_features = self.box_predictor(box_features)
         return pred_features
 
+    def box_pooler(self, features, proposals):
+        bbox2d = proposals['bbox2d']
+        anchor_id =proposals['anchor_id']
+
+        batch = bbox2d.shape[0]
+        xs = list()
+        batch_to_box = torch.tensor([[0], [1]], device=self.device)
+        batch_to_box = torch.repeat_interleave(batch_to_box, bbox2d.shape[1], dim=1).unsqueeze(-1)
+        bbox2d_with_batch = torch.cat([bbox2d, batch_to_box], dim=-1).view(-1, 5)
+        for scale, feature in zip(self.pooler_scales, features):
+
+            x = roi_align(feature, bbox2d_with_batch, self.pooler_resolution, scale,
+                          self.sampling_ratio, self.aligned)
+            xs.append(x)
+        uf.print_structure('xs', xs)
+        return xs
 
 class FastRCNNFCOutputHead(nn.Module):
     def __init__(self, input_shape: Dict[str, ShapeSpec]):
@@ -61,7 +70,7 @@ class FastRCNNFCOutputHead(nn.Module):
 
         num_fc = cfg.Model.Head.NUM_FC
         fc_dim = cfg.Model.Head.FC_DIM
-        fc_shape =int(np.prod(self._output_size))
+        fc_shape = int(np.prod(self._output_size))
         self.fcs = []
         for k in range(num_fc):
             fc = nn.Linear(fc_shape, fc_dim)

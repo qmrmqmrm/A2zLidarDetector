@@ -11,6 +11,7 @@ from dataloader.data_util.a2d2_calib_reader import get_calibration
 from dataloader.anchor import Anchor
 import config as cfg
 import utils.util_function as uf
+import model.submodules.model_util as mu
 
 
 class A2D2Dataset(DatasetBase):
@@ -49,23 +50,19 @@ class A2D2Dataset(DatasetBase):
         label_file = image_file.replace('image/', 'label/').replace('.png', '.json')
         with open(label_file, 'r') as f:
             label = json.load(f)
+
         anns = self.convert_bev(label, image, self.calib_dict, bins=12, yaw=True)
+
         if anns:
             anns = self.gather_and_zeropad(anns)
             self.last_sample = anns
         else:
             anns = self.zero_annotation()
-
+        features['anchors'] = self.anchor_generator()
         features.update(anns)
         features['image_file'] = image_file
-        anchors_ = list()
-        anchor = self.anchor_generator()
-        for anc in anchor:
-            anc = anc.view(-1, 4)
-            anchors_.append(anc)
+        features['anchor_id'] = self.matched_anchor(features['anchors'], features['bbox2d'])
 
-        anchors = torch.cat(anchors_, dim=0)
-        features['anchors'] = anchors
         return features
 
     def convert_bev(self, label, image, calib, bins, bvres=0.05, yaw=False):
@@ -178,6 +175,19 @@ class A2D2Dataset(DatasetBase):
         gathered_anns = {key: torch.zeros(val.shape, dtype=torch.float32) for key, val in self.last_sample.items()}
         return gathered_anns
 
+    def matched_anchor(self, anchors, bbox2d):
+        feature_anchor = list()
+        for anchor in anchors:
+            anchor = anchor.view(-1, 4)
+            anchor = mu.convert_box_format_yxhw_to_tlbr(anchor)
+            feature_anchor.append(anchor)
+        feature_anchor = torch.cat(feature_anchor)
+
+        iou = uf.pairwise_iou(bbox2d, feature_anchor)
+        max_iou, max_idx = iou.max(dim=1)
+        anchor_id = max_idx.view(self.max_box,1)
+        return anchor_id
+
     def gather_featmaps(self, bbox2d, objectness):
         """
                  res2(Tensor) : torch.Size([4, 256, 176, 352]) 3.9772727
@@ -190,34 +200,24 @@ class A2D2Dataset(DatasetBase):
         channel_shape = bbox2d.shape[-1]
         center_xs = bbox2d[:, 0].reshape((-1, 1))
         center_ys = bbox2d[:, 1].reshape((-1, 1))
-        # center_xs= np.reshape(center_xs,(1,-1))
         heights = [176, 88, 44]
         box2D_map_dict = dict()
         object_map_dict = dict()
-        anchor_map_dict = dict()
-        anchor = self.anchor.make_anchor_map(heights)
         feature_names = cfg.Model.Output.FEATURE_ORDER
         for i, (height, feature_name) in enumerate(zip(heights, feature_names)):
             ratio = 700 / height
 
             bbox2d_map = np.zeros((height, height * 2, channel_shape))
             object_map = np.zeros((height, height * 2, 1))
-            # [w*h*a,c]
-            # anchor_map = anchor[i].view(height, height * 2, 9, -1)
-            # anchor_map = anchor_map.to("cpu")
             for j, (center_x, center_y) in enumerate(zip(center_xs, center_ys)):
                 w = center_x / ratio
                 h = center_y / ratio
                 bbox2d_map[int(h), int(w), :] = bbox2d[j, :]
                 object_map[int(h), int(w), :] = 1
 
-            # mask_map = torch.tensor(bbox2d_map[:, :, None, :], device="cuda")
-            # anchor_map = anchor_map * mask_map
-            # print("test_map : ",anchor_map)
             box2D_map_dict[feature_name] = bbox2d_map
             object_map_dict[feature_name] = object_map
-            # anchor_map_dict[feature_name] = anchor_map
-        return box2D_map_dict, object_map_dict, anchor_map_dict
+        return box2D_map_dict, object_map_dict
 
 
 def rad2bin(rad, bins):

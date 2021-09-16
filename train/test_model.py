@@ -29,6 +29,14 @@ def to_device(features):
     for key in features:
         if isinstance(features[key], torch.Tensor):
             features[key] = features[key].to(device=device)
+        if isinstance(features[key], list):
+            data = list()
+            for feature in features[key]:
+                if isinstance(feature, torch.Tensor):
+                    feature = feature.to(device=device)
+                data.append(feature)
+            features[key] = data
+
     return features
 
 

@@ -31,7 +31,7 @@ class Datasets:
 
 
 class Hardware:
-    DEVICE = ['cuda', 'cpu'][1]
+    DEVICE = ['cuda', 'cpu'][0]
 
 
 class Scales:
@@ -68,6 +68,8 @@ class Model:
         ANCHOR_RATIOS = [0.5, 1., 2.]
         NMS_IOU_THRESH = 0.5
         BBOX_REG_WEIGHTS = (1.0, 1.0, 1.0, 1.0)
+        NUM_PROPOSALS = 2000
+        NUM_SAMPLE = 512
 
     class Head:
         ARCHITECTURE = "FRCNN"
@@ -76,6 +78,7 @@ class Model:
         POOLER_RESOLUTION = 7
         POOLER_SAMPLING_RATIO = 0
         BBOX_REG_WEIGHTS = (10.0, 10.0, 5.0, 5.0)
+        ALIGNED = True
 
     class Output:
         FEATURE_SCALES = {"feature_s": 4, "feature_m": 8, "feature_l": 16}
@@ -105,65 +108,6 @@ class Model:
 
         BACKBONE_CONV_ARGS = {"activation": "leaky_relu", "scope": "back"}
         HEAD_CONV_ARGS = {"activation": "leaky_relu", "scope": "head"}
-
-    # class FPN:
-    #     OUTPUT_CHANNELS = 256
-    #     NORM = ''
-    #     FUSE_TYPE = 'sum'
-
-    # class RESNET:
-    #     OUT_FEATURES = ['res2', 'res3', 'res4']
-    #
-    #     STEM_OUT_CHANNELS = 64
-    #     DEPTH = 50
-    #     NUM_GROUPS = 1
-    #     WIDTH_PER_GROUP = 64
-    #     RES2_OUT_CHANNELS = 256
-    #     STRIDE_IN_1X1 = True
-    #     RES5_DILATION = 1
-    #
-    # class RPN:
-    #     INPUT_FEATURES = ['neck2', 'neck3', 'neck4']
-    #     MIN_SIZE = 0
-    #     NMS_THRESH = 0.2
-    #     IOU_THRESHOLDS = [0.3, 0.7]
-    #     IOU_LABELS = [0, -1, 1]
-    #     BATCH_SIZE_PER_IMAGE = 256
-    #     POSITIVE_FRACTION = 0.5
-    #     SMOOTH_L1_BETA = 0.0
-    #     LOSS_WEIGHT = 1.0
-    #     PRE_NMS_TOPK_TEST = 6000
-    #     PRE_NMS_TOPK_TRAIN = 12000
-    #     POST_NMS_TOPK_TEST = 1000
-    #     POST_NMS_TOPK_TRAIN = 2000
-    #     BOUNDARY_THRESH = -1
-    #     BBOX_REG_WEIGHTS = (1.0, 1.0, 1.0, 1.0)
-    #     ANCHOR_SIZES = [16, 64, 80]
-    #     ANCHOR_RATIOS = [0.5, 1., 2.]
-
-    # class ROI_HEADS:
-    #     INPUT_FEATURES = ['neck2', 'neck3', 'neck4']
-    #     IOU_LABELS = [0, 1]
-    #     MATCHER_IOU_THRESHOLDS = [0.5]
-    #     BATCH_SIZE_PER_IMAGE = 512
-    #     POSITIVE_FRACTION = 0.25
-    #     NMS_SCORE_THRESH = 0.5
-    #     NMS_IOU_THRESH = 0.5
-    #
-    #     PROPOSAL_APPEND_GT = True
-
-    # class ROI_BOX_HEAD:
-    #     CLS_AGNOSTIC_BBOX_REG = False
-    #     SMOOTH_L1_BETA = 0.0
-    #     ROTATED_BOX_TRAINING = True
-    #     BBOX_REG_WEIGHTS = (10.0, 10.0, 5.0, 5.0)
-    #     POOLER_RESOLUTION = 7
-    #     POOLER_SAMPLING_RATIO = 0
-    #     NUM_CONV = 0
-    #     NUM_FC = 2
-    #     CONV_DIM = 256
-    #     FC_DIM = 1024
-    #     NORM = ''
 
 
 class Train:
