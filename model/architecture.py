@@ -53,56 +53,36 @@ class GeneralizedRCNN(ModelBase):
         """
         :param batched_input:
             {'image': [batch, height, width, channel],
+             'anchors': [batch, height/stride, width/stride, anchor, tlbr] * features
             'category': [batch, fixbox, 1],
-            'bbox2d': [[numbox, 4]*batch], 'bbox3d': [batch, num, 6], 'object': [batch, num, 1],
-            'yaw': [batch, num, 1], 'yaw_rads': [batch, num, 1]}
+            'bbox2d': [batch, fixbox, 6], 'bbox3d': [batch, fixbox, 6], 'object': [batch, fixbox, 1],
+            'yaw': [batch, fixbox, 1], 'yaw_rads': [batch, fixbox, 1]}, 'anchor_id': [batch, fixbox, 1]
+            'image_file': image file name per batch
 
         :return:
-             pred :{'head_class_logits': torch.Size([batch * 512, 4])
-                  'bbox_3d_logits': torch.Size([batch * 512, 12])
-                  'head_yaw_logits': torch.Size([batch * 512, 36])
-                  'head_yaw_residuals': torch.Size([batch * 512, 36])
-                  'head_height_logits': torch.Size([batch * 512, 6])
 
-                  'head_proposals': [{'proposal_boxes': torch.Size([512, 4])
-                                      'objectness_logits': torch.Size([512])
-                                      'gt_category': torch.Size([512, 1])
-                                      'bbox2d': torch.Size([512, 4])
-                                      'bbox3d': torch.Size([512, 6])
-                                      'object': torch.Size([512, 1])
-                                      'yaw': torch.Size([512])
-                                      'yaw_rads': torch.Size([512])} * batch]
-
-                    rpn
-                  'rpn_proposals': [{'proposal_boxes': torch.Size([2000, 4]),
-                                    'objectness_logits': torch.Size([2000])} * batch]
-
-                  'pred_objectness_logits' : [torch.Size([batch, 557568(176 * 352 * 9)]),
-                                              torch.Size([batch, 139392(88 * 176 * 9)]),
-                                              torch.Size([batch, 34848(44 * 88 * 9)])]
-
-                  'pred_anchor_deltas' : [torch.Size([batch, 557568(176 * 352 * 9), 4]),
-                                          torch.Size([batch, 139392(88 * 176 * 9), 4]),
-                                          torch.Size([batch, 34848(44 * 88 * 9), 4])]
-
-                  'anchors' : [torch.Size([557568(176 * 352 * 9), 4])
-                               torch.Size([139392(88 * 176 * 9), 4])
-                               torch.Size([34848(44 * 88 * 9), 4])]
         """
-        print('device',batched_input['bbox2d'].device)
-        print('device',batched_input['anchors'][0].device)
         image = self.preprocess_input(batched_input)
         backbone_features = self.backbone(image)
+        # backbone_features /backbone_s2 torch.Size([2, 256, 160, 160])
+        # backbone_features /backbone_s3 torch.Size([2, 512, 80, 80])
+        # backbone_features /backbone_s4 torch.Size([2, 1024, 40, 40])
         neck_features = self.neck(backbone_features)
-        # uf.print_structure('batched_input', batched_input)
-        #
+        # neck_features /neck_s2 torch.Size([2, 256, 160, 160])
+        # neck_features /neck_s3 torch.Size([2, 256, 80, 80])
+        # neck_features /neck_s4 torch.Size([2, 256, 40, 40])
+        # neck_features /neck_s5 torch.Size([2, 256, 20, 20])
 
         rpn_proposals = self.proposal_generator(neck_features, batched_input)
-        pred = self.roi_heads(neck_features, rpn_proposals)
-        # pred['rpn_proposals'] = rpn_proposals
-        # # pred['batched_input'] = batched_input
-        # pred.update(auxiliary)
-        return pred
+        # rpn_proposals /bbox2d torch.Size([2, 512, 4])
+        # rpn_proposals /objectness torch.Size([2, 512, 1])
+        # rpn_proposals /anchor_id torch.Size([2, 512, 1])
+
+        head_output = self.roi_heads(neck_features, rpn_proposals)
+        model_output = {'rpn_' + key: value for key, value in rpn_proposals.items()}
+        model_output['head_output'] = head_output
+        # head_output  torch.Size([1024, 93]
+        return model_output
 
     def preprocess_input(self, batched_input):  ## image
         image = batched_input['image'].permute(0, 3, 1, 2).to(self.device)

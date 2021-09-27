@@ -5,6 +5,7 @@ import cv2
 import config as cfg
 from model.submodules.matcher import Matcher
 
+
 def print_progress(status_msg):
     # NOTE: the \r which means the line should overwrite itself.
     msg = "\r" + status_msg
@@ -200,10 +201,10 @@ def print_structure(title, data, key=""):
     elif isinstance(data, tuple):
         for i, datum in enumerate(data):
             print_structure(title, datum, f"{key}/{i}")
-    elif data == None :
+    elif data is None:
         print(f'{title} : None')
     else:
-        print(title, key, data.shape)
+        print(title, key, data.shape, data.device)
 
 
 def align_gt_with_pred(proposals, targets):

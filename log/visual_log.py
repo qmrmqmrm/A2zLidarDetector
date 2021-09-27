@@ -33,13 +33,9 @@ class VisualLog:
                 proposals_class = proposals['pred_classes']
 
             elif title == 'gt_proposal':
-                uf.print_structure('grtr', grtr)
-                uf.print_structure('pred', pred)
                 proposals = pred[i]
                 gt_bbox2d = grtr['bbox2d'][i]
                 gt_classes = grtr['category'][i]
-                uf.print_structure('gt_class', gt_classes)
-                uf.print_structure('proposals', proposals)
                 proposals_box = proposals['gt_proposal_box']
                 proposals_class = proposals['gt_proposals_class']
 

@@ -15,9 +15,6 @@ from log.visual_log import VisualLog
 from log.anchor_log import AnchorLog
 import utils.util_function as uf
 
-DEVICE = cfg.Model.Structure.DEVICE
-
-
 class LogFile:
     def save_log(self, epoch, train_log, val_log):
         summary = self.merge_logs(epoch, train_log, val_log)
@@ -99,9 +96,6 @@ class LogData:
         return self.history_logger.get_summary()
 
     def matched_nms(self, grtr, pred):
-        uf.print_structure('grtr', grtr)
-        uf.print_structure('pred', pred)
-
         gt_proposal = list()
         for i, image_file in enumerate(grtr['image_file']):
             proposals = pred[0][i]
@@ -110,10 +104,6 @@ class LogData:
 
             proposals_box = proposals['pred_boxes']
             proposals_class = proposals['pred_classes']
-            uf.print_structure('gt_bbox2d', gt_bbox2d)
-            uf.print_structure('gt_classes', gt_classes)
-            uf.print_structure('proposals_box', proposals_box)
-            uf.print_structure('proposals_class', proposals_class)
 
             gt_proposal_box, gt_proposals_class = uf.matched_category_gt_with_pred(proposals_box, gt_bbox2d, gt_classes,
                                                                                    proposals_class)

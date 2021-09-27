@@ -16,11 +16,11 @@ class Anchor:
 
     def __call__(self):
         """
-        :return: list of feature maps that contain anchor boxes [(height/scale, width/scale, anchor, 4(yxhw)) for in scales]
+        :return: list of feature maps that contain anchor boxes [(height/scale, width/scale, anchor, 5(yxhw+anchor_id)) for in scales]
                 boxes are in yxhw format
         """
         anchors = []
-        for hw_shape, size, stride in zip(self.feature_shapes, self.anc_sizes, self.strides):
+        for feature_i, (hw_shape, size, stride) in enumerate(zip(self.feature_shapes, self.anc_sizes, self.strides)):
             anchor_per_scale = len(self.aspect_ratio)
             zeros = torch.zeros((hw_shape[0], hw_shape[1], anchor_per_scale, 2), device=self.device)
             anc_area = size ** 2
@@ -35,7 +35,11 @@ class Anchor:
             mesh_y, mesh_x = torch.meshgrid(pos_y, pos_x)
             pos_yxs = torch.stack([mesh_y, mesh_x], -1).view((hw_shape[0], hw_shape[1], 1, 2))
             pos_yxs = torch.tile(pos_yxs, (anchor_per_scale, 1))
-            # strides = torch.ones((hw_shape[0], hw_shape[1], anchor_per_scale, 1), device=self.device) * stride
-            anchor_box2d = torch.cat((pos_yxs, anchor_hws), dim=-1)
+            # [anchor]
+            anchor_id = torch.tensor(list(range(feature_i * anchor_per_scale, (feature_i + 1) * anchor_per_scale)),
+                                     device=self.device)
+            # [batch,height,width,anchor,1]
+            anchor_id = anchor_id.repeat(hw_shape[0], hw_shape[1], 1).unsqueeze(-1)
+            anchor_box2d = torch.cat((pos_yxs, anchor_hws, anchor_id), dim=-1)
             anchors.append(anchor_box2d)
         return anchors

@@ -19,8 +19,8 @@ def test_model(dataset_name="a2d2"):
         print("----- index:", step)
         features = next(train_loader_iter)
         features = to_device(features)
-        rpn_proposals= model(features)
-        uf.print_structure('rpn_proposals',rpn_proposals)
+        model_output = model(features)
+        uf.print_structure('model_output', model_output)
 
 
 

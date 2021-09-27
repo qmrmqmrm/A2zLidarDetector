@@ -46,11 +46,9 @@ class IntegratedLoss:
         return total_loss, loss_by_type
 
     def prepare_box_auxiliary_data(self, grtr, pred):
+        uf.print_structure('grtr', grtr)
+        uf.print_structure('pred', pred)
         auxiliary = dict()
-        gt_aligned, match_result = uf.align_gt_with_pred(pred['head_proposals'], grtr)
-        auxiliary['gt_matched'] = self.filter_foreground_objs(gt_aligned, match_result)
-        pred_cat = self.cat_pred_batch(pred)
-        auxiliary['pred_matched'] = self.filter_foreground_objs(pred_cat, match_result)
         return auxiliary
 
     def filter_foreground_objs(self, data, match_result):

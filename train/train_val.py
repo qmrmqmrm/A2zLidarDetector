@@ -17,19 +17,19 @@ class TrainValBase:
         self.optimizer = optimizer
         self.epoch_steps = epoch_steps
         self.split = ""
-        self.device = cfg.Model.Structure.DEVICE
+        self.device = cfg.Hardware.DEVICE
 
     def run_epoch(self, visual_log, epoch, data_loader):
 
         self.mode_set()
-        logger = LogData(visual_log, cfg.Paths.CHECK_POINT, epoch, self.model.training)
+        # logger = LogData(visual_log, cfg.Paths.CHECK_POINT, epoch, self.model.training)
         train_loader_iter = iter(data_loader)
         steps = len(train_loader_iter)
 
         for step in range(steps):
             # if step > 100:
             #     break
-            features, anchor = next(train_loader_iter)
+            features = next(train_loader_iter)
             features = self.to_device(features)
             start = timer()
             file_name = features['image_file']
@@ -46,7 +46,14 @@ class TrainValBase:
     def to_device(self, features):
         for key in features:
             if isinstance(features[key], torch.Tensor):
-                features[key] = features[key].to(self.device)
+                features[key] = features[key].to(device=self.device)
+            if isinstance(features[key], list):
+                data = list()
+                for feature in features[key]:
+                    if isinstance(feature, torch.Tensor):
+                        feature = feature.to(device=self.device)
+                    data.append(feature)
+                features[key] = data
         return features
 
     def run_step(self, features):
@@ -63,8 +70,6 @@ class ModelTrainer(TrainValBase):
 
     def run_step(self, features):
         prediction = self.model(features)
-        features = mu.remove_padding(features)
-
         total_loss, loss_by_type = self.loss_object(features, prediction, True)
         self.optimizer.zero_grad()
         total_loss.backward()
@@ -82,7 +87,6 @@ class ModelValidater(TrainValBase):
 
     def run_step(self, features):
         prediction = self.model(features)
-        features = mu.remove_padding(features)
         total_loss, loss_by_type = self.loss_object(features, prediction, False)
         return prediction, total_loss, loss_by_type, features
 

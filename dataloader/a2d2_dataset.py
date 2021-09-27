@@ -27,7 +27,7 @@ class A2D2Dataset(DatasetBase):
         feature_shape = list()
         for stride in strides:
             feature_shape.append((image_shape / stride).to(device=self.device, dtype=torch.int64))
-        self.anchor_generator = Anchor('a2d2')
+        self.anchors = Anchor('a2d2')()
 
         # self.last_sample = self.__getitem__(91)
         # del self.last_sample['image']
@@ -58,7 +58,7 @@ class A2D2Dataset(DatasetBase):
             self.last_sample = anns
         else:
             anns = self.zero_annotation()
-        features['anchors'] = self.anchor_generator()
+        features['anchors'] = self.anchors
         features.update(anns)
         features['image_file'] = image_file
         features['anchor_id'] = self.matched_anchor(features['anchors'], features['bbox2d'])
@@ -176,16 +176,20 @@ class A2D2Dataset(DatasetBase):
         return gathered_anns
 
     def matched_anchor(self, anchors, bbox2d):
+        """
+        :param anchors: (height,width,anchor,5(yxhw+anchor_id))
+        :param bbox2d: (fixed_num(15), 4(tlbr))
+        :return: (fixed_num(15), 1)
+        """
         feature_anchor = list()
         for anchor in anchors:
-            anchor = anchor.view(-1, 4)
+            anchor = anchor.view(-1, anchor.shape[-1])
             anchor = mu.convert_box_format_yxhw_to_tlbr(anchor)
             feature_anchor.append(anchor)
         feature_anchor = torch.cat(feature_anchor)
-
-        iou = uf.pairwise_iou(bbox2d, feature_anchor)
+        iou = uf.pairwise_iou(bbox2d, feature_anchor[..., :-1])
         max_iou, max_idx = iou.max(dim=1)
-        anchor_id = max_idx.view(self.max_box,1)
+        anchor_id = feature_anchor[max_idx, -1:]
         return anchor_id
 
     def gather_featmaps(self, bbox2d, objectness):

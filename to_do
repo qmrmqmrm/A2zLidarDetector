@@ -1,4 +1,15 @@
+--9.24--
+merge_features
+수정
 
+gt anchor inds 추가
+rpn에서 anchor 정보 추가
+
+
+select_proposals
+	앞부분 함수 빼기
+
+--9.17--
 
 layer 재구현
 layers = [conv, relu, pool]

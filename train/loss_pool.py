@@ -13,13 +13,13 @@ import utils.util_function as uf
 class LossBase:
     def __init__(self):
         self.box2box_transform = Box2BoxTransform(weights=cfg.Model.RPN.BBOX_REG_WEIGHTS)
-        self.anchor_iou_thresh = cfg.Model.RPN.IOU_THRESHOLDS
-        self.device = cfg.Model.Structure.DEVICE
+        # self.anchor_iou_thresh = cfg.Model.RPN.IOU_THRESHOLDS
+        self.device = cfg.Hardware.DEVICE
         self.vp_bins = cfg.Model.Structure.VP_BINS
         self.rotated_box_training = cfg.Model.Structure.ROTATED_BOX_TRAINING
-        self.anchor_matcher = Matcher(
-            cfg.Model.RPN.IOU_THRESHOLDS, cfg.Model.RPN.IOU_LABELS, allow_low_quality_matches=True
-        )
+        # self.anchor_matcher = Matcher(
+        #     cfg.Model.RPN.IOU_THRESHOLDS, cfg.Model.RPN.IOU_LABELS, allow_low_quality_matches=True
+        # )
         self.weights_height = cfg.Model.Structure.WEIGHTS_HEIGHT
 
     def __call__(self, features, pred, auxi):

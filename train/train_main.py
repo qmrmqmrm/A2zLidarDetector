@@ -2,14 +2,16 @@ import os
 import os.path as op
 from typing import Any, Dict, List
 import torch
-import pandas as pd
+
 
 import config as cfg
-from model.model_factory import build_model
+import settings
+from model.model_factory import ModelFactory
 from dataloader.loader_factory import get_dataset
 from train.train_val import get_train_val
 from train.loss_factory import IntegratedLoss
 from log.logger import LogFile
+import utils.util_function as uf
 
 
 def train_main():
@@ -37,7 +39,8 @@ def train_by_plan(dataset_name, end_epoch, learning_rate, loss_weights, model_sa
 
     train_data_loader = get_dataset(dataset_name, 'train', batch_size)
     test_data_loader = get_dataset(dataset_name, 'test', batch_size)
-    model = build_model(*cfg.Model.Structure.NAMES)
+    model_factory = ModelFactory(dataset_name)
+    model = model_factory.make_model()
     loss_object = IntegratedLoss(loss_weights, valid_category)
     optimizer = build_optimizer(model, learning_rate)
     trainer, validator = get_train_val(model, loss_object, optimizer, start_epoch)

@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 from torch import nn
 from torchvision.ops import boxes as box_ops
@@ -66,21 +67,22 @@ class RPN(nn.Module):
 
     def merge_features(self, logit_features):
         """
-        (batch,anchor*channel(5),hi,wi) -> (batch,channel,anchor,hi,wi) -> (batch,anchor,hi,wi,channel)
-        -> (batch,anchor,hi,wi,channel+anchor_index(6))
-        -> (batch,sum(anchor*hi*wi),channel+anchor_index(6))
-        :param logit_features:
+        :param logit_features: (batch,anchor*channel(5),hi,wi)
+                -> (batch,hi,wi,anchor,channel(5)+anchor_index(1))
         :return:
         """
         merged_feature_logit = list()
         for feature_i, logit in enumerate(logit_features):
-            batch = logit.shape[0]
-            logit = logit.reshape(batch, 5, -1)
-            logit = logit.permute(0, 2, 1)
-            logit_shape = logit.shape
-            a = logit_shape[0] * logit_shape[1]
-            anchor_idx = torch.arange(a, device=self.device).view(batch, -1, 1)
-            logit = torch.cat([logit, anchor_idx], dim=-1)
+            batch, _, height, width = logit.shape
+            logit = logit.reshape(batch, self.num_anchor, 5, height, width)
+            logit = logit.permute(0, 3, 4, 1, 2)
+            # [anchor]
+            anchor_id = torch.tensor(list(range(feature_i * self.num_anchor, (feature_i + 1) * self.num_anchor)),
+                                     device=self.device)
+            # [batch,height,width,anchor,1]
+            anchor_id = anchor_id.repeat(batch, height, width, 1).unsqueeze(-1)
+            # [batch,height*width*anchor,channel(5+1)]
+            logit = torch.cat([logit, anchor_id], dim=-1).view(batch, -1, logit.shape[-1] + 1)
             merged_feature_logit.append(logit)
 
         # merged_feature_logit = torch.cat(merged_feature_logit, dim=-1)
@@ -95,7 +97,8 @@ class RPN(nn.Module):
         """
         proposals = {'bbox2d': [], 'objectness': [], 'anchor_id': []}
         for logit_feature, anchors in zip(logit_features, grtr["anchors"]):
-            bbox2d_logit, object_logits, anchor_id = logit_feature[..., :4], logit_feature[..., 4:5], logit_feature[..., 5:6]
+            bbox2d_logit, object_logits, anchor_id = logit_feature[..., :4], logit_feature[..., 4:5], logit_feature[...,
+                                                                                                      5:6]
             bbox2d = mu.apply_box_deltas(anchors, bbox2d_logit)
             objectness = torch.sigmoid(object_logits)
             proposals['bbox2d'].append(bbox2d)
@@ -137,11 +140,10 @@ class RPN(nn.Module):
             anchor_id = anchor_id[keep]
             if keep.numel() < self.num_proposals:
                 padding = torch.zeros(self.num_proposals - keep.numel(), device=self.device).view(-1, 1)
-                box_padding = torch.cat([padding]*4, dim=-1)
+                box_padding = torch.cat([padding] * 4, dim=-1)
                 score = torch.cat([score, padding])
                 anchor_id = torch.cat([anchor_id, padding])
                 bbox2d = torch.cat([bbox2d, box_padding])
-
             proposals['bbox2d'].append(bbox2d)
             proposals['objectness'].append(score)
             proposals['anchor_id'].append(anchor_id)
@@ -159,9 +161,11 @@ class RPN(nn.Module):
         1000 = P + N + G
         """
         gt_bbox2d = grtr['bbox2d']  # (batch, fix_num,4)
-        proposal_gt_box = torch.cat([proposals['bbox2d'], grtr['bbox2d']], dim=1)   # (batch, num_proposals + fix_num, 4)
-        proposal_gt_object = torch.cat([proposals['objectness'], grtr['object']], dim=1)  # (batch, num_proposals + fix_num, 1)
-        proposal_gt_anchor_id = torch.cat([proposals['anchor_id'], grtr['anchor_id']], dim=1)  # (batch, num_proposals + fix_num, 1)
+        proposal_gt_box = torch.cat([proposals['bbox2d'], grtr['bbox2d']], dim=1)  # (batch, num_proposals + fix_num, 4)
+        proposal_gt_object = torch.cat([proposals['objectness'], grtr['object']],
+                                       dim=1)  # (batch, num_proposals + fix_num, 1)
+        proposal_gt_anchor_id = torch.cat([proposals['anchor_id'], grtr['anchor_id']],
+                                          dim=1)  # (batch, num_proposals + fix_num, 1)
         proposals = {'bbox2d': [], 'objectness': [], 'anchor_id': []}
 
         for batch_index in range(proposal_gt_box.shape[0]):

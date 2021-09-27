@@ -4,7 +4,7 @@ from utils.util_function import subsample_labels
 from utils.util_function import pairwise_iou, print_structure
 import config as cfg
 
-DEVICE = cfg.Model.Structure.DEVICE
+DEVICE = cfg.Hardware.DEVICE
 
 
 def distribute_box_over_feature_map(anchors, bbox2d, anchor_matcher):
@@ -54,8 +54,8 @@ def distribute_box_over_feature_map(anchors, bbox2d, anchor_matcher):
 
 
 def _subsample_labels(label,
-                      batch_size_per_image=cfg.Model.RPN.BATCH_SIZE_PER_IMAGE,
-                      positive_fraction=cfg.Model.RPN.POSITIVE_FRACTION):
+                      batch_size_per_image,
+                      positive_fraction):
     """
     Randomly sample a subset of positive and negative examples, and overwrite
     the label vector to the ignore value (-1) for all elements that are not

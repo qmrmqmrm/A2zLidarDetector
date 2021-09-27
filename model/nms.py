@@ -10,7 +10,7 @@ class NonMaximumSuppresion:
     def __init__(self):
         self.box2box_transform = Box2BoxTransform(weights=cfg.Model.RPN.BBOX_REG_WEIGHTS)
         self.vp_bins = cfg.Model.Structure.VP_BINS
-        self.device = cfg.Model.Structure.DEVICE
+        self.device = cfg.Hardware.DEVICE
         self.score_thresh = cfg.Model.ROI_HEADS.NMS_SCORE_THRESH
         self.iou_thresh = cfg.Model.ROI_HEADS.NMS_IOU_THRESH
 
