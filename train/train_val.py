@@ -40,8 +40,8 @@ class TrainValBase:
                               f"time={timer() - start:.3f}, "
                               f"loss={total_loss:.3f}, ")
 
-        logger.finalize()
-        return logger
+        # logger.finalize()
+        # return logger
 
     def to_device(self, features):
         for key in features:

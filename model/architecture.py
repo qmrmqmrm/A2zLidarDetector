@@ -47,7 +47,6 @@ class GeneralizedRCNN(ModelBase):
         pixel_mean = torch.Tensor(cfg.Model.Structure.PIXEL_MEAN).to(self.device).view(num_channels, 1, 1)
         pixel_std = torch.Tensor(cfg.Model.Structure.PIXEL_STD).to(self.device).view(num_channels, 1, 1)
         self.normalizer = lambda x: (x - pixel_mean) / pixel_std
-        self.rotated_box_training = cfg.Model.Structure.ROTATED_BOX_TRAINING
 
     def forward(self, batched_input):
         """
@@ -73,13 +72,14 @@ class GeneralizedRCNN(ModelBase):
         # neck_features /neck_s4 torch.Size([2, 256, 40, 40])
         # neck_features /neck_s5 torch.Size([2, 256, 20, 20])
 
-        rpn_proposals = self.proposal_generator(neck_features, batched_input)
+        rpn_proposals, rpn_aux = self.proposal_generator(neck_features, batched_input)
         # rpn_proposals /bbox2d torch.Size([2, 512, 4])
         # rpn_proposals /objectness torch.Size([2, 512, 1])
         # rpn_proposals /anchor_id torch.Size([2, 512, 1])
 
         head_output = self.roi_heads(neck_features, rpn_proposals)
         model_output = {'rpn_' + key: value for key, value in rpn_proposals.items()}
+        model_output.update({'rpn_feat_' + key: value for key, value in rpn_aux.items()})
         model_output['head_output'] = head_output
         # head_output  torch.Size([1024, 93]
         return model_output

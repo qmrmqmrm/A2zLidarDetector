@@ -95,9 +95,9 @@ class FastRCNNFCOutputHead(nn.Module):
             c2_xavier_fill(layer)
         num_sample = cfg.Model.RPN.NUM_SAMPLE
         batch = cfg.Train.BATCH_SIZE
-        input_size = batch * num_sample
+        input_size = cfg.Model.Head.FC_DIM
         num_classes = cfg.Model.Structure.NUM_CLASSES
-        box_dim = 6
+        box_dim = cfg.Model.Structure.BOX_DIM
         bins = cfg.Model.Structure.VP_BINS
         out_channels = num_classes * (1 + box_dim + (2 * bins))
         self.pred_layer = nn.Linear(input_size, out_channels)
@@ -109,5 +109,6 @@ class FastRCNNFCOutputHead(nn.Module):
             x = torch.flatten(x, start_dim=1)
         for layer in self.fcs:
             x = F.relu(layer(x))
+
         x = self.pred_layer(x)
         return x

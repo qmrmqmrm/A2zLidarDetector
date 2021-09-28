@@ -203,6 +203,8 @@ def print_structure(title, data, key=""):
             print_structure(title, datum, f"{key}/{i}")
     elif data is None:
         print(f'{title} : None')
+    elif isinstance(data, int):
+        print(title, key, data)
     else:
         print(title, key, data.shape, data.device)
 
@@ -301,3 +303,29 @@ def _sample_proposals(matched_idxs, matched_labels, gt_classes, num_classes, bat
     # sampled_fg_idxs : neg indax
 
     return sampled_fg_idxs, sampled_bg_idxs
+
+
+def merge_and_slice_features(features):
+    num_classes = cfg.Model.Structure.NUM_CLASSES
+    loss_channel = cfg.Model.Structure.LOSS_CHANNEL
+    sliced_features = dict()
+    last_channel = 0
+    for key in features:
+        if key == 'head_output':
+            for loss, dims in loss_channel.items():
+                slice_dim = last_channel + num_classes * dims
+                sliced_features[loss] = features[key][..., last_channel:slice_dim]
+                last_channel = slice_dim
+
+        else:
+            sliced_features[key] = features[key]
+    return sliced_features
+
+
+def slice_class(features):
+    num_classes = cfg.Model.Structure.NUM_CLASSES
+    loss_channel = cfg.Model.Structure.LOSS_CHANNEL
+    sliced_features = features
+    for loss, dims in loss_channel.items():
+        sliced_features[loss] = features[loss].reshape(features[loss].shape[0], features[loss].shape[1], num_classes, dims)
+    return sliced_features

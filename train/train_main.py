@@ -41,7 +41,7 @@ def train_by_plan(dataset_name, end_epoch, learning_rate, loss_weights, model_sa
     test_data_loader = get_dataset(dataset_name, 'test', batch_size)
     model_factory = ModelFactory(dataset_name)
     model = model_factory.make_model()
-    loss_object = IntegratedLoss(loss_weights, valid_category)
+    loss_object = IntegratedLoss(batch_size, loss_weights, valid_category)
     optimizer = build_optimizer(model, learning_rate)
     trainer, validator = get_train_val(model, loss_object, optimizer, start_epoch)
     log_file = LogFile()

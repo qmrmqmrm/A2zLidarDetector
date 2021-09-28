@@ -40,6 +40,7 @@ class Scales:
 
 class Model:
     MODEL_NAME = 'RCNN'
+
     class Backbone:
         ARCHITECTURE = "ResNet"
         DEPTH = 50
@@ -63,7 +64,6 @@ class Model:
     class RPN:
         ARCHITECTURE = "RPN"
         OUT_SCALES = Scales.DEFAULT_FEATURE_SCALES
-        OUT_FEATURES = ["rpn_s2", "rpn_s3", "rpn_s4"]
         ANCHOR_SIZES = [16, 64, 80]
         ANCHOR_RATIOS = [0.5, 1., 2.]
         NMS_IOU_THRESH = 0.5
@@ -77,14 +77,11 @@ class Model:
         FC_DIM = 1024
         POOLER_RESOLUTION = 7
         POOLER_SAMPLING_RATIO = 0
-        BBOX_REG_WEIGHTS = (10.0, 10.0, 5.0, 5.0)
         ALIGNED = True
 
     class Output:
-        FEATURE_SCALES = {"feature_s": 4, "feature_m": 8, "feature_l": 16}
         FEATURE_ORDER = ["feature_s", "feature_m", "feature_l"]
         NUM_ANCHORS_PER_SCALE = 3
-        OUT_CHANNELS = 0  # assigned by set_out_channel()
         OUT_COMPOSITION = ()  # assigned by set_out_channel()
         WEIGHT_DECAY = 0.0001
         WEIGHT_DECAY_BIAS = 0.0001
@@ -94,27 +91,21 @@ class Model:
 
     class Structure:
         VP_BINS = 12
-        YAW = True
-        YAW_RESIDUAL = True
-        HEIGHT_TRAINING = True
-        VP_WEIGHT_LOSS = 1.0
-        WEIGHTS_HEIGHT = [5.0, 0.5, 10.0]
         PIXEL_MEAN = [0.0, 0.0, 0.0]
         PIXEL_STD = [1.0, 1.0, 1.0]
-        ROTATED_BOX_TRAINING = False
         NUM_CLASSES = 3
+        BOX_DIM = 6
         IMAGE_SHAPE = [640, 640]
-        STRIDE_SHAPE = [4, 8, 16]
-
-        BACKBONE_CONV_ARGS = {"activation": "leaky_relu", "scope": "back"}
-        HEAD_CONV_ARGS = {"activation": "leaky_relu", "scope": "head"}
+        STRIDE_SHAPE = Scales.DEFAULT_FEATURE_SCALES
+        LOSS_CHANNEL = {'category': 1, 'bbox3d': BOX_DIM, 'yaw': VP_BINS, 'yaw_rads': VP_BINS}
 
 
 class Train:
-    CKPT_NAME = "new_"
+    CKPT_NAME = "new_build"
     MODE = ["eager", "graph"][1]
-    BATCH_SIZE = 2
+    BATCH_SIZE = 16
     TRAINING_PLAN = params.TrainingPlan.A2D2_SIMPLE
+
 
 
 def summary(cls):
