@@ -103,9 +103,8 @@ class Model:
 class Train:
     CKPT_NAME = "new_build"
     MODE = ["eager", "graph"][1]
-    BATCH_SIZE = 16
+    BATCH_SIZE = 4
     TRAINING_PLAN = params.TrainingPlan.A2D2_SIMPLE
-
 
 
 def summary(cls):

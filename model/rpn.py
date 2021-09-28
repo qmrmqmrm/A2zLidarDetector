@@ -140,7 +140,8 @@ class RPN(nn.Module):
         :return: bbox2d, objectness, anchor_id
         """
         selected_proposals = {'bbox2d': [], 'objectness': [], 'anchor_id': []}
-        for i, (bbox2d, score, anchor_id) in enumerate(zip(proposals['bbox2d'], proposals['objectness'],  proposals['anchor_id'])):
+        for i, (bbox2d, score, anchor_id) in enumerate(
+                zip(proposals['bbox2d'], proposals['objectness'], proposals['anchor_id'])):
             keep = box_ops.batched_nms(bbox2d, score.view(-1), self.indices[i], self.iou_threshold)
             bbox2d = bbox2d[keep]
             score = score[keep]

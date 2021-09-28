@@ -107,7 +107,7 @@ class FPN(Backbone):
         self.top_block = top_block
         self.in_features = in_features
         # Return feature names are "p<stage>", like ["p2", "p3", ..., "p6"]
-        self._out_feature_strides = {cfg.Model.Neck.OUT_FEATURES[i] : s for i,s in enumerate(in_strides)}
+        self._out_feature_strides = {cfg.Model.Neck.OUT_FEATURES[i]: s for i, s in enumerate(in_strides)}
         # top block output feature maps.
         if self.top_block is not None:
             for s in range(stage, stage + self.top_block.num_levels):

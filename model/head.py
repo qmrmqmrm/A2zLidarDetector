@@ -9,7 +9,7 @@ from utils.util_class import ShapeSpec
 import utils.util_function as uf
 import config as cfg
 from model.submodules.weight_init import c2_xavier_fill
-from model.submodules.poolers import ROIPooler
+
 
 
 class FastRCNNHead(nn.Module):

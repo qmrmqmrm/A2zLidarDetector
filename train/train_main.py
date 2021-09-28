@@ -3,7 +3,6 @@ import os.path as op
 from typing import Any, Dict, List
 import torch
 
-
 import config as cfg
 import settings
 from model.model_factory import ModelFactory

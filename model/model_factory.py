@@ -107,7 +107,7 @@ class ModelFactory:
         else:
             raise MyExceptionToCatch(f"[neck] EMPTY")
 
-    def rpn_factory(self, rpn_name,  dataset_name):
+    def rpn_factory(self, rpn_name, dataset_name):
         if rpn_name == 'RPN':
             return RPN(dataset_name)
         else:

@@ -44,7 +44,7 @@ class ImageList(object):
 
     @staticmethod
     def from_tensors(
-        tensors: Sequence[torch.Tensor], size_divisibility: int = 0, pad_value: float = 0.0
+            tensors: Sequence[torch.Tensor], size_divisibility: int = 0, pad_value: float = 0.0
     ) -> "ImageList":
         """
         Args:

@@ -27,4 +27,3 @@ class ShapeSpec(namedtuple("_ShapeSpec", ["channels", "height", "width", "stride
 class MyExceptionToCatch(Exception):
     def __init__(self, msg):
         super().__init__(msg)
-

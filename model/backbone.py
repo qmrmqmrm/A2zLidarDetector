@@ -6,7 +6,7 @@ from abc import ABCMeta, abstractmethod
 
 import config as cfg
 from model.submodules.model_util import Conv2d
-from utils.batch_norm import get_norm ,FrozenBatchNorm2d
+from utils.batch_norm import get_norm, FrozenBatchNorm2d
 from utils.util_class import ShapeSpec
 import utils.util_function as uf
 from model.submodules.weight_init import c2_msra_fill
@@ -24,7 +24,7 @@ class Backbone(nn.Module, metaclass=ABCMeta):
         super().__init__()
 
     @abstractmethod
-    def forward(self,feature):
+    def forward(self, feature):
         """
         Subclasses must override this method, but adhere to the same return type.
 
@@ -134,16 +134,16 @@ class ResNetBlockBase(nn.Module):
 
 class BottleneckBlock(ResNetBlockBase):
     def __init__(
-        self,
-        in_channels,
-        out_channels,
-        *,
-        bottleneck_channels,
-        stride=1,
-        num_groups=1,
-        norm="BN",
-        stride_in_1x1=False,
-        dilation=1,
+            self,
+            in_channels,
+            out_channels,
+            *,
+            bottleneck_channels,
+            stride=1,
+            num_groups=1,
+            norm="BN",
+            stride_in_1x1=False,
+            dilation=1,
     ):
         """
         Args:

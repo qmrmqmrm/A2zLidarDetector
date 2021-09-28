@@ -327,5 +327,6 @@ def slice_class(features):
     loss_channel = cfg.Model.Structure.LOSS_CHANNEL
     sliced_features = features
     for loss, dims in loss_channel.items():
-        sliced_features[loss] = features[loss].reshape(features[loss].shape[0], features[loss].shape[1], num_classes, dims)
+        sliced_features[loss] = features[loss].reshape(features[loss].shape[0], features[loss].shape[1], num_classes,
+                                                       dims)
     return sliced_features

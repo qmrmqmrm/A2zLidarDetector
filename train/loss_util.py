@@ -1,7 +1,6 @@
 import torch
 
-from utils.util_function import subsample_labels
-from utils.util_function import pairwise_iou, print_structure
+import utils.util_function as uf
 import config as cfg
 
 DEVICE = cfg.Hardware.DEVICE
@@ -32,7 +31,7 @@ def distribute_box_over_feature_map(anchors, bbox2d, anchor_matcher):
         gt_boxes_i: ground-truth boxes for i-th image
         """
         print('box shape', box.shape)
-        match_quality_matrix = pairwise_iou(box, anchors)
+        match_quality_matrix = uf.pairwise_iou(box, anchors)
         matched_idxs, gt_labels_i = anchor_matcher(match_quality_matrix)
         print('gt_labels_i.shape', gt_labels_i.shape)
 
@@ -64,7 +63,7 @@ def _subsample_labels(label,
     Args:
         labels (Tensor): a vector of -1, 0, 1. Will be modified in-place and returned.
     """
-    pos_idx, neg_idx = subsample_labels(
+    pos_idx, neg_idx = uf.subsample_labels(
         label, batch_size_per_image, positive_fraction, 0
     )
     # Fill with the ignore label (-1), then set positive and negative labels
@@ -82,6 +81,6 @@ def match_gt_with_anchors(gt, anchor):
     :param anchor: [sum HWA over scale, 4]
     :return:
     """
-    match_quality_matrix = pairwise_iou(anchor, gt)  # [sum HWA, num_gt]
+    match_quality_matrix = uf.pairwise_iou(anchor, gt)  # [sum HWA, num_gt]
     matched_vals, match_anchor_inds = match_quality_matrix.max(dim=0)
     return match_anchor_inds

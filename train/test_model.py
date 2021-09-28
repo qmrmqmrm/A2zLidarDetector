@@ -23,7 +23,6 @@ def test_model(dataset_name="a2d2"):
         uf.print_structure('model_output', model_output)
 
 
-
 def to_device(features):
     device = cfg.Hardware.DEVICE
     for key in features:
