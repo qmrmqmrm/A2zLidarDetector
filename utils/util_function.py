@@ -1,9 +1,11 @@
 import sys, os
 import torch
 import cv2
+import numpy as np
 
 import config as cfg
 from model.submodules.matcher import Matcher
+import model.submodules.model_util as mu
 
 
 def print_progress(status_msg):
@@ -12,30 +14,6 @@ def print_progress(status_msg):
     # Print it.
     sys.stdout.write(msg)
     sys.stdout.flush()
-
-
-def build_optimizer(model: torch.nn.Module, lr) -> torch.optim.Optimizer:
-    """
-    Build an optimizer from config.
-    """
-    params = dict()
-    for key, value in model.named_parameters():
-        if not value.requires_grad:
-            continue
-        weight_decay = 0.0001
-        if key.endswith("norm.weight") or key.endswith("norm.bias"):
-            weight_decay = 0.0
-        elif key.endswith(".bias"):
-            # NOTE: unlike Detectron v1, we now default BIAS_LR_FACTOR to 1.0
-            # and WEIGHT_DECAY_BIAS to WEIGHT_DECAY so that bias optimizer
-            # hyperparameters are by default exactly the same as for regular
-            # weights.
-            lr = lr * 1.0
-            weight_decay = 0.0001
-        params += [{"params": [value], "lr": lr, "weight_decay": weight_decay}]
-
-    optimizer = torch.optim.SGD(params, lr, momentum=0.9)
-    return optimizer
 
 
 def pairwise_intersection(boxes1, boxes2) -> torch.Tensor:
@@ -69,59 +47,6 @@ def pairwise_iou(boxes1, boxes2):
     return iou
 
 
-def _ignore_torch_cuda_oom():
-    """
-    A context which ignores CUDA OOM exception from pytorch.
-    """
-    try:
-        yield
-    except RuntimeError as e:
-        # NOTE: the string may change?
-        if "CUDA out of memory. " in str(e):
-            pass
-        else:
-            raise
-
-
-def retry_if_cuda_oom(func):
-    def maybe_to_cpu(x):
-        try:
-            like_gpu_tensor = x.device.type == "cuda" and hasattr(x, "to")
-        except AttributeError:
-            like_gpu_tensor = False
-        if like_gpu_tensor:
-            return x.to(device="cpu")
-        else:
-            return x
-
-    def wrapped(*args, **kwargs):
-        with _ignore_torch_cuda_oom():
-            return func(*args, **kwargs)
-
-        # Clear cache and retry
-        torch.cuda.empty_cache()
-        with _ignore_torch_cuda_oom():
-            return func(*args, **kwargs)
-
-        # Try on CPU. This slows down the code significantly, therefore print a notice.
-        logger = logging.getLogger(__name__)
-        logger.info("Attempting to copy inputs of {} to CPU due to CUDA OOM".format(str(func)))
-        new_args = (maybe_to_cpu(x) for x in args)
-        new_kwargs = {k: maybe_to_cpu(v) for k, v in kwargs.items()}
-        return func(*new_args, **new_kwargs)
-
-    return wrapped
-
-
-def slice_features(feature, output_composition=cfg.Model.Output.OUT_COMPOSITION):
-    index = 0
-    slices = dict()
-    for name, channel in output_composition:
-        slices[name] = feature[..., index:index + channel]
-        index += channel
-    return slices
-
-
 def draw_box(img, bboxes_2d):
     draw_img = img.copy()
     for bbox in bboxes_2d:
@@ -134,62 +59,8 @@ def draw_box(img, bboxes_2d):
     return draw_img
 
 
-def subsample_labels(
-        labels: torch.Tensor, num_samples: int, positive_fraction: float, bg_label: int
-):
-    """
-    Return `num_samples` (or fewer, if not enough found)
-    random samples from `labels` which is a mixture of positives & negatives.
-    It will try to return as many positives as possible without
-    exceeding `positive_fraction * num_samples`, and then try to
-    fill the remaining slots with negatives.
-
-    Args:
-        labels (Tensor): (N, ) label vector with values:
-            * -1: ignore
-            * bg_label: background ("negative") class
-            * otherwise: one or more foreground ("positive") classes
-        num_samples (int): The total number of labels with value >= 0 to return.
-            Values that are not sampled will be filled with -1 (ignore).
-        positive_fraction (float): The number of subsampled labels with values > 0
-            is `min(num_positives, int(positive_fraction * num_samples))`. The number
-            of negatives sampled is `min(num_negatives, num_samples - num_positives_sampled)`.
-            In order words, if there are not enough positives, the sample is filled with
-            negatives. If there are also not enough negatives, then as many elements are
-            sampled as is possible.
-        bg_label (int): label index of background ("negative") class.
-
-    Returns:
-        pos_idx, neg_idx (Tensor):
-            1D vector of indices. The total length of both is `num_samples` or fewer.
-    """
-    # gt_classes : torch.Size([A + gt_num])
-    # self.batch_size_per_image : 512
-    # self.positive_fraction : 0.25
-    # self.num_classes : 3
-    print('label', labels.shape)
-    positive = torch.nonzero((labels != -1) & (labels != bg_label))
-    negative = torch.nonzero(labels == bg_label)
-    print('negative', negative.shape)
-    print('positive', positive.shape)
-    num_pos = int(num_samples * positive_fraction)
-    # protect against not enough positive examples
-    num_pos = min(positive.numel(), num_pos)
-    num_neg = num_samples - num_pos
-    # protect against not enough negative examples
-    num_neg = min(negative.numel(), num_neg)
-
-    # randomly select positive and negative examples
-    perm1 = torch.randperm(positive.numel(), device=positive.device)[:num_pos]
-    perm2 = torch.randperm(negative.numel(), device=negative.device)[:num_neg]
-    print('perm1', perm1.shape)
-    print('positive', positive.shape)
-    pos_idx = positive[perm1]
-    neg_idx = negative[perm2]
-    return pos_idx, neg_idx
-
-
 def print_structure(title, data, key=""):
+    print(title, key,type(data))
     if isinstance(data, list):
         for i, datum in enumerate(data):
             print_structure(title, datum, f"{key}/{i}")
@@ -205,104 +76,10 @@ def print_structure(title, data, key=""):
         print(f'{title} : None')
     elif isinstance(data, int):
         print(title, key, data)
+    elif type(data) == np.ndarray:
+        print(title, key, data.shape, type(data))
     else:
         print(title, key, data.shape, data.device)
-
-
-def align_gt_with_pred(proposals, targets):
-    """
-    :param proposals: (list[dict[torch.tensor]])
-             [{'proposal_boxes': torch.Size([2000, 4]), 'objectness_logits': torch.Size([2000])} * batch]
-    :param targets: {'image': [batch, height, width, channel], 'category': [batch, fixbox, 1],
-                    'bbox2d': [batch, num_gt, 4], 'bbox3d': [batch, num_gt, 6], 'object': [batch, num_gt, 1],
-                    'yaw': [batch, num_gt, 2]}
-    :return:
-    """
-
-    proposal_matcher = Matcher(
-        cfg.Model.ROI_HEADS.MATCHER_IOU_THRESHOLDS,
-        cfg.Model.ROI_HEADS.IOU_LABELS,
-        allow_low_quality_matches=False,
-    )
-    gt_aligned = {'gt_category': [], 'yaw': [], 'yaw_rads': [], 'bbox3d': [], 'bbox2d': []}
-    match_result = []
-    for bbox2d_per_image, bbox3d_per_image, category_per_image, yaw_par_image, yaw_rads_par_image, proposal_per_image in zip(
-            targets['bbox2d'], targets['bbox3d'], targets['category'], targets['yaw'], targets['yaw_rads'], proposals):
-        match_quality_matrix = pairwise_iou(bbox2d_per_image, proposal_per_image.get("proposal_boxes"))
-        matched_idxs, matched_labels = proposal_matcher(match_quality_matrix)
-
-        match_result.append(matched_labels)
-        gt_aligned['gt_category'].append(category_per_image[matched_idxs])
-        gt_aligned['yaw'].append(yaw_par_image[matched_idxs])
-        gt_aligned['yaw_rads'].append(yaw_rads_par_image[matched_idxs])
-        gt_aligned['bbox3d'].append(bbox3d_per_image[matched_idxs])
-        gt_aligned['bbox2d'].append(bbox2d_per_image[matched_idxs])
-
-    for key in gt_aligned:
-        gt_aligned[key] = torch.cat(gt_aligned[key])
-    match_result = torch.cat(match_result)
-    return gt_aligned, match_result
-
-
-def count_true_positives(gt_box, gt_classes, proposal, proposals_class):
-    match_quality_matrix = pairwise_iou(gt_box, proposal)
-    val, idx = torch.max(match_quality_matrix, 1)
-    gt_proposals_class = proposals_class[idx]
-    trpo_bool = torch.logical_and(val > 0.01, gt_proposals_class == gt_classes)
-    print("iou max:", val)
-    print("max index:", gt_proposals_class, gt_classes)
-    print("trpo_bool:", trpo_bool, torch.sum(trpo_bool).item())
-    return torch.sum(trpo_bool).item(), gt_classes.shape[0], proposal.shape[0]
-
-
-def matched_category_gt_with_pred(gt_bbox2d, gt_classes, proposals_box, proposals_class):
-    match_quality_matrix = pairwise_iou(gt_bbox2d, proposals_box)
-    val, idx = torch.max(match_quality_matrix, 1)
-    gt_proposals_class = proposals_class[idx]
-    gt_proposal_box = proposals_box[idx]
-    return gt_proposal_box, gt_proposals_class
-
-
-def _sample_proposals(matched_idxs, matched_labels, gt_classes, num_classes, batch_size_per_image, positive_fraction):
-    """
-    Based on the matching between N proposals and M groundtruth,
-    sample the proposals and set their classification labels.
-
-    Args:
-        matched_idxs (Tensor): a vector of length N, each is the best-matched
-            gt index in [0, M) for each proposal.
-        matched_labels (Tensor): a vector of length N, the matcher's label
-            (one of cfg.MODEL.ROI_HEADS.IOU_LABELS) for each proposal.
-        gt_classes (Tensor): a vector of length M.
-
-    Returns:
-        Tensor: a vector of indices of sampled proposals. Each is in [0, N).
-        Tensor: a vector of the same length, the classification label for
-            each sampled proposal. Each sample is labeled as either a category in
-            [0, num_classes) or the background (num_classes).
-    """
-    has_gt = gt_classes.numel() > 0
-
-    # Get the corresponding GT for each proposal
-    if has_gt:
-        gt_classes = gt_classes[matched_idxs]
-        # Label unmatched proposals (0 label from matcher) as background (label=num_classes)
-        gt_classes[matched_labels == 0] = num_classes
-        # Label ignore proposals (-1 label)
-        gt_classes[matched_labels == -1] = -1
-    else:
-        gt_classes = torch.zeros_like(matched_idxs) + num_classes
-    # gt_classes : torch.Size([2000 + gt_num])
-    # self.batch_size_per_image : 512
-    # self.positive_fraction : 0.25
-    # self.num_classes : 3
-    sampled_fg_idxs, sampled_bg_idxs = subsample_labels(
-        gt_classes, batch_size_per_image, positive_fraction, num_classes
-    )
-    # sampled_fg_idxs : pos indax
-    # sampled_fg_idxs : neg indax
-
-    return sampled_fg_idxs, sampled_bg_idxs
 
 
 def merge_and_slice_features(features):
@@ -330,3 +107,46 @@ def slice_class(features):
         sliced_features[loss] = features[loss].reshape(features[loss].shape[0], features[loss].shape[1], num_classes,
                                                        dims)
     return sliced_features
+
+
+def compute_iou_general(grtr_yxhw, pred_yxhw, grtr_tlbr=None, pred_tlbr=None):
+    """
+    :param grtr_yxhw: GT bounding boxes in yxhw format (batch, N1, D1(>4))
+    :param pred_yxhw: predicted bounding box in yxhw format (batch, N2, D2(>4))
+    :return: iou (batch, N1, N2)
+    """
+
+    grtr_yxhw = np.expand_dims(grtr_yxhw, axis=-2)  # (batch, N1, 1, D1)
+    pred_yxhw = np.expand_dims(pred_yxhw, axis=-3)  # (batch, 1, N2, D2)
+
+    if grtr_tlbr is None:
+        grtr_tlbr = mu.convert_box_format_yxhw_to_tlbr(grtr_yxhw)  # (batch, N1, 1, D1)
+    else:
+        grtr_tlbr = grtr_yxhw
+    if pred_tlbr is None:
+        pred_tlbr = mu.convert_box_format_yxhw_to_tlbr(pred_yxhw)  # (batch, 1, N2, D2)
+    else:
+        pred_tlbr = pred_yxhw
+    inter_tl = np.maximum(grtr_tlbr[..., :2], pred_tlbr[..., :2])  # (batch, N1, N2, 2)
+    inter_br = np.minimum(grtr_tlbr[..., 2:4], pred_tlbr[..., 2:4])  # (batch, N1, N2, 2)
+    inter_hw = inter_br - inter_tl  # (batch, N1, N2, 2)
+    inter_hw = np.maximum(inter_hw, 0)
+    inter_area = inter_hw[..., 0] * inter_hw[..., 1]  # (batch, N1, N2)
+
+    pred_area = pred_yxhw[..., 2] * pred_yxhw[..., 3]  # (batch, 1, N2)
+    grtr_area = grtr_yxhw[..., 2] * grtr_yxhw[..., 3]  # (batch, N1, 1)
+    iou = inter_area / (pred_area + grtr_area - inter_area + 1e-5)  # (batch, N1, N2)
+    return iou
+
+
+def pairwise_batch_iou(boxes1, boxes2):
+    batches = boxes1.shape[0]
+    batch_iou = list()
+    for batch in range(batches):
+        print(boxes1[batch].shape)
+        print(boxes2[batch].shape)
+        iou = pairwise_iou(boxes1[batch], boxes2[batch])
+        batch_iou.append(iou)
+    ious = torch.stack(batch_iou, dim=0)
+
+    return ious

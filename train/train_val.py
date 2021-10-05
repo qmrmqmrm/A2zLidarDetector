@@ -4,7 +4,8 @@ import cv2
 import torch
 
 import utils.util_function as uf
-from log.logger import LogData
+from log.nplog.logger import Logger
+from log.nplog.logfile import LogFile
 # from train.inference import Inference
 import config as cfg
 import model.submodules.model_util as mu
@@ -19,29 +20,31 @@ class TrainValBase:
         self.split = ""
         self.device = cfg.Hardware.DEVICE
 
-    def run_epoch(self, visual_log, epoch, data_loader):
+    def run_epoch(self, logger, epoch, data_loader):
 
         self.mode_set()
-        # logger = LogData(visual_log, cfg.Paths.CHECK_POINT, epoch, self.model.training)
+        logger = Logger(logger,logger, cfg.Paths.CHECK_POINT, epoch)
         train_loader_iter = iter(data_loader)
         steps = len(train_loader_iter)
 
         for step in range(steps):
-            # if step > 100:
+            # if step > 10:
             #     break
             features = next(train_loader_iter)
             features = self.to_device(features)
             start = timer()
             file_name = features['image_file']
             prediction, total_loss, loss_by_type, features = self.run_step(features)
+            logger.log_batch_result(step, features, prediction, total_loss, loss_by_type, epoch)
+
             features['image_file'] = file_name
             # logger.append_batch_result(step, features, prediction, total_loss, loss_by_type)
             uf.print_progress(f"({self.split}) {step}/{steps} steps in {epoch} epoch, "
                               f"time={timer() - start:.3f}, "
                               f"loss={total_loss:.3f}, ")
 
-        # logger.finalize()
-        # return logger
+        logger.finalize()
+        return logger
 
     def to_device(self, features):
         for key in features:

@@ -56,12 +56,15 @@ class IntegratedLoss:
         anchors = list()
         for anchor in grtr['anchors']:
             anchor = anchor.view(batch, -1, anchor.shape[-1])
+            anchor = mu.convert_box_format_yxhw_to_tlbr(anchor)
             anchors.append(anchor)
         anchors_cat = torch.cat(anchors, dim=1)
         auxiliary = dict()
         auxiliary["gt_aligned"] = self.matched_gt(grtr, pred['rpn_bbox2d'])
         auxiliary["gt_feature"] = self.matched_gt(grtr, anchors_cat[..., :-1])
         auxiliary["gt_feature"] = self.split_feature(anchors, auxiliary["gt_feature"])
+
+        # uf.print_structure('auxiliary["gt_feature"]', auxiliary["gt_feature"])
         auxiliary["pred_select"] = self.select_category(auxiliary['gt_aligned'], pred)
         return auxiliary
 
@@ -78,6 +81,7 @@ class IntegratedLoss:
                     matched["negative"].append(negative)
                 else:
                     matched[key].append(grtr[key][i, match_inds] * positive)
+
         for key in matched:
             matched[key] = torch.stack(matched[key], dim=0)
         return matched

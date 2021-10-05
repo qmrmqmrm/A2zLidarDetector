@@ -157,13 +157,13 @@ class A2D2Dataset(DatasetBase):
         for key in gathered_anns:
             numbox, channel = gathered_anns[key].shape
             if key == 'category':
-                pad = torch.ones((self.max_box - numbox, channel), dtype=torch.float32) * 3
+                pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
             elif key == 'yaw':
-                pad = torch.ones((self.max_box - numbox, channel), dtype=torch.float32) * 13
+                pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
             elif key == 'yaw_rads':
-                pad = torch.ones((self.max_box - numbox, channel), dtype=torch.float32) * -1
+                pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
             elif key == 'object':
-                pad = torch.ones((self.max_box - numbox, channel), dtype=torch.float32) * -1
+                pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
             else:
                 pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
 
