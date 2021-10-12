@@ -11,7 +11,6 @@ import config as cfg
 from model.submodules.weight_init import c2_xavier_fill
 
 
-
 class FastRCNNHead(nn.Module):
     def __init__(self, input_shape: Dict[str, ShapeSpec]):
         super(FastRCNNHead, self).__init__()
@@ -23,15 +22,26 @@ class FastRCNNHead(nn.Module):
         self.aligned = cfg.Model.Head.ALIGNED
         self.num_sample = cfg.Model.RPN.NUM_SAMPLE
 
-
         in_channels = [input_shape[f].channels for f in self.in_features]
         assert len(set(in_channels)) == 1, in_channels
         in_channels = in_channels[0]
 
-        self.box_predictor = FastRCNNFCOutputHead(channels=in_channels, height=self.pooler_resolution, width=self.pooler_resolution)
-
+        self.box_predictor = FastRCNNFCOutputHead(channels=in_channels, height=self.pooler_resolution,
+                                                  width=self.pooler_resolution)
 
     def forward(self, features, proposals):
+        """
+
+        :param features:
+        :param proposals:
+        {
+        'bbox2d' : list(torch.Size([4, num_sample, 4(tlbr)]))
+        'objectness' :list(torch.Size([4, num_sample, 1]))
+        'anchor_id' :list(torch.Size([4, num_sample, 1]))
+        }
+        :return:
+        'head_output' : torch.Size([4, 512, 93])
+        """
         features = [features[f] for f in self.in_features]
         # torch.Size([batch * 512, 256, 7, 7])
         box_features = self.box_pooler(features, proposals)
@@ -44,7 +54,6 @@ class FastRCNNHead(nn.Module):
 
     def box_pooler(self, features, proposals):
         bbox2d = proposals['bbox2d']
-        numbox = bbox2d.shape[1]
         zeros = torch.zeros((bbox2d.shape[0], bbox2d.shape[1], 1), device=self.device)
         bbox2d = torch.cat([zeros, bbox2d], dim=-1)
         anchor_id = proposals['anchor_id']
@@ -52,12 +61,12 @@ class FastRCNNHead(nn.Module):
         for batch in range(features[0].shape[0]):
             xs = list()
             boxinds = list()
-            box_list =list()
+            box_list = list()
             for i, (scale, feature) in enumerate(zip(self.pooler_scales, features)):
                 # feature (batch, c, h, w), anchor_id (batch, numbox, 1)
                 boxind, ch = torch.where(anchor_id[batch] // 3 == i)
                 box = bbox2d[batch, boxind]
-                x = roi_align(feature[batch:batch+1], box, self.pooler_resolution, scale,
+                x = roi_align(feature[batch:batch + 1], box, self.pooler_resolution, scale,
                               self.sampling_ratio, self.aligned)
                 xs.append(x)
                 boxinds.append(boxind)
@@ -71,7 +80,6 @@ class FastRCNNHead(nn.Module):
             box_sort = box_[sort_inds]
             assert torch.all((box_sort - bbox2d[batch]) == 0)
             feature_aligned.append(xs)
-
 
         # [batch * numbox, channel, pooler_resolution, pooler_resolution]
         feature_aligned = torch.cat(feature_aligned, dim=0)
@@ -93,8 +101,6 @@ class FastRCNNFCOutputHead(nn.Module):
             self._output_size = fc_dim
         for layer in self.fcs:
             c2_xavier_fill(layer)
-        num_sample = cfg.Model.RPN.NUM_SAMPLE
-        batch = cfg.Train.BATCH_SIZE
         input_size = cfg.Model.Head.FC_DIM
         num_classes = cfg.Model.Structure.NUM_CLASSES
         box_dim = cfg.Model.Structure.BOX_DIM

@@ -21,12 +21,14 @@ class ExhaustiveLogger:
         self.num_ctgr = None
         self.summary = dict()
 
-    def __call__(self, step, grtr, pred, loss_by_type, epoch, use_anchor):
+    def __call__(self, step, grtr, gt_aligned, pred, loss_by_type, epoch, use_anchor):
+        print('ExhaustiveLogger call')
         data_list = []
-        self.num_ctgr = pred["feature_l"]["category"].shape[-1]
+        self.num_ctgr = pred["category"].shape[-1]
+        print(self.num_ctgr)
         if use_anchor:
-            for category in range(1, self.num_ctgr):
-                for anchor in range(len(cfg.Tfrdata.ANCHORS_PIXEL)):
+            for category in range(self.num_ctgr):
+                for anchor in range(len(cfg.Model.RPN.ANCHOR_SIZES)):
                     result = self.analyzer(grtr, pred, loss_by_type, epoch, step, anchor, category)
                     data_list.append(result)
                 grtr_match_box = self.box_category_match(grtr["bboxes"], category)
@@ -163,7 +165,6 @@ class ExhaustiveAnalyzer:
         p_obj_num = np.sum(grtr, dtype=np.float32)
         pos_obj = np.sum(grtr * pred, dtype=np.float32) / p_obj_num
         neg_obj_map = (1. - grtr) * pred
-        test = np.sort(neg_obj_map, axis=1)[::-1]
         neg_obj_map = np.sort(neg_obj_map, axis=1)[:, ::-1]
         neg_obj_map = neg_obj_map[..., :10, :]
         neg_obj = np.mean(neg_obj_map, dtype=np.float32)
@@ -249,6 +250,12 @@ class ExhaustivePrepare:
         self.num_scales = len(cfg.Model.Output.FEATURE_ORDER)
 
     def extract_feature_map(self, features, anchor, is_loss):
+        """
+        :param features: gt: {scale_l,m,s: {iou_l: [feature_map], ctgr_l, obj_l...}
+        :param anchor:
+        :param is_loss:
+        :return:
+        """
         if is_loss is False:
             features = self.gather_feature_maps_to_level1_dict(features, "feature")
         if anchor is None:

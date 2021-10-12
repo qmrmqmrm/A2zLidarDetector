@@ -27,19 +27,20 @@ class A2D2Dataset(DatasetBase):
         feature_shape = list()
         for stride in strides:
             feature_shape.append((image_shape / stride).to(device=self.device, dtype=torch.int64))
-        self.anchors = Anchor('a2d2')()
+        self.anchors = Anchor('a2d2')()  # yxwh + id
 
         # self.last_sample = self.__getitem__(91)
         # del self.last_sample['image']
 
     def list_frames(self, root_dir, split):
         img_files = sorted(glob.glob(os.path.join(root_dir, split, '*/image', '*.png')))
+
         return img_files
 
     def __getitem__(self, index):
         """
         :param index: index for self.img_files
-        :return: {'image': [height, width, channel], 'category': [fixbox, 1], 'bbox2d': [fixbox, 4],
+        :return: {'image': [height, width, channel], 'category': [fixbox, 1], 'bbox2d': [fixbox, 4](tlbr),
                     'bbox3d': [fixbox, 6], 'object': [fixbox, 1], 'yaw': [fixbox, 2]}
         """
         image_file = self.img_files[index]
@@ -85,14 +86,14 @@ class A2D2Dataset(DatasetBase):
             label = self.categories.index(obj_category)
             ann = dict()
             ann['category'] = [label]
-            ann['bbox2d'] = [bbox_xmin, bbox_ymin, bbox_xmax, bbox_ymax]
+            ann['bbox2d'] = [bbox_xmin, bbox_ymin, bbox_xmax, bbox_ymax]  # tlbr
 
             # ONLY VALID FOR FRONTAL CAMERA (ONLY_FRONT PARAM)
             velodyne_h = 1.12
             ann['bbox3d'] = [(bbox_xmin + bbox_xmax) / 2., (bbox_ymin + bbox_ymax) / 2.,
-                             round(obj['size'][1] / bvres, 3), round(obj['size'][2] / bvres, 3),
-                             obj['size'][0] * 255 / 3.,
-                             ((pts_3d_velo[0][2] + velodyne_h) + obj['size'][0] * 0.5) * 255 / 3.]
+                             round(obj['size'][1] / bvres, 3), round(obj['size'][0] / bvres, 3),
+                             obj['size'][2] * 255 / 3.,
+                             ((pts_3d_velo[0][2] + velodyne_h) + obj['size'][0] * 0.5) * 255 / 3.]  # xylwzh
             ann["object"] = [1]
             if yaw:
                 ann['yaw'] = [rad2bin(obj['rot_angle'], bins)]
@@ -144,7 +145,7 @@ class A2D2Dataset(DatasetBase):
 
     def gather_and_zeropad(self, anns):
         """
-        :param anns: list of {'category': [], 'bbox2d': [], 'bbox3d': [], 'object': [], 'yaw': []}
+        :param anns: list of {'category': [], 'bbox2d': [](tlbr), 'bbox3d': [], 'object': [], 'yaw': []}
         :return: gathered_anns: {'category': [numbox,], 'bbox2d': [numbox,], 'bbox3d': [numbox,], 'object': [numbox,], 'yaw': [numbox]}
         """
         gathered_anns = {key: [] for key in anns[0].keys()}
@@ -156,19 +157,21 @@ class A2D2Dataset(DatasetBase):
         # zero padding
         for key in gathered_anns:
             numbox, channel = gathered_anns[key].shape
-            if key == 'category':
-                pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
-            elif key == 'yaw':
-                pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
-            elif key == 'yaw_rads':
-                pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
-            elif key == 'object':
-                pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
+            if self.max_box - numbox > 0:
+                if key == 'category':
+                    pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
+                elif key == 'yaw':
+                    pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
+                elif key == 'yaw_rads':
+                    pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
+                elif key == 'object':
+                    pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
+                else:
+                    pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
+
+                gathered_anns[key] = torch.cat([gathered_anns[key], pad], dim=0)
             else:
-                pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
-
-            gathered_anns[key] = torch.cat([gathered_anns[key], pad], dim=0)
-
+                gathered_anns[key] = gathered_anns[key][:self.max_box, :]
         return gathered_anns
 
     def zero_annotation(self):

@@ -60,7 +60,6 @@ def draw_box(img, bboxes_2d):
 
 
 def print_structure(title, data, key=""):
-    print(title, key,type(data))
     if isinstance(data, list):
         for i, datum in enumerate(data):
             print_structure(title, datum, f"{key}/{i}")
@@ -90,6 +89,7 @@ def merge_and_slice_features(features):
     for key in features:
         if key == 'head_output':
             for loss, dims in loss_channel.items():
+
                 slice_dim = last_channel + num_classes * dims
                 sliced_features[loss] = features[key][..., last_channel:slice_dim]
                 last_channel = slice_dim
@@ -105,7 +105,7 @@ def slice_class(features):
     sliced_features = features
     for loss, dims in loss_channel.items():
         sliced_features[loss] = features[loss].reshape(features[loss].shape[0], features[loss].shape[1], num_classes,
-                                                       dims)
+                                                   dims)
     return sliced_features
 
 

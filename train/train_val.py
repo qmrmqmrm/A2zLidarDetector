@@ -1,15 +1,10 @@
 from timeit import default_timer as timer
-import os
-import cv2
+import os.path as op
 import torch
 
 import utils.util_function as uf
 from log.nplog.logger import Logger
-from log.nplog.logfile import LogFile
-# from train.inference import Inference
 import config as cfg
-import model.submodules.model_util as mu
-
 
 class TrainValBase:
     def __init__(self, model, loss_object, optimizer, epoch_steps):
@@ -23,7 +18,7 @@ class TrainValBase:
     def run_epoch(self, logger, epoch, data_loader):
 
         self.mode_set()
-        logger = Logger(logger,logger, cfg.Paths.CHECK_POINT, epoch)
+        logger = Logger(logger,logger, op.join(cfg.Paths.CHECK_POINT, cfg.Train.CKPT_NAME), epoch)
         train_loader_iter = iter(data_loader)
         steps = len(train_loader_iter)
 
@@ -34,7 +29,7 @@ class TrainValBase:
             features = self.to_device(features)
             start = timer()
             file_name = features['image_file']
-            prediction, total_loss, loss_by_type, features = self.run_step(features)
+            prediction, total_loss, loss_by_type = self.run_step(features)
             logger.log_batch_result(step, features, prediction, total_loss, loss_by_type, epoch)
 
             features['image_file'] = file_name
@@ -60,6 +55,27 @@ class TrainValBase:
         return features
 
     def run_step(self, features):
+        """
+
+        :param features:
+            {'image': [batch, height, width, channel],
+             'anchors': [batch, height/stride, width/stride, anchor, yxwh + id] * features
+            'category': [batch, fixbox, 1],
+            'bbox2d': [batch, fixbox, 4](tlbr), 'bbox3d': [batch, fixbox, 6], 'object': [batch, fixbox, 1],
+            'yaw': [batch, fixbox, 1], 'yaw_rads': [batch, fixbox, 1]}, 'anchor_id': [batch, fixbox, 1]
+            'image_file': image file name per batch
+            }
+        :return:
+           prediction: {
+                        'bbox2d' : torch.Size([batch, 512, 4(tlbr)])
+                        'objectness' : torch.Size([batch, 512, 1])
+                        'anchor_id' torch.Size([batch, 512, 1])
+                        'rpn_feat_bbox2d' : list(torch.Size([batch, height/stride* width/stride* anchor, 4(tlbr)])
+                        'rpn_feat_objectness' : list(torch.Size([batch, height/stride* width/stride* anchor, 1])
+                        'rpn_feat_anchor_id' : list(torch.Size([batch, height/stride* width/stride* anchor, 1])
+                        'head_output' : torch.Size([4, 512, 93])
+                        }
+        """
         raise NotImplementedError()
 
     def mode_set(self):
@@ -74,10 +90,13 @@ class ModelTrainer(TrainValBase):
     def run_step(self, features):
         prediction = self.model(features)
         total_loss, loss_by_type = self.loss_object(features, prediction, True)
+        # for key, val in loss_by_type.items():
+        #     print(key, val)
+
         self.optimizer.zero_grad()
         total_loss.backward()
         self.optimizer.step()
-        return prediction, total_loss, loss_by_type, features
+        return prediction, total_loss, loss_by_type
 
     def mode_set(self):
         self.model.train()
@@ -91,7 +110,7 @@ class ModelValidater(TrainValBase):
     def run_step(self, features):
         prediction = self.model(features)
         total_loss, loss_by_type = self.loss_object(features, prediction, False)
-        return prediction, total_loss, loss_by_type, features
+        return prediction, total_loss, loss_by_type
 
     def mode_set(self):
         self.model.eval()

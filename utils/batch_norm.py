@@ -1,9 +1,22 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 import logging
 import torch
+from torch.nn.modules.utils import _ntuple
 import torch.distributed as dist
 from torch import nn
 from torch.autograd.function import Function
+
+
+class _NewEmptyTensorOp(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, x, new_shape):
+        ctx.shape = x.shape
+        return x.new_empty(new_shape)
+
+    @staticmethod
+    def backward(ctx, grad):
+        shape = ctx.shape
+        return _NewEmptyTensorOp.apply(grad, shape), None
 
 
 class FrozenBatchNorm2d(nn.Module):
@@ -115,8 +128,7 @@ def get_norm(norm, out_channels):
         if len(norm) == 0:
             return None
         norm = {
-            # "BN": BatchNorm2d,
-            # "SyncBN": NaiveSyncBatchNorm,
+            "BN" : nn.BatchNorm2d,
             "FrozenBN": FrozenBatchNorm2d,
             "GN": lambda channels: nn.GroupNorm(32, channels),
             "nnSyncBN": nn.SyncBatchNorm,  # keep for debugging

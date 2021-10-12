@@ -16,58 +16,59 @@ class Logger:
     def __init__(self, visual_log, exhuastive_log, ckpt_path, epoch):
         self.history_logger = HistoryLog()
         self.visual_logger = VisualLog(ckpt_path, epoch) if visual_log else None
-        self.exhuastive_logger = ExhaustiveLogger(cfg.Logging.COLNUMS) if exhuastive_log else None
+        # self.exhuastive_logger = ExhaustiveLogger(cfg.Logging.COLNUMS) if exhuastive_log else None
         self.nms = mu.NonMaximumSuppression()
 
     def log_batch_result(self, step, grtr, pred, total_loss, loss_by_type, epoch):
-        # self.check_nan(grtr, pred, loss_by_type)
+        """
+
+        :param step:
+        :param grtr:
+            {'image': [batch, height, width, channel],
+             'anchors': [batch, height/stride, width/stride, anchor, yxwh + id] * features
+            'category': [batch, fixbox, 1],
+            'bbox2d': [batch, fixbox, 4](tlbr), 'bbox3d': [batch, fixbox, 6], 'object': [batch, fixbox, 1],
+            'yaw': [batch, fixbox, 1], 'yaw_rads': [batch, fixbox, 1]}, 'anchor_id': [batch, fixbox, 1]
+            'image_file': image file name per batch
+            }
+        :param pred:
+            {'bbox2d' : torch.Size([batch, 512, 4(tlbr)])
+            'objectness' : torch.Size([batch, 512, 1])
+            'anchor_id' torch.Size([batch, 512, 1])
+            'rpn_feat_bbox2d' : list(torch.Size([batch, height/stride* width/stride* anchor, 4(tlbr)])
+            'rpn_feat_objectness' : list(torch.Size([batch, height/stride* width/stride* anchor, 1])
+            'rpn_feat_anchor_id' : list(torch.Size([batch, height/stride* width/stride* anchor, 1])
+            'head_output' : torch.Size([4, 512, 93])
+            }
+        :param total_loss:
+
+        :param loss_by_type:
+        :param epoch:
+        :return:
+        """
         pred_slices = uf.merge_and_slice_features(pred)
-        # nms_boxes = self.nms(pred_slices)
-        gt_aligned = self.matched_gt(grtr, pred['rpn_bbox2d'])
+        # pred_slices = self.nms(pred_slices)
+        batch = grtr['bbox2d'].shape[0]
+        anchors = []
+        for anchor in grtr['anchors']:
+            anchor = anchor.view(batch, -1, anchor.shape[-1])
+            anchor = mu.convert_box_format_yxhw_to_tlbr(anchor) #tlbr
+            anchors.append(anchor)
+        anchors_cat = torch.cat(anchors, dim=1)
+        gt_aligned = self.matched_gt(grtr, pred['bbox2d'])
+        gt_feature = self.matched_gt(grtr, anchors_cat[..., :-1])  # tlbr tlbr
+        gt_feature = self.split_feature(anchors, gt_feature)
         grtr = self.convert_tensor_to_numpy(grtr)
         gt_aligned = self.convert_tensor_to_numpy(gt_aligned)
         pred_slices = self.convert_tensor_to_numpy(pred_slices)
         loss_by_type = self.convert_tensor_to_numpy(loss_by_type)
         total_loss = total_loss.to('cpu').detach().numpy()
 
-        # self.numeric_logger(step, grtr, gt_aligned, pred_slices, loss_by_type, total_loss)
-        # if self.visual_logger:
-        #     self.visual_logger(step, gt_aligned, pred_slices)
         self.history_logger(step, grtr, gt_aligned, pred_slices, total_loss, loss_by_type)
         if self.visual_logger:
-            self.visual_logger(step, grtr, pred_slices)
-        if self.exhuastive_logger:
-            self.exhuastive_logger(step, grtr, pred_slices, loss_by_type, epoch, cfg.Logging.USE_ANCHOR)
-
-
-    def check_nan(self, grtr, pred, loss_by_type):
-        valid_result = True
-        for name, tensor in grtr.items():
-            if not np.isfinite(tensor.numpy()).all():
-                print(f"nan grtr:", name, np.quantile(tensor.numpy(), np.linspace(0, 1, 11)))
-                valid_result = False
-        for name, tensor in pred.items():
-            if not np.isfinite(tensor.numpy()).all():
-                print(f"nan pred:", name, np.quantile(tensor.numpy(), np.linspace(0, 1, 11)))
-                valid_result = False
-        for name, loss in loss_by_type.items():
-            if loss.ndim == 0 and (np.isnan(loss) or np.isinf(loss) or loss > 100000):
-                print(f"nan loss: {name}, {loss}")
-                valid_result = False
-        assert valid_result
-
-    # def convert_tensor_to_numpy(self, feature):
-    #     numpy_feature = dict()
-    #     uf.print_structure('feature', feature)
-    #     for key, value in feature.items():
-    #         if isinstance(value, dict):
-    #             sub_feature = dict()
-    #             for sub_key, sub_value in value.items():
-    #                 sub_feature[sub_key] = sub_value.numpy()
-    #             numpy_feature[key] = sub_feature
-    #         else:
-    #             numpy_feature[key] = value.numpy()
-    #     return numpy_feature
+            self.visual_logger(step, grtr, gt_aligned, gt_feature, pred_slices)
+        # if self.exhuastive_logger:
+        #     self.exhuastive_logger(step, grtr, gt_aligned, pred_slices, loss_by_type, epoch, cfg.Logging.USE_ANCHOR)
 
     def convert_tensor_to_numpy(self, features):
         numpy_feature = dict()
@@ -111,11 +112,11 @@ class Logger:
                 slice_features[key].append(slice_feature)
         return slice_features
 
+
     def finalize(self):
         self.history_logger.make_summary()
-        if self.exhuastive_logger:
-            self.exhuastive_logger.make_summary()
-
+        # if self.exhuastive_logger:
+        #     self.exhuastive_logger.make_summary()
 
     def get_history_summary(self):
         return self.history_logger.get_summary()

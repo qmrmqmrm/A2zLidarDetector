@@ -16,8 +16,23 @@ class HistoryLog:
     def __call__(self, step, grtr, gt_aligned, pred, total_loss, loss_by_type):
         """
         :param step: integer step index
-        :param grtr: slices of GT data {'image': (B,H,W,3), 'bboxes': {'yxhw': (B,N,4), ...}, 'feature_l': {'yxhw': (B,HWA,4), ...}, ...}
-        :param pred: slices of pred. data {'bboxes': {'yxhw': (B,N,4), ...}, 'feature_l': {'yxhw': (B,HWA,4), ...}, ...}
+        :param grtr:
+            {'image': [batch, height, width, channel],
+             'anchors': [batch, height/stride, width/stride, anchor, yxwh + id] * features
+            'category': [batch, fixbox, 1],
+            'bbox2d': [batch, fixbox, 4](tlbr), 'bbox3d': [batch, fixbox, 6], 'object': [batch, fixbox, 1],
+            'yaw': [batch, fixbox, 1], 'yaw_rads': [batch, fixbox, 1]}, 'anchor_id': [batch, fixbox, 1]
+            'image_file': image file name per batch
+            }
+        :param pred:
+            {'bbox2d' : torch.Size([batch, 512, 4(tlbr)])
+            'objectness' : torch.Size([batch, 512, 1])
+            'anchor_id' torch.Size([batch, 512, 1])
+            'rpn_feat_bbox2d' : list(torch.Size([batch, height/stride* width/stride* anchor, 4(tlbr)])
+            'rpn_feat_objectness' : list(torch.Size([batch, height/stride* width/stride* anchor, 1])
+            'rpn_feat_anchor_id' : list(torch.Size([batch, height/stride* width/stride* anchor, 1])
+            'head_output' : torch.Size([4, 512, 93])
+            }
         :param total_loss:
         :param loss_by_type:
         """
@@ -31,21 +46,21 @@ class HistoryLog:
             lane_objectness = self.analyze_lane_objectness(gt_aligned, pred)
             batch_data.update(lane_objectness)
 
-        num_ctgr = pred["category"].shape[-1]
-        metric = count_true_positives(grtr, pred,  num_ctgr)
+        num_ctgr = pred["category"].shape[-1] -1
+        metric = count_true_positives(grtr, pred,  num_ctgr, per_class=False)
         batch_data.update(metric)
         batch_data = self.set_precision(batch_data, 5)
         col_order = list(batch_data.keys())
         self.batch_data_table = self.batch_data_table.append(batch_data, ignore_index=True)
         self.batch_data_table = self.batch_data_table.loc[:, col_order]
 
-        if step % 500 == 10:
+        if step % 20 == 10:
             print("\n--- batch_data:", batch_data)
             self.check_pred_scales(pred)
 
     def analyze_box_objectness(self, grtr, pred):
         pos_obj, neg_obj = 0, 0
-        pos_obj_sc, neg_obj_sc = self.pos_neg_obj(grtr["object"], pred["rpn_objectness"])
+        pos_obj_sc, neg_obj_sc = self.pos_neg_obj(grtr["object"], pred["objectness"])
         pos_obj += pos_obj_sc
         neg_obj += neg_obj_sc
         objectness = {"pos_obj": pos_obj, "neg_obj": neg_obj}
@@ -82,14 +97,12 @@ class HistoryLog:
     def make_summary(self):
         mean_result = self.batch_data_table.mean(axis=0).to_dict()
         sum_result = self.batch_data_table.sum(axis=0).to_dict()
-        print(sum_result.keys())
         sum_result = {"recall": sum_result["trpo"] / (sum_result["grtr"] + 1e-5),
                       "precision": sum_result["trpo"] / (sum_result["pred"] + 1e-5)}
         metric_keys = ["trpo", "grtr", "pred"]
         summary = {key: val for key, val in mean_result.items() if key not in metric_keys}
         summary.update(sum_result)
         summary["time_m"] = round((timer() - self.start) / 60., 5)
-        print("epoch summary:", summary)
         self.summary = summary
 
     def get_summary(self):

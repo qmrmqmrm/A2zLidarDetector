@@ -50,7 +50,7 @@ class Model:
         RES_OUT_CHANNELS = 256
         STRIDE_IN_1X1 = True
         RES5_DILATION = 1
-        NORM = "FrozenBN"
+        NORM = "BN"
         OUT_SCALES = Scales.DEFAULT_FEATURE_SCALES
         OUT_FEATURES = ["backbone_s2", "backbone_s3", "backbone_s4"]
 
@@ -102,16 +102,17 @@ class Model:
 
 
 class Train:
-    CKPT_NAME = "new_build"
-    MODE = ["eager", "graph"][1]
+    CKPT_NAME = "score"
+
+    MODE = ["eager", "graph"][0]
     BATCH_SIZE = 4
     TRAINING_PLAN = params.TrainingPlan.A2D2_SIMPLE
 
 
 class NMS:
-    MAX_OUT = [0, 15, 10, 10, 10, 10, 10, 10, 10, 10, 10]
-    IOU_THRESH = [0, 0.32, 0.28, 0.1, 0.24, 0.1, 0.1, 0.1, 0.16, 0.46, 0.1]
-    SCORE_THRESH = [1, 0.22, 0.26, 0.28, 0.16, 0.2, 0.2, 0.2, 0.18, 0.18, 0.18]
+    MAX_OUT = [5, 5, 5]
+    IOU_THRESH = [0.1, 0.1, 0.1]
+    SCORE_THRESH = [0.25, 0.22, 0.26]
     IOU_CANDIDATES = np.arange(0.1, 0.52, 0.02)
     # IOU_CANDIDATES = np.arange(0.1, 0.5, 0.1)
     # SCORE_CANDIDATES = np.arange(0.02, 0.32, 0.02)
@@ -121,7 +122,7 @@ class NMS:
 
 
 class Validation:
-    TP_IOU_THRESH = [0.5, 0.5, 0.5, 0.5] #, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5,0.5,0.5,0.5,0.5,0.5]
+    TP_IOU_THRESH = [0.5, 0.5, 0.5, 0.5]
     DISTANCE_LIMIT = 25
     VAL_EPOCH = "latest"
     MAP_TP_IOU_THRESH = [0.5]
@@ -132,16 +133,9 @@ class Logging:
                "dist_loss", "pos_obj", "neg_obj", "iou", "box_hw", "box_yx", "true_class", "false_class"]
     USE_ANCHOR = [True, False][0]
     COLUMNS_TO_MEAN = ["anchor", "category", "ciou_loss", "object_loss", "maj_cat_loss", "dist_loss", "pos_obj",
-                       "neg_obj",
-                       "iou", "box_hw", "box_yx", "true_class", "false_class"]
+                       "neg_obj","iou", "box_hw", "box_yx", "true_class", "false_class"]
     COLUMNS_TO_SUM = ["anchor", "category", "trpo", "grtr", "pred"]
 
-
-class Log:
-    SUMMARY = ["pos_obj", "neg_obj"]
-    DETAIL = ["pos_obj", "neg_obj", "iou_mean", "box_yx", "box_hw", "true_class", "false_class"]
-    LOSS_NAME = ["ciou", "object", "category", "min_cat_loss", "distance"] if Model.Output.MINOR_CTGR \
-        else ["ciou", "object", "category", "distance"]
 
 
 def summary(cls):

@@ -14,11 +14,11 @@ class LogFile:
 
     def save_log(self, epoch, train_log, val_log):
         history_summary = self.merge_logs(epoch, train_log.get_history_summary(), val_log.get_history_summary())
-        if val_log.exhuastive_logger is not None:
-            exhaust_summary = val_log.get_exhuastive_summary()
-            exhaust_filename = self.exhaust_path + f"/{epoch}.csv"
-            exhaust = pd.DataFrame(exhaust_summary)
-            exhaust.to_csv(exhaust_filename, encoding='utf-8', index=False, float_format='%.4f')
+        # if val_log.exhuastive_logger is not None:
+        #     exhaust_summary = val_log.get_exhuastive_summary()
+        #     exhaust_filename = self.exhaust_path + f"/{epoch}.csv"
+        #     exhaust = pd.DataFrame(exhaust_summary)
+        #     exhaust.to_csv(exhaust_filename, encoding='utf-8', index=False, float_format='%.4f')
 
         if op.isfile(self.history_filename):
             history = pd.read_csv(self.history_filename, encoding='utf-8', converters={'epoch': lambda c: int(c)})

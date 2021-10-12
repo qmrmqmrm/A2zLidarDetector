@@ -1,13 +1,9 @@
 import torch
 import torch.nn.functional as F
 import numpy as np
-import math
-
 import config as cfg
-from model.submodules.box_regression import Box2BoxTransform
-from model.submodules.matcher import Matcher
-import train.loss_util as lu
-import utils.util_function as uf
+
+np.set_printoptions(precision=3, suppress=True)
 
 
 class LossBase:
@@ -15,25 +11,98 @@ class LossBase:
         self.device = cfg.Hardware.DEVICE
 
     def __call__(self, features, pred, auxi):
+        """
+        :param features:
+            {'image': [batch, height, width, channel],
+             'anchors': [batch, height/stride, width/stride, anchor, yxwh + id] * features
+            'category': [batch, fixbox, 1],
+            'bbox2d': [batch, fixbox, 4(tlbr)], 'bbox3d': [batch, fixbox, 6], 'object': [batch, fixbox, 1],
+            'yaw': [batch, fixbox, 1], 'yaw_rads': [batch, fixbox, 1]}, 'anchor_id': [batch, fixbox, 1]
+            'image_file': image file name per batch
+            }
+        :param pred:
+            {
+            'bbox2d' : torch.Size([batch, 512, 4(tlbr)])
+            'objectness' : torch.Size([batch, 512, 1])
+            'anchor_id' torch.Size([batch, 512, 1])
+            'rpn_feat_bbox2d' : list(torch.Size([batch, height/stride* width/stride* anchor, 4(tlbr)])
+            'rpn_feat_objectness' : list(torch.Size([batch, height/stride* width/stride* anchor, 1])
+            'rpn_feat_anchor_id' : list(torch.Size([batch, height/stride* width/stride* anchor, 1])
+            'category' : torch.Size([batch, 512, class_num, 1])
+            'bbox3d' : torch.Size([batch, 512, class_num, 6])
+            'yaw' : torch.Size([batch, 512, class_num, 12])
+            'yaw_rads' : torch.Size([batch, 512, class_num, 12])
+            }
+        :param auxi:
+        {
+        'gt_aligned' : {
+                        'bbox3d' : torch.Size([batch, 512, 6])
+                        'category' : torch.Size([batch, 512, 1])
+                        'bbox2d' : torch.Size([batch, 512, 4])
+                        'yaw' : torch.Size([batch, 512, 1])
+                        'yaw_rads' : torch.Size([batch, 512, 1])
+                        'anchor_id' : torch.Size([batch, 512, 1])
+                        'object' : torch.Size([batch, 512, 1])
+                        'negative' : torch.Size([batch, 512, 1])
+                        }
+        'gt_feature' : {
+                        'bbox3d' : list(torch.Size([batch, height/stride* width/stride* anchor, 6]))
+                        'category' : list(torch.Size([batch, height/stride* width/stride* anchor, 1]))
+                        'bbox2d' : list(torch.Size([batch, height/stride* width/stride* anchor, 4(tlbr]))
+                        'yaw' : list(torch.Size([batch, height/stride* width/stride* anchor, 1]))
+                        'yaw_rads' : list(torch.Size([batch, height/stride* width/stride* anchor, 1]))
+                        'anchor_id' : list(torch.Size([batch, height/stride* width/stride* anchor, 1]))
+                        'object' : list(torch.Size([batch, height/stride* width/stride* anchor, 1]))
+                        'negative' : list(torch.Size([batch, height/stride* width/stride* anchor, 1]))
+                        }
+        'pred_select' : {
+                        'bbox3d' : torch.Size([batch, 512, 6])
+                        'category' : torch.Size([batch, 512, 1])
+                        'yaw' : torch.Size([batch, 512, 1])
+                        'yaw_rads' : torch.Size([batch,512, 1])
+                        }
+        }
+        :return:
+        """
         raise NotImplementedError()
 
 
 class Box2dRegression(LossBase):
     def __call__(self, features, pred, auxi):
-        rpn_bbox2d_logit = torch.cat(pred['rpn_feat_bbox2d'], dim=1)
-        gt_bbox2d = torch.cat(auxi['gt_feature']['bbox2d'], dim=1)
-        gt_object = torch.cat(auxi['gt_feature']['object'], dim=1)
+        total_loss = 0
+        for scale_idx in range(3):
+            loss_per_scale = self.cal_bbox2d_loss_per_scale(pred, auxi, scale_idx)
+            total_loss += loss_per_scale
+        # rpn_bbox2d_logit = torch.cat(pred['rpn_feat_bbox2d'], dim=1)
+        # gt_bbox2d = torch.cat(auxi['gt_feature']['bbox2d'], dim=1)
+        # gt_object = torch.cat(auxi['gt_feature']['object'], dim=1)
+        # loss = F.smooth_l1_loss(rpn_bbox2d_logit * gt_object, gt_bbox2d * gt_object, reduction='sum', beta=0.5)
+        return total_loss
 
-        loss = F.smooth_l1_loss(rpn_bbox2d_logit * gt_object, gt_bbox2d * gt_object, reduction='sum', beta=0.5)
-        return loss
+    def cal_bbox2d_loss_per_scale(self, pred, auxi, scale_idx):
+        gt_object_per_scale = auxi['gt_feature']['object'][scale_idx]
+        gt_bbox2d_per_scale = auxi['gt_feature']['bbox2d'][scale_idx] * gt_object_per_scale
+        rpn_bbox2d_per_scale = pred['rpn_feat_bbox2d'][scale_idx] * gt_object_per_scale
+        return F.smooth_l1_loss(rpn_bbox2d_per_scale, gt_bbox2d_per_scale, reduction='sum', beta=0.5)
 
 
 class ObjectClassification(LossBase):
     def __call__(self, features, pred, auxi):
-        rpn_object_logit = torch.cat(pred['rpn_feat_objectness'], dim=1)
-        gt_object = torch.cat(auxi['gt_feature']['object'], dim=1)
-        loss = F.binary_cross_entropy_with_logits(rpn_object_logit, gt_object, reduction="sum")
-        return loss
+        total_loss = 0
+        print('')
+        for scale_idx in range(3):
+            loss_per_scale = self.cal_obj_loss_per_scale(pred, auxi, scale_idx)
+            total_loss += loss_per_scale
+        # rpn_object = torch.cat(pred['rpn_feat_objectness'], dim=1)  # (b, hwa,1) * 3
+        # gt_object = torch.cat(auxi['gt_feature']['object'], dim=1)
+        # loss = F.binary_cross_entropy_with_logits(rpn_object, gt_object, reduction="sum")
+        # print('object loss',loss)
+        return total_loss
+
+    def cal_obj_loss_per_scale(self, pred, auxi, scale_idx):
+        rpn_object = pred['rpn_feat_objectness'][scale_idx]
+        gt_object = auxi['gt_feature']['object'][scale_idx]
+        return F.binary_cross_entropy_with_logits(rpn_object, gt_object, reduction="sum")
 
 
 class Box3dRegression(LossBase):
@@ -56,8 +125,8 @@ class YawRegression(LossBase):
 
 class CategoryClassification(LossBase):
     def __call__(self, features, pred, auxi):
-        gt_classes = (auxi["gt_aligned"]["category"] * auxi["gt_aligned"]["object"]).type(torch.int64).view(-1)# (batch*512)
-        pred_classes = (auxi["pred_select"]["category"] * auxi["gt_aligned"]["object"]).view(-1, 3)  # (batch*512 , 3)
+        gt_classes = (auxi["gt_aligned"]["category"] * auxi["gt_aligned"]["object"]).type(torch.int64).view(-1)# (batch*512) torch.Size([4, 512, 1])
+        pred_classes = (auxi["pred_select"]["category"] * auxi["gt_aligned"]["object"]).view(-1, 3)  # (batch*512 , 3) torch.Size([4, 512, 3])
         num_gt = torch.sum(auxi["gt_aligned"]["object"])
         loss = F.cross_entropy(pred_classes, gt_classes, reduction="sum")
         return loss / num_gt

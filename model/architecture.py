@@ -52,14 +52,23 @@ class GeneralizedRCNN(ModelBase):
         """
         :param batched_input:
             {'image': [batch, height, width, channel],
-             'anchors': [batch, height/stride, width/stride, anchor, tlbr] * features
+             'anchors': [batch, height/stride, width/stride, anchor, yxwh + id] * features
             'category': [batch, fixbox, 1],
-            'bbox2d': [batch, fixbox, 6], 'bbox3d': [batch, fixbox, 6], 'object': [batch, fixbox, 1],
+            'bbox2d': [batch, fixbox, 4](tlbr), 'bbox3d': [batch, fixbox, 6], 'object': [batch, fixbox, 1],
             'yaw': [batch, fixbox, 1], 'yaw_rads': [batch, fixbox, 1]}, 'anchor_id': [batch, fixbox, 1]
             'image_file': image file name per batch
+            }
 
-        :return:
-
+        :return: model_output :
+            {
+            'bbox2d' : torch.Size([batch, 512, 4(tlbr)])
+            'objectness' : torch.Size([batch, 512, 1])
+            'anchor_id' torch.Size([batch, 512, 1])
+            'rpn_feat_bbox2d' : list(torch.Size([batch, height/stride* width/stride* anchor, 4(tlbr)])
+            'rpn_feat_objectness' : list(torch.Size([batch, height/stride* width/stride* anchor, 1])
+            'rpn_feat_anchor_id' : list(torch.Size([batch, height/stride* width/stride* anchor, 1])
+            'head_output' : torch.Size([4, 512, 93])
+            }
         """
         image = self.preprocess_input(batched_input)
         backbone_features = self.backbone(image)
@@ -78,7 +87,7 @@ class GeneralizedRCNN(ModelBase):
         # rpn_proposals /anchor_id torch.Size([2, 512, 1])
 
         head_output = self.roi_heads(neck_features, rpn_proposals)
-        model_output = {'rpn_' + key: value for key, value in rpn_proposals.items()}
+        model_output = {key: value for key, value in rpn_proposals.items()}
         model_output.update({'rpn_feat_' + key: value for key, value in rpn_aux.items()})
         model_output['head_output'] = head_output
         # head_output  torch.Size([1024, 93]

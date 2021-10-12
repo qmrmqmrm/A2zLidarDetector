@@ -38,7 +38,31 @@ class IntegratedLoss:
         return loss_objects
 
     def __call__(self, features, predictions, split):
+        """
+
+        :param features:
+            {'image': [batch, height, width, channel],
+             'anchors': [batch, height/stride, width/stride, anchor, yxwh + id] * features
+            'category': [batch, fixbox, 1],
+            'bbox2d': [batch, fixbox, 4(tlbr)], 'bbox3d': [batch, fixbox, 6], 'object': [batch, fixbox, 1],
+            'yaw': [batch, fixbox, 1], 'yaw_rads': [batch, fixbox, 1]}, 'anchor_id': [batch, fixbox, 1]
+            'image_file': image file name per batch
+            }
+        :param predictions:
+            {
+            'bbox2d' : torch.Size([batch, 512, 4(tlbr)])
+            'objectness' : torch.Size([batch, 512, 1])
+            'anchor_id' torch.Size([batch, 512, 1])
+            'rpn_feat_bbox2d' : list(torch.Size([batch, height/stride* width/stride* anchor, 4(tlbr)])
+            'rpn_feat_objectness' : list(torch.Size([batch, height/stride* width/stride* anchor, 1])
+            'rpn_feat_anchor_id' : list(torch.Size([batch, height/stride* width/stride* anchor, 1])
+            'head_output' : torch.Size([4, 512, 93])
+            }
+        :param split:
+        :return:
+        """
         pred_slices = uf.merge_and_slice_features(predictions)
+
         pred = uf.slice_class(pred_slices)
         total_loss = 0
         loss_by_type = {loss_name: 0 for loss_name in self.loss_objects}
@@ -52,18 +76,70 @@ class IntegratedLoss:
         return total_loss, loss_by_type
 
     def prepare_box_auxiliary_data(self, grtr, pred):
+        """
+
+        :param grtr:
+            {'image': [batch, height, width, channel],
+             'anchors': [batch, height/stride, width/stride, anchor, yxwh + id] * features
+            'category': [batch, fixbox, 1],
+            'bbox2d': [batch, fixbox, 4(tlbr)], 'bbox3d': [batch, fixbox, 6], 'object': [batch, fixbox, 1],
+            'yaw': [batch, fixbox, 1], 'yaw_rads': [batch, fixbox, 1]}, 'anchor_id': [batch, fixbox, 1]
+            'image_file': image file name per batch
+            }
+        :param pred:
+            {
+            'bbox2d' : torch.Size([batch, 512, 4(tlbr)])
+            'objectness' : torch.Size([batch, 512, 1])
+            'anchor_id' torch.Size([batch, 512, 1])
+            'rpn_feat_bbox2d' : list(torch.Size([batch, height/stride* width/stride* anchor, 4(tlbr)])
+            'rpn_feat_objectness' : list(torch.Size([batch, height/stride* width/stride* anchor, 1])
+            'rpn_feat_anchor_id' : list(torch.Size([batch, height/stride* width/stride* anchor, 1])
+            'category' : torch.Size([batch, 512, class_num, 1])
+            'bbox3d' : torch.Size([batch, 512, class_num, 6])
+            'yaw' : torch.Size([batch, 512, class_num, 12])
+            'yaw_rads' : torch.Size([batch, 512, class_num, 12])
+            }
+        :return: auxiliary:
+        {
+        'gt_aligned' : {
+                        'bbox3d' : torch.Size([batch, 512, 6])
+                        'category' : torch.Size([batch, 512, 1])
+                        'bbox2d' : torch.Size([batch, 512, 4[tlbr])
+                        'yaw' : torch.Size([batch, 512, 1])
+                        'yaw_rads' : torch.Size([batch, 512, 1])
+                        'anchor_id' : torch.Size([batch, 512, 1])
+                        'object' : torch.Size([batch, 512, 1])
+                        'negative' : torch.Size([batch, 512, 1])
+                        }
+        'gt_feature' : {
+                        'bbox3d' : list(torch.Size([batch, height/stride* width/stride* anchor, 6]))
+                        'category' : list(torch.Size([batch, height/stride* width/stride* anchor, 1]))
+                        'bbox2d' : list(torch.Size([batch, height/stride* width/stride* anchor, 4]))
+                        'yaw' : list(torch.Size([batch, height/stride* width/stride* anchor, 1]))
+                        'yaw_rads' : list(torch.Size([batch, height/stride* width/stride* anchor, 1]))
+                        'anchor_id' : list(torch.Size([batch, height/stride* width/stride* anchor, 1]))
+                        'object' : list(torch.Size([batch, height/stride* width/stride* anchor, 1]))
+                        'negative' : list(torch.Size([batch, height/stride* width/stride* anchor, 1]))
+                        }
+        'pred_select' : {
+                        'bbox3d' : torch.Size([batch, 512, 6])
+                        'category' : torch.Size([batch, 512, 1])
+                        'yaw' : torch.Size([batch, 512, 1])
+                        'yaw_rads' : torch.Size([batch,512, 1])
+                        }
+        }
+        """
         batch = grtr['bbox2d'].shape[0]
         anchors = list()
         for anchor in grtr['anchors']:
             anchor = anchor.view(batch, -1, anchor.shape[-1])
-            anchor = mu.convert_box_format_yxhw_to_tlbr(anchor)
+            anchor = mu.convert_box_format_yxhw_to_tlbr(anchor) #tlbr
             anchors.append(anchor)
         anchors_cat = torch.cat(anchors, dim=1)
         auxiliary = dict()
-        auxiliary["gt_aligned"] = self.matched_gt(grtr, pred['rpn_bbox2d'])
-        auxiliary["gt_feature"] = self.matched_gt(grtr, anchors_cat[..., :-1])
+        auxiliary["gt_aligned"] = self.matched_gt(grtr, pred['bbox2d']) # tlbr tlbr
+        auxiliary["gt_feature"] = self.matched_gt(grtr, anchors_cat[..., :-1])  # tlbr tlbr
         auxiliary["gt_feature"] = self.split_feature(anchors, auxiliary["gt_feature"])
-
         # uf.print_structure('auxiliary["gt_feature"]', auxiliary["gt_feature"])
         auxiliary["pred_select"] = self.select_category(auxiliary['gt_aligned'], pred)
         return auxiliary
@@ -84,6 +160,7 @@ class IntegratedLoss:
 
         for key in matched:
             matched[key] = torch.stack(matched[key], dim=0)
+
         return matched
 
     def split_feature(self, anchors, feature):
@@ -98,7 +175,7 @@ class IntegratedLoss:
         return slice_features
 
     def select_category(self, aligned, pred):
-        gt_cate = aligned['category'].to(torch.int64).unsqueeze(-1)
+        gt_cate = (aligned['category'].to(torch.int64)).unsqueeze(-1) # + torch.ones(aligned['category'].shape, dtype=torch.int64, device=self.device)
         select_pred = dict()
         for key in ['bbox3d', 'yaw', 'yaw_rads']:
             pred_key = pred[key]
