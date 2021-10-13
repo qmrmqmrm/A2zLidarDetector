@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 from torch import nn
+import torch.nn.functional as F
 from torchvision.ops import boxes as box_ops
 
 from model.submodules.box_regression import Box2BoxTransform
@@ -17,46 +18,42 @@ class RPN(nn.Module):
         self.input_channels = cfg.Model.Neck.OUTPUT_CHANNELS
         self.num_anchor = len(cfg.Model.RPN.ANCHOR_RATIOS)
         self.num_proposals = cfg.Model.RPN.NUM_PROPOSALS
-
+        self.layers = self.init_layers(len(cfg.Model.RPN.ANCHOR_RATIOS))
         self.match_thresh = {'high': 0.6, 'low': 0.5}
         self.indices = self.init_indices(cfg.Train.BATCH_SIZE)
         self.iou_threshold = cfg.Model.RPN.NMS_IOU_THRESH
         self.labels = [0, 1]
         self.num_sample = cfg.Model.RPN.NUM_SAMPLE
 
-
         # 3x3 conv for the hidden representation
-        self.conv = nn.Conv2d(self.input_channels, self.input_channels, kernel_size=3, stride=1, padding=1)
-        # 1x1 conv for predicting objectness logits
-        self.objectness_logits = nn.Conv2d(self.input_channels, self.num_anchor, kernel_size=1, stride=1)
-        # 1x1 conv for predicting box2box transform deltas
-        self.anchor_deltas = nn.Conv2d(
-            self.input_channels, self.num_anchor * 4, kernel_size=1, stride=1
-        )
-
-        for l in [self.conv, self.objectness_logits, self.anchor_deltas]:
-            nn.init.normal_(l.weight, std=0.01)
-            nn.init.constant_(l.bias, 0)
+        # self.conv = nn.Conv2d(self.input_channels, self.input_channels, kernel_size=3, stride=1, padding=1)
+        # # 1x1 conv for predicting objectness logits
+        # self.objectness_logits = nn.Conv2d(self.input_channels, self.num_anchor, kernel_size=1, stride=1)
+        # # 1x1 conv for predicting box2box transform deltas
+        # self.anchor_deltas = nn.Conv2d(
+        #     self.input_channels, self.num_anchor * 4, kernel_size=1, stride=1
+        # )
 
     def init_layers(self, num_anchors):
         layers = {}
 
+        for i, hw in enumerate(self.input_shapes):
+            layers[hw] = torch.nn.Sequential(
+                nn.Conv2d(self.input_channels, self.input_channels, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
+                # BN
+                nn.BatchNorm2d(self.input_channels),
+                nn.ReLU(),
+                nn.Conv2d(self.input_channels, num_anchors * 5, kernel_size=(1, 1), stride=(1, 1), padding=(1, 1)),
+                # BN
+            )
+            self.add_module(f'conv_s{i}', layers[hw])
+            nn.init.normal_(layers[hw][0].weight, std=0.001)
+            nn.init.constant_(layers[hw][0].bias, 0)
+            nn.init.normal_(layers[hw][-1].weight, std=0.001)
+            nn.init.constant_(layers[hw][-1].bias, 0)
 
-        # for i, hw in enumerate(self.input_shapes):
-        #     layers[hw] = torch.nn.Sequential(
-        #         nn.Conv2d(self.input_channels, self.input_channels, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
-        #         # BN
-        #         nn.BatchNorm2d(self.input_channels),
-        #         nn.ReLU(),
-        #         nn.Conv2d(self.input_channels, num_anchors * 5, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
-        #         # BN
-        #     )
-        #     self.add_module(f'conv_s{i}', layers[hw])
-        #     nn.init.normal_(layers[hw][0].weight, std=0.001)
-        #     nn.init.constant_(layers[hw][0].bias, 0)
-        #     nn.init.normal_(layers[hw][3].weight, std=0.001)
-        #     nn.init.constant_(layers[hw][3].bias, 0)
-            # # output channel: 15 = 3*5 = num anchors per scale x (tlbr + objectness)
+
+        # # output channel: 15 = 3*5 = num anchors per scale x (tlbr + objectness)
         return layers
 
     def init_indices(self, batch_size):
@@ -93,11 +90,15 @@ class RPN(nn.Module):
         logit_features = list()
         for hw, feature in zip(self.input_shapes, features.values()):
             logits = self.forward_layers(feature, hw)
-            logit_features.append(logits)
+            logit_features.append(
+                logits)  # (batch,3*5,hi,wi) -> (batch,5,3,hi,wi) -> (batch,5,3*hi*wi) -> (batch,5,sum(3*hi*wi)) -> (batch,sum(3*hi*wi),5)
 
-        # (batch,3*5,hi,wi) -> (batch,5,3,hi,wi) -> (batch,5,3*hi*wi) -> (batch,5,sum(3*hi*wi)) -> (batch,sum(3*hi*wi),5)
+        last_weight = self.layers[self.input_shapes[0]][-1].weight.to('cpu').detach().numpy()
+        last_weight_quant = np.quantile(last_weight, np.arange(0, 1.1, 0.1))
+        print('rpn quant', last_weight_quant)
+
         logit_features = self.merge_features(logit_features)
-        proposals_aux = self.decode_features(logit_features, grtr["anchors"])
+        proposals_aux = self.decode_features(logit_features, grtr['anchors'])
         proposal = self.sort_proposals(proposals_aux)
         proposals = self.select_proposals(proposal)
         if self.training:
@@ -106,6 +107,7 @@ class RPN(nn.Module):
 
     def forward_layers(self, features, hw):
         logits = self.layers[hw](features)
+
         return logits
 
     def merge_features(self, logit_features):
@@ -114,7 +116,6 @@ class RPN(nn.Module):
                 -> (batch,hi,wi,anchor,channel(5)+anchor_index(1))
         :return:
         """
-
         merged_feature_logit = list()
         for feature_i, logit in enumerate(logit_features):
             batch, _, height, width = logit.shape
@@ -148,8 +149,12 @@ class RPN(nn.Module):
         for logit_feature, anchors in zip(logit_features, anchors):
             bbox2d_logit, object_logits, anchor_id = logit_feature[..., :4], logit_feature[..., 4:5], logit_feature[...,
                                                                                                       5:6]
+
             bbox2d_yxhw = mu.apply_box_deltas(anchors, bbox2d_logit)
             bbox2d_tlbr = mu.convert_box_format_yxhw_to_tlbr(bbox2d_yxhw)  # tlbr
+            object_logits_numpy = object_logits.to('cpu').detach().numpy()
+            object_quant = np.quantile(object_logits_numpy, np.arange(0, 1.1, 0.1))
+            print("object logits quantile:", object_quant)
             objectness = torch.sigmoid(object_logits)
             proposals['bbox2d'].append(bbox2d_tlbr)
             proposals['bbox2d_yxhw'].append(bbox2d_yxhw)
@@ -185,13 +190,16 @@ class RPN(nn.Module):
         bbox2d = cat_proposal['bbox2d']
         score = cat_proposal['objectness']
         anchor_id = cat_proposal['anchor_id']
+        # score_numpy = score.to('cpu').detach().numpy()
+        # score_quant = np.quantile(score_numpy, np.arange(0, 1.1, 0.1))
+        # print("score quantile:", score_quant)
 
         score_sort, sort_idx = torch.sort(score, dim=1, descending=True)
-        score_mask = score_sort > 0.9
+        score_mask = score_sort > 0.3
         sort = {'bbox2d': [], 'anchor_id': []}
         for i in range(bbox2d.shape[0]):
-            sort['bbox2d'].append(bbox2d[i, sort_idx[i].squeeze(1), :] * score_mask[i])
-            sort['anchor_id'].append(anchor_id[i, sort_idx[i].squeeze(1)] * score_mask[i])
+            sort['bbox2d'].append(bbox2d[i, sort_idx[i].squeeze(1), :] * score_mask[i, :])
+            sort['anchor_id'].append(anchor_id[i, sort_idx[i].squeeze(1)] * score_mask[i, :])
         bbox2d_sort = torch.stack(sort['bbox2d'])
         achor_id_sort = torch.stack(sort['anchor_id'])
         sorted_proposals = {'bbox2d': bbox2d_sort[:, : self.num_proposals],

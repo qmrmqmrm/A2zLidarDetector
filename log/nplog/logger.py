@@ -49,15 +49,15 @@ class Logger:
         pred_slices = uf.merge_and_slice_features(pred)
         # pred_slices = self.nms(pred_slices)
         batch = grtr['bbox2d'].shape[0]
-        anchors = []
-        for anchor in grtr['anchors']:
-            anchor = anchor.view(batch, -1, anchor.shape[-1])
-            anchor = mu.convert_box_format_yxhw_to_tlbr(anchor) #tlbr
-            anchors.append(anchor)
-        anchors_cat = torch.cat(anchors, dim=1)
+        # anchors = []
+        # for anchor in grtr['anchors']:
+        #     anchor = anchor.view(batch, -1, anchor.shape[-1])
+        #     anchor = mu.convert_box_format_yxhw_to_tlbr(anchor) #tlbr
+        #     anchors.append(anchor)
+        # anchors_cat = torch.cat(anchors, dim=1)
         gt_aligned = self.matched_gt(grtr, pred['bbox2d'])
-        gt_feature = self.matched_gt(grtr, anchors_cat[..., :-1])  # tlbr tlbr
-        gt_feature = self.split_feature(anchors, gt_feature)
+        # gt_feature = self.matched_gt(grtr, anchors_cat[..., :-1])  # tlbr tlbr
+        # gt_feature = self.split_feature(anchors, gt_feature)
         grtr = self.convert_tensor_to_numpy(grtr)
         gt_aligned = self.convert_tensor_to_numpy(gt_aligned)
         pred_slices = self.convert_tensor_to_numpy(pred_slices)
@@ -65,8 +65,8 @@ class Logger:
         total_loss = total_loss.to('cpu').detach().numpy()
 
         self.history_logger(step, grtr, gt_aligned, pred_slices, total_loss, loss_by_type)
-        if self.visual_logger:
-            self.visual_logger(step, grtr, gt_aligned, gt_feature, pred_slices)
+        # if self.visual_logger:
+        #     self.visual_logger(step, grtr, gt_aligned, gt_feature, pred_slices)
         # if self.exhuastive_logger:
         #     self.exhuastive_logger(step, grtr, gt_aligned, pred_slices, loss_by_type, epoch, cfg.Logging.USE_ANCHOR)
 

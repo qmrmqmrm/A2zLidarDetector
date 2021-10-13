@@ -302,6 +302,12 @@ class ResNet(Backbone):
             x = self.linear(x)
             if "linear" in self._out_features:
                 outputs["linear"] = x
+
+        stage, name = self.stages_and_names[-1]
+        last_weight = stage[-1].conv3.weight.to('cpu').detach().numpy()
+        last_weight_quant = np.quantile(last_weight, np.arange(0, 1.1, 0.1))
+        print("\nbackbone las weight quantile:", last_weight_quant)
+
         return outputs
 
     def output_shape(self):

@@ -35,7 +35,7 @@ class A2D2Dataset(DatasetBase):
     def list_frames(self, root_dir, split):
         img_files = sorted(glob.glob(os.path.join(root_dir, split, '*/image', '*.png')))
 
-        return img_files
+        return img_files[:400]
 
     def __getitem__(self, index):
         """

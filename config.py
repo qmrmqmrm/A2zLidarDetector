@@ -102,7 +102,7 @@ class Model:
 
 
 class Train:
-    CKPT_NAME = "score"
+    CKPT_NAME = "rpn_kernel"
 
     MODE = ["eager", "graph"][0]
     BATCH_SIZE = 4

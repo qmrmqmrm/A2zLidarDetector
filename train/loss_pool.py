@@ -2,8 +2,9 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 import config as cfg
+import model.submodules.model_util as mu
 
-np.set_printoptions(precision=3, suppress=True)
+np.set_printoptions(precision=6, suppress=True, linewidth=150)
 
 
 class LossBase:
@@ -83,13 +84,25 @@ class Box2dRegression(LossBase):
         gt_object_per_scale = auxi['gt_feature']['object'][scale_idx]
         gt_bbox2d_per_scale = auxi['gt_feature']['bbox2d'][scale_idx] * gt_object_per_scale
         rpn_bbox2d_per_scale = pred['rpn_feat_bbox2d'][scale_idx] * gt_object_per_scale
+        gt_object_mask = torch.where(gt_object_per_scale[..., 0] > 0)
+        mask_sum = len(gt_object_mask[0])
+        # print('mask_sum',mask_sum)
+        if mask_sum > 0:
+            gt_bbox2d_mask = gt_bbox2d_per_scale[gt_object_mask]
+            rpn_bbox2d_mask = rpn_bbox2d_per_scale[gt_object_mask]
+            print(gt_bbox2d_mask.shape)
+            gt_mask_yxwh = mu.convert_box_format_tlbr_to_yxhw(gt_bbox2d_mask)
+            rpn_mask_yxwh = mu.convert_box_format_tlbr_to_yxhw(rpn_bbox2d_mask)
+            print('gt_mask_yxwh', gt_mask_yxwh[0:-1:100])
+            print('rpn_mask_yxwh', rpn_mask_yxwh[0:-1:100])
+            print('abs',scale_idx, torch.abs(gt_mask_yxwh[0:-1:100] - rpn_mask_yxwh[0:-1:100]))
+
         return F.smooth_l1_loss(rpn_bbox2d_per_scale, gt_bbox2d_per_scale, reduction='sum', beta=0.5)
 
 
 class ObjectClassification(LossBase):
     def __call__(self, features, pred, auxi):
         total_loss = 0
-        print('')
         for scale_idx in range(3):
             loss_per_scale = self.cal_obj_loss_per_scale(pred, auxi, scale_idx)
             total_loss += loss_per_scale
@@ -100,9 +113,14 @@ class ObjectClassification(LossBase):
         return total_loss
 
     def cal_obj_loss_per_scale(self, pred, auxi, scale_idx):
-        rpn_object = pred['rpn_feat_objectness'][scale_idx]
         gt_object = auxi['gt_feature']['object'][scale_idx]
-        return F.binary_cross_entropy_with_logits(rpn_object, gt_object, reduction="sum")
+        gt_negative = auxi['gt_feature']['negative'][scale_idx]
+        rpn_object = pred['rpn_feat_objectness'][scale_idx]
+        ce_loss = F.binary_cross_entropy_with_logits(rpn_object, gt_object)
+        positive_ce = torch.sum(ce_loss * gt_object) / (torch.sum(gt_object) + 0.00001)
+        negative_ce = torch.sum(ce_loss * gt_negative) / (torch.sum(gt_negative) + 0.00001)
+        scale_loss = positive_ce + negative_ce
+        return scale_loss
 
 
 class Box3dRegression(LossBase):

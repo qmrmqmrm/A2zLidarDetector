@@ -10,7 +10,6 @@ class Anchor:
         self.aspect_ratio = cfg.Model.RPN.ANCHOR_RATIOS
         self.anc_sizes = cfg.Model.RPN.ANCHOR_SIZES
         self.strides = cfg.Model.RPN.OUT_SCALES
-        print('anchor')
         self.feature_shapes = [cfg.get_img_shape("HW", dataset_name, s) for s in cfg.Model.RPN.OUT_SCALES]
         self.device = [cfg.Hardware.DEVICE, 'cpu'][1]
 

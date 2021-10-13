@@ -72,7 +72,7 @@ class IntegratedLoss:
             scalar_loss = loss_object(features, pred, auxi)
             weight = self.loss_weights[loss_name] if loss_name in self.loss_weights else self.loss_weights[loss_name]
             total_loss += scalar_loss * weight
-            loss_by_type[loss_name] += scalar_loss
+            loss_by_type[loss_name] += scalar_loss * weight
         return total_loss, loss_by_type
 
     def prepare_box_auxiliary_data(self, grtr, pred):

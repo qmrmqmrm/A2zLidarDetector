@@ -109,7 +109,7 @@ def build_optimizer(model: torch.nn.Module, learning_rate) -> torch.optim.Optimi
             weight_decay = cfg.Model.Output.WEIGHT_DECAY_BIAS
         params += [{"params": [value], "lr": lr, "weight_decay": weight_decay}]
 
-    optimizer = torch.optim.SGD(params, lr, momentum=cfg.Model.Output.MOMENTUM)
+    optimizer = torch.optim.SGD(model.parameters(), learning_rate, momentum=cfg.Model.Output.MOMENTUM)
     return optimizer
 
 
