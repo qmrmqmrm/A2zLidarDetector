@@ -86,11 +86,11 @@ class A2D2Dataset(DatasetBase):
             label = self.categories.index(obj_category)
             ann = dict()
             ann['category'] = [label]
-            ann['bbox2d'] = [bbox_xmin, bbox_ymin, bbox_xmax, bbox_ymax]  # tlbr
+            ann['bbox2d'] = [bbox_ymin, bbox_xmin , bbox_ymax,bbox_xmax]  # tlbr
 
             # ONLY VALID FOR FRONTAL CAMERA (ONLY_FRONT PARAM)
             velodyne_h = 1.12
-            ann['bbox3d'] = [(bbox_xmin + bbox_xmax) / 2., (bbox_ymin + bbox_ymax) / 2.,
+            ann['bbox3d'] = [(bbox_ymin + bbox_ymax) / 2.,(bbox_xmin + bbox_xmax) / 2.,
                              round(obj['size'][1] / bvres, 3), round(obj['size'][0] / bvres, 3),
                              obj['size'][2] * 255 / 3.,
                              ((pts_3d_velo[0][2] + velodyne_h) + obj['size'][0] * 0.5) * 255 / 3.]  # xylwzh

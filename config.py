@@ -67,8 +67,9 @@ class Model:
         ANCHOR_SIZES = [16, 64, 80]
         ANCHOR_RATIOS = [0.5, 1., 2.]
         NMS_IOU_THRESH = 0.5
+        NMS_SCORE_THRESH = 0.0
         BBOX_REG_WEIGHTS = (1.0, 1.0, 1.0, 1.0)
-        NUM_PROPOSALS = 2000
+        NUM_PROPOSALS = [3000, 1000]
         NUM_SAMPLE = 512
 
     class Head:
@@ -102,11 +103,16 @@ class Model:
 
 
 class Train:
-    CKPT_NAME = "rpn_kernel"
+    CKPT_NAME = "nms_test"
 
     MODE = ["eager", "graph"][0]
     BATCH_SIZE = 4
     TRAINING_PLAN = params.TrainingPlan.A2D2_SIMPLE
+
+
+class Loss:
+    ALIGN_IOU_THRESHOLD = [0.3, 0.1]
+    ANCHOR_IOU_THRESHOLD = [0.1, 0.6]
 
 
 class NMS:
@@ -133,9 +139,8 @@ class Logging:
                "dist_loss", "pos_obj", "neg_obj", "iou", "box_hw", "box_yx", "true_class", "false_class"]
     USE_ANCHOR = [True, False][0]
     COLUMNS_TO_MEAN = ["anchor", "category", "ciou_loss", "object_loss", "maj_cat_loss", "dist_loss", "pos_obj",
-                       "neg_obj","iou", "box_hw", "box_yx", "true_class", "false_class"]
+                       "neg_obj", "iou", "box_hw", "box_yx", "true_class", "false_class"]
     COLUMNS_TO_SUM = ["anchor", "category", "trpo", "grtr", "pred"]
-
 
 
 def summary(cls):

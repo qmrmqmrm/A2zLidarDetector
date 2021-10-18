@@ -23,7 +23,7 @@ def loader_factory(dataset_name, split):
 
 def get_dataset(dataset_name, split, batch_size):
     dataset = loader_factory(dataset_name, split)
-    data_loader = DataLoader(dataset=dataset, shuffle=False, batch_size=batch_size, drop_last=True, num_workers=2)
+    data_loader = DataLoader(dataset=dataset, shuffle=True, batch_size=batch_size, drop_last=True, num_workers=2)
     return data_loader
 
 

@@ -252,6 +252,8 @@ class NonMaximumSuppression:
         best_probs = torch.amax(pred["category"], dim=-1)  # (batch, N)
         objectness = pred["objectness"][..., 0]  # (batch, N)
         scores = objectness * best_probs  # (batch, N)
+        print(scores[:,0:-1:50])
+        print(scores.shape)
         batch, numbox, numctgr = pred["category"].shape
 
         anchor_inds = pred["anchor_id"][..., 0]
@@ -265,26 +267,31 @@ class NonMaximumSuppression:
             ctgr_scores = scores * ctgr_mask  # (batch, N)
             for frame_idx in range(batch):
                 # NMS
+                print('categories',categories[frame_idx].shape)
+                print('categories',categories[frame_idx][0:-1:10])
+                print('categories',torch.where(categories[frame_idx]))
                 selected_indices = box_ops.batched_nms(ctgr_boxes[frame_idx], ctgr_scores[frame_idx],
                                                        categories[frame_idx], self.iou_thresh[ctgr_idx])
                 print(selected_indices.shape)
+                selected_indices = selected_indices[:self.max_out[ctgr_idx]]
                 numsel = selected_indices.shape[0]
                 print(self.max_out[ctgr_idx])
                 print(numsel)
-                zero = torch.ones((self.max_out[ctgr_idx] - numsel)) * -1
+                selected_indices = selected_indices
+                zero = torch.ones((numsel - self.max_out[ctgr_idx])) * -1
                 selected_indices = torch.cat([selected_indices, zero], dim=0)
                 batch_indices[frame_idx].append(selected_indices)
 
         # make batch_indices, valid_mask as fixed shape tensor
-        batch_indices = [np.concat(ctgr_indices, axis=-1) for ctgr_indices in batch_indices]
-        batch_indices = np.stack(batch_indices, axis=0)  # (batch, K*max_output)
-        valid_mask = np.cast(batch_indices >= 0, dtype=np.float32)  # (batch, K*max_output)
-        batch_indices = np.maximum(batch_indices, 0)
+        batch_indices = [torch.cat(ctgr_indices, dim=-1) for ctgr_indices in batch_indices]
+        batch_indices = torch.stack(batch_indices, dim=0)  # (batch, K*max_output)
+        valid_mask = (batch_indices >= 0).to(type=torch.float32)  # (batch, K*max_output)
+        batch_indices = torch.maximum(batch_indices, 0)
 
         # list of (batch, N) -> (batch, N, 4)
         categories = np.cast(categories, dtype=np.float32)
         # "bbox": 4, "object": 1, "category": 1, "minor_ctgr": 1, "distance": 1, "score": 1, "anchor_inds": 1
-        result = np.stack([objectness, categories, minor_ctgr, distances, best_probs, scores, anchor_inds], axis=-1)
+        result = np.stack([objectness, categories, minor_ctgr, best_probs, scores, anchor_inds], axis=-1)
 
         result = np.concat([pred["yxhw"], result], axis=-1)  # (batch, N, 10)
         result = np.gather(result, batch_indices, batch_dims=1)  # (batch, K*max_output, 10)

@@ -18,7 +18,7 @@ class TrainValBase:
     def run_epoch(self, logger, epoch, data_loader):
 
         self.mode_set()
-        logger = Logger(logger,logger, op.join(cfg.Paths.CHECK_POINT, cfg.Train.CKPT_NAME), epoch)
+        logger = Logger(logger,logger, op.join(cfg.Paths.CHECK_POINT, cfg.Train.CKPT_NAME), epoch, self.split)
         train_loader_iter = iter(data_loader)
         steps = len(train_loader_iter)
 
@@ -90,13 +90,13 @@ class ModelTrainer(TrainValBase):
     def run_step(self, features):
         prediction = self.model(features)
         total_loss, loss_by_type = self.loss_object(features, prediction, True)
+        losses = {}
         for key, val in loss_by_type.items():
-            print(key, val.to('cpu').detach().numpy())
+            losses[key] = float(val.to('cpu').detach().numpy())
 
         self.optimizer.zero_grad()
         total_loss.backward()
         self.optimizer.step()
-        print('lr',self.optimizer.param_groups[0]['lr'])
         return prediction, total_loss, loss_by_type
 
     def mode_set(self):

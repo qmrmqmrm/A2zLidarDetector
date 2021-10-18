@@ -84,18 +84,18 @@ class Box2dRegression(LossBase):
         gt_object_per_scale = auxi['gt_feature']['object'][scale_idx]
         gt_bbox2d_per_scale = auxi['gt_feature']['bbox2d'][scale_idx] * gt_object_per_scale
         rpn_bbox2d_per_scale = pred['rpn_feat_bbox2d'][scale_idx] * gt_object_per_scale
-        gt_object_mask = torch.where(gt_object_per_scale[..., 0] > 0)
-        mask_sum = len(gt_object_mask[0])
-        # print('mask_sum',mask_sum)
-        if mask_sum > 0:
-            gt_bbox2d_mask = gt_bbox2d_per_scale[gt_object_mask]
-            rpn_bbox2d_mask = rpn_bbox2d_per_scale[gt_object_mask]
-            print(gt_bbox2d_mask.shape)
-            gt_mask_yxwh = mu.convert_box_format_tlbr_to_yxhw(gt_bbox2d_mask)
-            rpn_mask_yxwh = mu.convert_box_format_tlbr_to_yxhw(rpn_bbox2d_mask)
-            print('gt_mask_yxwh', gt_mask_yxwh[0:-1:100])
-            print('rpn_mask_yxwh', rpn_mask_yxwh[0:-1:100])
-            print('abs',scale_idx, torch.abs(gt_mask_yxwh[0:-1:100] - rpn_mask_yxwh[0:-1:100]))
+        # gt_object_mask = torch.where(gt_object_per_scale[..., 0] > 0)
+        # mask_sum = len(gt_object_mask[0])
+        # # print('mask_sum',mask_sum)
+        # if mask_sum > 0:
+        #     gt_bbox2d_mask = gt_bbox2d_per_scale[gt_object_mask]
+        #     rpn_bbox2d_mask = rpn_bbox2d_per_scale[gt_object_mask]
+        #     print(gt_bbox2d_mask.shape)
+        #     gt_mask_yxwh = mu.convert_box_format_tlbr_to_yxhw(gt_bbox2d_mask)
+        #     rpn_mask_yxwh = mu.convert_box_format_tlbr_to_yxhw(rpn_bbox2d_mask)
+        #     print('gt_mask_yxwh', gt_mask_yxwh[0:-1:100])
+        #     print('rpn_mask_yxwh', rpn_mask_yxwh[0:-1:100])
+        #     print('abs',scale_idx, torch.abs(gt_mask_yxwh[0:-1:100] - rpn_mask_yxwh[0:-1:100]))
 
         return F.smooth_l1_loss(rpn_bbox2d_per_scale, gt_bbox2d_per_scale, reduction='sum', beta=0.5)
 
@@ -129,25 +129,30 @@ class Box3dRegression(LossBase):
         pred_bbox3d = auxi['pred_select']['bbox3d'] * auxi["gt_aligned"]["object"]
         num_gt = torch.sum(auxi["gt_aligned"]["object"])
         loss = F.smooth_l1_loss(pred_bbox3d, gt_bbox3d, reduction='sum', beta=0.0)
-        return loss / num_gt
+        return loss / (num_gt + 0.00001)
 
 
 class YawRegression(LossBase):
     def __call__(self, features, pred, auxi):
         gt_yaw_rads = auxi["gt_aligned"]["yaw_rads"] * auxi["gt_aligned"]["object"]
-        pred_yaw_residuals = auxi["pred_select"]["yaw_rads"]
+        pred_yaw_residuals = auxi["pred_select"]["yaw_rads"] * auxi["gt_aligned"]["object"]
         num_gt = torch.sum(auxi["gt_aligned"]["object"])
         loss = F.smooth_l1_loss(pred_yaw_residuals, gt_yaw_rads, reduction='sum', beta=0.5)
-        return loss / num_gt
+        return loss / (num_gt + 0.00001)
 
 
 class CategoryClassification(LossBase):
     def __call__(self, features, pred, auxi):
+        # print('gt_object',auxi["gt_aligned"]["object"][:,:10])
+        # print('gt category',auxi["gt_aligned"]["category"][:,:10])
+        # print('pred category',auxi["pred_select"]["category"][:,:10])
         gt_classes = (auxi["gt_aligned"]["category"] * auxi["gt_aligned"]["object"]).type(torch.int64).view(-1)# (batch*512) torch.Size([4, 512, 1])
         pred_classes = (auxi["pred_select"]["category"] * auxi["gt_aligned"]["object"]).view(-1, 3)  # (batch*512 , 3) torch.Size([4, 512, 3])
+        # print('gt_classes CategoryClassification',gt_classes[0:15])
+        # print('pred_classes CategoryClassification',pred_classes[0:15])
         num_gt = torch.sum(auxi["gt_aligned"]["object"])
         loss = F.cross_entropy(pred_classes, gt_classes, reduction="sum")
-        return loss / num_gt
+        return loss / (num_gt + 0.00001)
 
 
 class YawClassification(LossBase):
@@ -157,4 +162,4 @@ class YawClassification(LossBase):
         num_gt = torch.sum(auxi["gt_aligned"]["object"])
         # pred(N,C), gt(N)
         loss = F.cross_entropy(pred_yaw, gt_yaw, reduction="sum")
-        return loss / num_gt
+        return loss / (num_gt + 0.00001)

@@ -13,7 +13,7 @@ class HistoryLog:
         self.start = timer()
         self.summary = dict()
 
-    def __call__(self, step, grtr, gt_aligned, pred, total_loss, loss_by_type):
+    def __call__(self, step, grtr, gt_aligned,gt_feature, pred, total_loss, loss_by_type):
         """
         :param step: integer step index
         :param grtr:
@@ -40,11 +40,8 @@ class HistoryLog:
         batch_data = {loss_name: loss_by_type[loss_name] for loss_name in loss_list}
         batch_data["total_loss"] = total_loss
 
-        box_objectness = self.analyze_box_objectness(gt_aligned, pred)
+        box_objectness = self.analyze_box_objectness(gt_feature, pred)
         batch_data.update(box_objectness)
-        if "feat_lane" in pred:
-            lane_objectness = self.analyze_lane_objectness(gt_aligned, pred)
-            batch_data.update(lane_objectness)
 
         num_ctgr = pred["category"].shape[-1] -1
         metric = count_true_positives(grtr, pred,  num_ctgr, per_class=False)
@@ -60,15 +57,10 @@ class HistoryLog:
 
     def analyze_box_objectness(self, grtr, pred):
         pos_obj, neg_obj = 0, 0
-        pos_obj_sc, neg_obj_sc = self.pos_neg_obj(grtr["object"], pred["objectness"])
+        pos_obj_sc, neg_obj_sc = self.pos_neg_obj(np.concatenate(grtr["object"],axis=1),np.concatenate(pred["rpn_feat_objectness"], axis=1))
         pos_obj += pos_obj_sc
         neg_obj += neg_obj_sc
         objectness = {"pos_obj": pos_obj, "neg_obj": neg_obj}
-        return objectness
-
-    def analyze_lane_objectness(self, grtr, pred):
-        pos_obj, neg_obj = self.pos_neg_obj(grtr["feat_lane"]["object"], pred["feat_lane"]["object"])
-        objectness = {"pos_lane_obj": pos_obj, "neg_lane_obj": neg_obj}
         return objectness
 
     def pos_neg_obj(self, grtr_obj_mask, pred_obj_prob):

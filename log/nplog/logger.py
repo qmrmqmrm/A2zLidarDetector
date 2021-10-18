@@ -13,9 +13,12 @@ import config as cfg
 
 
 class Logger:
-    def __init__(self, visual_log, exhuastive_log, ckpt_path, epoch):
+    def __init__(self, visual_log, exhuastive_log, ckpt_path, epoch, split):
+        self.split = split
         self.history_logger = HistoryLog()
-        self.visual_logger = VisualLog(ckpt_path, epoch) if visual_log else None
+        self.visual_logger = VisualLog(ckpt_path, epoch, split) if visual_log else None
+        self.aligned_iou_threshold = cfg.Loss.ALIGN_IOU_THRESHOLD
+        self.anchor_iou_threshold = cfg.Loss.ANCHOR_IOU_THRESHOLD
         # self.exhuastive_logger = ExhaustiveLogger(cfg.Logging.COLNUMS) if exhuastive_log else None
         self.nms = mu.NonMaximumSuppression()
 
@@ -47,29 +50,31 @@ class Logger:
         :return:
         """
         pred_slices = uf.merge_and_slice_features(pred)
-        # pred_slices = self.nms(pred_slices)
+        pred_slices = self.nms(pred_slices)
         batch = grtr['bbox2d'].shape[0]
-        # anchors = []
-        # for anchor in grtr['anchors']:
-        #     anchor = anchor.view(batch, -1, anchor.shape[-1])
-        #     anchor = mu.convert_box_format_yxhw_to_tlbr(anchor) #tlbr
-        #     anchors.append(anchor)
-        # anchors_cat = torch.cat(anchors, dim=1)
-        gt_aligned = self.matched_gt(grtr, pred['bbox2d'])
-        # gt_feature = self.matched_gt(grtr, anchors_cat[..., :-1])  # tlbr tlbr
-        # gt_feature = self.split_feature(anchors, gt_feature)
+        anchors = []
+        for anchor in grtr['anchors']:
+            anchor = anchor.view(batch, -1, anchor.shape[-1])
+            anchor = mu.convert_box_format_yxhw_to_tlbr(anchor) #tlbr
+            anchors.append(anchor)
+        anchors_cat = torch.cat(anchors, dim=1)
+        gt_aligned = self.matched_gt(grtr, pred['bbox2d'], self.aligned_iou_threshold)
+        gt_feature = self.matched_gt(grtr, anchors_cat[..., :-1, ], self.anchor_iou_threshold)  # tlbr tlbr
+        gt_feature = self.split_feature(anchors, gt_feature)
         grtr = self.convert_tensor_to_numpy(grtr)
         gt_aligned = self.convert_tensor_to_numpy(gt_aligned)
         pred_slices = self.convert_tensor_to_numpy(pred_slices)
         loss_by_type = self.convert_tensor_to_numpy(loss_by_type)
+        gt_feature = self.convert_tensor_to_numpy(gt_feature)
         total_loss = total_loss.to('cpu').detach().numpy()
 
-        self.history_logger(step, grtr, gt_aligned, pred_slices, total_loss, loss_by_type)
-        # if self.visual_logger:
-        #     self.visual_logger(step, grtr, gt_aligned, gt_feature, pred_slices)
+        self.history_logger(step, grtr, gt_aligned, gt_feature,  pred_slices, total_loss, loss_by_type)
+        if self.visual_logger:
+            self.visual_logger(step, grtr, gt_aligned, gt_feature, pred_slices)
         # if self.exhuastive_logger:
         #     self.exhuastive_logger(step, grtr, gt_aligned, pred_slices, loss_by_type, epoch, cfg.Logging.USE_ANCHOR)
-
+    def nms(self, pred):
+        pass
     def convert_tensor_to_numpy(self, features):
         numpy_feature = dict()
         for key in features:
@@ -84,14 +89,15 @@ class Logger:
                 numpy_feature[key] = data
         return numpy_feature
 
-    def matched_gt(self, grtr, pred_box):
+    def matched_gt(self, grtr, pred_box, iou_threshold):
+        batch_size = grtr['bbox2d'].shape[0]
         matched = {key: [] for key in
                    ['bbox3d', 'category', 'bbox2d', 'yaw', 'yaw_rads', 'anchor_id', 'object', 'negative']}
-        for i in range(4):
+        for i in range(batch_size):
             iou_matrix = uf.pairwise_iou(grtr['bbox2d'][i], pred_box[i])
             match_ious, match_inds = iou_matrix.max(dim=0)  # (height*width*anchor)
-            positive = (match_ious > 0.4).unsqueeze(-1)
-            negative = (match_ious < 0.1).unsqueeze(-1)
+            positive = (match_ious >= iou_threshold[1]).unsqueeze(-1)
+            negative = (match_ious < iou_threshold[0]).unsqueeze(-1)
             for key in matched:
                 if key == "negative":
                     matched["negative"].append(negative)

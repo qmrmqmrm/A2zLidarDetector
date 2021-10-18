@@ -93,11 +93,15 @@ class FastRCNNFCOutputHead(nn.Module):
         num_fc = cfg.Model.Head.NUM_FC
         fc_dim = cfg.Model.Head.FC_DIM
         self.fcs = []
+        self.bns = []
         for k in range(num_fc):
             fc = nn.Linear(int(np.prod(self._output_size)), fc_dim)
+            bn = nn.BatchNorm1d(fc_dim)
             self.add_module("fc{}".format(k + 1), fc)
+            self.add_module("bn{}".format(k + 1), bn)
             self.add_module("fc_relu{}".format(k + 1), nn.ReLU())
             self.fcs.append(fc)
+            self.bns.append(bn)
             self._output_size = fc_dim
         for layer in self.fcs:
             c2_xavier_fill(layer)
@@ -113,8 +117,8 @@ class FastRCNNFCOutputHead(nn.Module):
     def forward(self, x):
         if x.dim() > 2:
             x = torch.flatten(x, start_dim=1)
-        for layer in self.fcs:
-            x = F.relu(layer(x))
+        for layer, bn in zip(self.fcs, self.bns):
+            x = F.relu(bn(layer(x)))
 
         x = self.pred_layer(x)
         return x
