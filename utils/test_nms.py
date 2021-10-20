@@ -2,8 +2,6 @@ import torch
 import numpy as np
 import cv2
 from torchvision.ops import boxes as box_ops
-from detectron2.layers import ShapeSpec, batched_nms, cat, cross_entropy, nonzero_tuple, batched_nms_rotated
-from torchvision.ops import nms  # BC-compat
 
 
 def test_nms():

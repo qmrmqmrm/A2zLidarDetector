@@ -1,10 +1,7 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 import logging
 import torch
-from torch.nn.modules.utils import _ntuple
-import torch.distributed as dist
 from torch import nn
-from torch.autograd.function import Function
 
 
 class _NewEmptyTensorOp(torch.autograd.Function):
@@ -128,7 +125,7 @@ def get_norm(norm, out_channels):
         if len(norm) == 0:
             return None
         norm = {
-            "BN" : nn.BatchNorm2d,
+            "BN": nn.BatchNorm2d,
             "FrozenBN": FrozenBatchNorm2d,
             "GN": lambda channels: nn.GroupNorm(32, channels),
             "nnSyncBN": nn.SyncBatchNorm,  # keep for debugging

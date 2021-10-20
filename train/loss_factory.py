@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import cv2
 import train.loss_pool as loss
-import train.loss_util as lu
+
 import utils.util_function as uf
 import model.submodules.model_util as mu
 import config as cfg
@@ -135,13 +135,13 @@ class IntegratedLoss:
         """
         batch = grtr['bbox2d'].shape[0]
         anchors = list()
-        for anchor in grtr['anchors']:  #  batch, h, w, a, 4
+        for anchor in grtr['anchors']:  # batch, h, w, a, 4
             anchor = anchor.view(batch, -1, anchor.shape[-1])  # b hwa 4
             anchor = mu.convert_box_format_yxhw_to_tlbr(anchor)  # tlbr
             anchors.append(anchor)
         anchors_cat = torch.cat(anchors, dim=1)
         auxiliary = dict()
-        auxiliary["gt_aligned"] = self.matched_gt(grtr, pred['bbox2d'], self.align_iou_threshold) # tlbr tlbr
+        auxiliary["gt_aligned"] = self.matched_gt(grtr, pred['bbox2d'], self.align_iou_threshold)  # tlbr tlbr
         # print('gt_object', torch.sum(grtr['object']))
         # print('aligned object', torch.sum(auxiliary["gt_aligned"]['object']))
         auxiliary["gt_feature"] = self.matched_gt(grtr, anchors_cat[..., :-1], self.anchor_iou_threshold)  # tlbr tlbr
@@ -156,12 +156,9 @@ class IntegratedLoss:
         for i in range(self.batch_size):
             iou_matrix = uf.pairwise_iou(grtr['bbox2d'][i], pred_box[i])
 
-
             match_ious, match_inds = iou_matrix.max(dim=0)  # (height*width*anchor)
             positive = (match_ious >= iou_threshold[1]).unsqueeze(-1)
             negative = (match_ious < iou_threshold[0]).unsqueeze(-1)
-            # print('positive', torch.sum(positive))
-            # print('negative', torch.sum(negative))
             for key in matched:
                 if key == "negative":
                     matched["negative"].append(negative)
@@ -185,7 +182,7 @@ class IntegratedLoss:
         return slice_features
 
     def select_category(self, aligned, pred):
-        gt_cate = (aligned['category'].to(torch.int64)).unsqueeze(-1) # + torch.ones(aligned['category'].shape, dtype=torch.int64, device=self.device)
+        gt_cate = (aligned['category'].to(torch.int64)).unsqueeze(-1)
         select_pred = dict()
         for key in ['bbox3d', 'yaw', 'yaw_rads']:
             pred_key = pred[key]

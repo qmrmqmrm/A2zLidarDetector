@@ -4,7 +4,6 @@ import cv2
 import numpy as np
 
 import config as cfg
-from model.submodules.matcher import Matcher
 import model.submodules.model_util as mu
 
 

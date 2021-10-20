@@ -3,7 +3,6 @@ import numpy as np
 import json
 import cv2
 import math
-
 import torch
 
 from dataloader.loader_base import DatasetBase
@@ -35,7 +34,7 @@ class A2D2Dataset(DatasetBase):
     def list_frames(self, root_dir, split):
         img_files = sorted(glob.glob(os.path.join(root_dir, split, '*/image', '*.png')))
 
-        return img_files[:400]
+        return img_files
 
     def __getitem__(self, index):
         """

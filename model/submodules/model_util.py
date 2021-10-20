@@ -151,6 +151,7 @@ class NonMaximumSuppression:
         self.iou_thresh = iou_thresh
         self.score_thresh = score_thresh
         self.category_names = category_names
+        self.device = cfg.Hardware.DEVICE
 
     def __call__(self, pred, max_out=None, iou_thresh=None, score_thresh=None, merged=False):
         """
@@ -178,55 +179,10 @@ class NonMaximumSuppression:
         self.iou_thresh = iou_thresh if iou_thresh is not None else self.iou_thresh
         self.score_thresh = score_thresh if score_thresh is not None else self.score_thresh
 
-        nms_res = self.pure_nms(pred, merged)
+        nms_res = self.pure_nms(pred)
         return nms_res
 
-
-    def select_proposals(self, pred):
-        """
-
-        :param pred:
-            {
-            'bbox2d' : torch.Size([batch, 512, 4(tlbr)])
-            'objectness' : torch.Size([batch, 512, 1])
-            'anchor_id' torch.Size([batch, 512, 1])
-            'rpn_feat_bbox2d' : list(torch.Size([batch, height/stride* width/stride* anchor, 4(tlbr)])
-            'rpn_feat_objectness' : list(torch.Size([batch, height/stride* width/stride* anchor, 1])
-            'rpn_feat_anchor_id' : list(torch.Size([batch, height/stride* width/stride* anchor, 1])
-            'category' : torch.Size([batch, 512, class_num, 1])
-            'bbox3d' : torch.Size([batch, 512, class_num, 6])
-            'yaw' : torch.Size([batch, 512, class_num, 12])
-            'yaw_rads' : torch.Size([batch, 512, class_num, 12])
-            }
-        :return: selected_proposals :
-        {
-        'bbox2d' : list(torch.Size([4, num_proposals, 4(tlbr)]))
-        'objectness' :list(torch.Size([4, num_proposals, 1]))
-        'anchor_id' :list(torch.Size([4, num_proposals, 1]))
-        }
-        """
-        selected_proposals = {'bbox2d': [], 'objectness': [], 'anchor_id': []}
-        for i, (bbox2d, score, anchor_id) in enumerate(
-                zip(pred['bbox2d'], pred['objectness'], pred['anchor_id'])):
-            keep = box_ops.batched_nms(bbox2d, score.view(-1), self.indices[i], self.iou_thresh[i])
-            bbox2d = bbox2d[keep]
-            score = score[keep]
-            anchor_id = anchor_id[keep]
-            if keep.numel() < self.num_proposals:
-                padding = torch.zeros(self.num_proposals - keep.numel(), device=self.device).view(-1, 1)
-                box_padding = torch.cat([padding] * 4, dim=-1)
-                score = torch.cat([score, padding])
-                anchor_id = torch.cat([anchor_id, padding])
-                bbox2d = torch.cat([bbox2d, box_padding])
-            selected_proposals['bbox2d'].append(bbox2d)
-            selected_proposals['objectness'].append(score)
-            selected_proposals['anchor_id'].append(anchor_id)
-
-        for key in selected_proposals:
-            selected_proposals[key] = torch.stack(selected_proposals[key], dim=0)
-
-        return selected_proposals
-    def pure_nms(self, pred, merged=False):
+    def pure_nms(self, pred):
         """
         :param pred:
             {
@@ -246,129 +202,42 @@ class NonMaximumSuppression:
         """
         boxes = pred['bbox2d']  # (batch, N, 4(tlbr))
         categories = torch.argmax(pred["category"], dim=-1)  # (batch, N)
-
-        minor_ctgr = torch.zeros_like(categories, dtype=torch.float32)
-
         best_probs = torch.amax(pred["category"], dim=-1)  # (batch, N)
         objectness = pred["objectness"][..., 0]  # (batch, N)
         scores = objectness * best_probs  # (batch, N)
-        print(scores[:,0:-1:50])
-        print(scores.shape)
         batch, numbox, numctgr = pred["category"].shape
-
-        anchor_inds = pred["anchor_id"][..., 0]
-
         batch_indices = [[] for i in range(batch)]
-        for ctgr_idx in range(1, numctgr):
+        for ctgr_idx in range(numctgr):
             ctgr_mask = (categories == ctgr_idx).to(dtype=torch.int64)  # (batch, N)
-            print(ctgr_mask.shape, ctgr_mask.dtype)
             ctgr_boxes = boxes * ctgr_mask[..., None]  # (batch, N, 4)
 
             ctgr_scores = scores * ctgr_mask  # (batch, N)
             for frame_idx in range(batch):
                 # NMS
-                print('categories',categories[frame_idx].shape)
-                print('categories',categories[frame_idx][0:-1:10])
-                print('categories',torch.where(categories[frame_idx]))
                 selected_indices = box_ops.batched_nms(ctgr_boxes[frame_idx], ctgr_scores[frame_idx],
                                                        categories[frame_idx], self.iou_thresh[ctgr_idx])
                 print(selected_indices.shape)
-                selected_indices = selected_indices[:self.max_out[ctgr_idx]]
-                numsel = selected_indices.shape[0]
-                print(self.max_out[ctgr_idx])
-                print(numsel)
-                selected_indices = selected_indices
-                zero = torch.ones((numsel - self.max_out[ctgr_idx])) * -1
+
+                numsel = ctgr_boxes[frame_idx].shape[0]
+                zero = torch.ones((numsel - selected_indices.shape[0]), device=self.device) * -1
                 selected_indices = torch.cat([selected_indices, zero], dim=0)
                 batch_indices[frame_idx].append(selected_indices)
-
-        # make batch_indices, valid_mask as fixed shape tensor
         batch_indices = [torch.cat(ctgr_indices, dim=-1) for ctgr_indices in batch_indices]
         batch_indices = torch.stack(batch_indices, dim=0)  # (batch, K*max_output)
-        valid_mask = (batch_indices >= 0).to(type=torch.float32)  # (batch, K*max_output)
-        batch_indices = torch.maximum(batch_indices, 0)
+        batch_indices = torch.maximum(batch_indices, torch.zeros(batch_indices.shape, device=self.device)).to(
+            dtype=torch.int64)
 
-        # list of (batch, N) -> (batch, N, 4)
-        categories = np.cast(categories, dtype=np.float32)
-        # "bbox": 4, "object": 1, "category": 1, "minor_ctgr": 1, "distance": 1, "score": 1, "anchor_inds": 1
-        result = np.stack([objectness, categories, minor_ctgr, best_probs, scores, anchor_inds], axis=-1)
+        result = {'objectness': [], 'bbox2d': [], 'bbox3d': [], 'anchor_id': [], 'category': [], 'yaw': [],
+                  'yaw_rads': [], }
 
-        result = np.concat([pred["yxhw"], result], axis=-1)  # (batch, N, 10)
-        result = np.gather(result, batch_indices, batch_dims=1)  # (batch, K*max_output, 10)
-        result = result * valid_mask[..., np.newaxis]  # (batch, K*max_output, 10)
+        for i, indices in enumerate(batch_indices.to(dtype=torch.int64)):
+            result['objectness'].append(pred['objectness'][i, indices])
+            result['bbox2d'].append(pred['bbox2d'][i, indices])
+            result['bbox3d'].append(pred['bbox3d'][i, indices])
+            result['anchor_id'].append(pred['anchor_id'][i, indices])
+            result['category'].append(pred['category'][i, indices])
+            result['yaw'].append(pred['yaw'][i, indices])
+            result['yaw_rads'].append(pred['yaw_rads'][i, indices])
+        for key, val in result.items():
+            result[key] = torch.stack(val, dim=0)
         return result
-
-    def merged_scale(self, pred):
-        scales = [key for key in pred if "feature" in key]
-        scale_order = cfg.Model.Output.FEATURE_ORDER
-        for scale in scales:
-            feature_shape = pred[scale]["object"].shape
-            ones_map = np.ones(feature_shape, dtype=np.float32)
-            if scale == scale_order[0]:
-                pred[scale].update(self.anchor_indices(feature_shape, ones_map, range(0, 3)))
-            elif scale == scale_order[1]:
-                pred[scale].update(self.anchor_indices(feature_shape, ones_map, range(3, 6)))
-            elif scale == scale_order[2]:
-                pred[scale].update(self.anchor_indices(feature_shape, ones_map, range(6, 9)))
-        slice_keys = list(pred[scales[0]].keys())  # ['yxhw', 'object', 'category']
-        merged_pred = {}
-        # merge pred features over scales
-        for key in slice_keys:
-            # list of (batch, HWA in scale, dim)
-            scaled_preds = [pred[scale_name][key] for scale_name in scales]
-            scaled_preds = np.concat(scaled_preds, axis=1)  # (batch, N, dim)
-            merged_pred[key] = scaled_preds
-
-        return merged_pred
-
-    def anchor_indices(self, feat_shape, ones_map, anchor_list):
-        batch, hwa, _ = feat_shape
-        num_anchor = cfg.Model.Output.NUM_ANCHORS_PER_SCALE
-        anchor_index = np.cast(anchor_list, dtype=np.float32)[..., np.newaxis]
-        split_anchor_shape = np.reshape(ones_map, (batch, hwa // num_anchor, num_anchor, 1))
-
-        split_anchor_map = split_anchor_shape * anchor_index
-        merge_anchor_map = np.reshape(split_anchor_map, (batch, hwa, 1))
-
-        return {"anchor_ind": merge_anchor_map}
-
-    def compete_diff_categories(self, nms_res, foo_ctgr, bar_ctgr, iou_thresh, score_thresh):
-        """
-        :param nms_res: (batch, numbox, 10)
-        :return:
-        """
-        batch, numbox = nms_res.shape[:2]
-        boxes = nms_res[..., :4]
-        category = nms_res[..., 5:6]
-        score = nms_res[..., -1:]
-
-        foo_ctgr = self.category_names.index(foo_ctgr)
-        bar_ctgr = self.category_names.index(bar_ctgr)
-        boxes_tlbr = uf.convert_box_format_yxhw_to_tlbr(boxes)
-        batch_survive_mask = []
-        for frame_idx in range(batch):
-            foo_mask = np.cast(category[frame_idx] == foo_ctgr, dtype=np.float32)
-            bar_mask = np.cast(category[frame_idx] == bar_ctgr, dtype=np.float32)
-            target_mask = foo_mask + bar_mask
-            target_score_mask = foo_mask + (bar_mask * 0.9)
-            target_boxes = boxes_tlbr[frame_idx] * target_mask
-            target_score = score[frame_idx] * target_score_mask
-
-            selected_indices = np.image.non_max_suppression(
-                boxes=target_boxes,
-                scores=target_score[:, 0],
-                max_output_size=20,
-                iou_threshold=iou_thresh,
-                score_threshold=score_thresh,
-            )
-            if np.size(selected_indices) != 0:
-                selected_onehot = np.one_hot(selected_indices, depth=numbox, axis=-1)  # (20, numbox)
-                survive_mask = 1 - target_mask + np.reduce_max(selected_onehot, axis=0)[..., np.newaxis]  # (numbox,)
-                batch_survive_mask.append(survive_mask)
-
-        if len(batch_survive_mask) == 0:
-            return nms_res
-
-        batch_survive_mask = np.stack(batch_survive_mask, axis=0)  # (batch, numbox)
-        nms_res = nms_res * batch_survive_mask
-        return nms_res

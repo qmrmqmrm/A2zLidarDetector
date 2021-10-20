@@ -13,8 +13,9 @@ import model.submodules.model_util as mu
 from utils.image_list import ImageList
 import utils.util_function as uf
 
+
 class ModelBase(nn.Module):
-    def __init__(self, backbone,neck, rpn, head):
+    def __init__(self, backbone, neck, rpn, head):
         super(ModelBase, self).__init__()
         self.device = torch.device(cfg.Hardware.DEVICE)
         self.backbone = backbone
@@ -40,8 +41,8 @@ class GeneralizedRCNN(ModelBase):
     3. Per-region feature extraction and prediction
     """
 
-    def __init__(self, backbone,neck, rpn, head):
-        super().__init__(backbone,neck, rpn, head)
+    def __init__(self, backbone, neck, rpn, head):
+        super().__init__(backbone, neck, rpn, head)
         assert len(cfg.Model.Structure.PIXEL_MEAN) == len(cfg.Model.Structure.PIXEL_STD)
         num_channels = len(cfg.Model.Structure.PIXEL_MEAN)
         pixel_mean = torch.Tensor(cfg.Model.Structure.PIXEL_MEAN).to(self.device).view(num_channels, 1, 1)

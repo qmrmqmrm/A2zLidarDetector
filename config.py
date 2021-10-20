@@ -67,6 +67,7 @@ class Model:
         ANCHOR_SIZES = [16, 64, 80]
         ANCHOR_RATIOS = [0.5, 1., 2.]
         NMS_IOU_THRESH = 0.5
+        MATCH_THRESHOLD = [0.1, 0.4]
         NMS_SCORE_THRESH = 0.0
         BBOX_REG_WEIGHTS = (1.0, 1.0, 1.0, 1.0)
         NUM_PROPOSALS = [3000, 1000]
@@ -103,21 +104,21 @@ class Model:
 
 
 class Train:
-    CKPT_NAME = "nms_test"
+    CKPT_NAME = "obj_focal"
 
     MODE = ["eager", "graph"][0]
-    BATCH_SIZE = 4
+    BATCH_SIZE = 2
     TRAINING_PLAN = params.TrainingPlan.A2D2_SIMPLE
 
 
 class Loss:
-    ALIGN_IOU_THRESHOLD = [0.3, 0.1]
+    ALIGN_IOU_THRESHOLD = [0.1, 0.4]
     ANCHOR_IOU_THRESHOLD = [0.1, 0.6]
 
 
 class NMS:
     MAX_OUT = [5, 5, 5]
-    IOU_THRESH = [0.1, 0.1, 0.1]
+    IOU_THRESH = [0.9, 0.9, 0.9]
     SCORE_THRESH = [0.25, 0.22, 0.26]
     IOU_CANDIDATES = np.arange(0.1, 0.52, 0.02)
     # IOU_CANDIDATES = np.arange(0.1, 0.5, 0.1)
@@ -128,7 +129,7 @@ class NMS:
 
 
 class Validation:
-    TP_IOU_THRESH = [0.5, 0.5, 0.5, 0.5]
+    TP_IOU_THRESH = [0.1, 0.1, 0.1, 0.1]
     DISTANCE_LIMIT = 25
     VAL_EPOCH = "latest"
     MAP_TP_IOU_THRESH = [0.5]

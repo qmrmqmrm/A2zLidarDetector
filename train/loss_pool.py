@@ -106,9 +106,21 @@ class ObjectClassification(LossBase):
         for scale_idx in range(3):
             loss_per_scale = self.cal_obj_loss_per_scale(pred, auxi, scale_idx)
             total_loss += loss_per_scale
+        print('obj loss :', total_loss)
         # rpn_object = torch.cat(pred['rpn_feat_objectness'], dim=1)  # (b, hwa,1) * 3
         # gt_object = torch.cat(auxi['gt_feature']['object'], dim=1)
-        # loss = F.binary_cross_entropy_with_logits(rpn_object, gt_object, reduction="sum")
+        # gt_negative = torch.cat(auxi['gt_feature']['negative'], dim=1)
+        # print('pos num', torch.sum(gt_object))
+        # print('neg num', torch.sum(gt_negative))
+        # # loss = F.binary_cross_entropy_with_logits(rpn_object, gt_object, reduction="sum")
+        # ce_loss = F.binary_cross_entropy_with_logits(rpn_object, gt_object)
+        # print('pos sum', torch.sum(ce_loss * gt_object))
+        # print('neg sum', torch.sum(ce_loss * gt_negative))
+        # positive_ce = torch.sum(ce_loss * gt_object) / (torch.sum(gt_object) + 0.00001)
+        # negative_ce = torch.sum(ce_loss * gt_negative) / (torch.sum(gt_negative) + 0.00001)
+        # print('positive_ce', positive_ce)
+        # print('negative_ce', negative_ce)
+        # loss = positive_ce + negative_ce
         # print('object loss',loss)
         return total_loss
 
@@ -116,10 +128,16 @@ class ObjectClassification(LossBase):
         gt_object = auxi['gt_feature']['object'][scale_idx]
         gt_negative = auxi['gt_feature']['negative'][scale_idx]
         rpn_object = pred['rpn_feat_objectness'][scale_idx]
-        ce_loss = F.binary_cross_entropy_with_logits(rpn_object, gt_object)
+        focal_loss = torch.pow(rpn_object - gt_object, 2)
+        ce_loss = F.binary_cross_entropy_with_logits(rpn_object, gt_object, reduction='none') * focal_loss
+        # ce_loss = ce_loss * focal_loss * (gt_object + gt_negative)
+        # scale_loss = torch.sum(ce_loss)
         positive_ce = torch.sum(ce_loss * gt_object) / (torch.sum(gt_object) + 0.00001)
-        negative_ce = torch.sum(ce_loss * gt_negative) / (torch.sum(gt_negative) + 0.00001)
+        negative_ce = torch.sum(ce_loss * gt_negative) / (torch.sum(gt_negative) + 0.00001) * 4
+        print('positive_ce', positive_ce)
+        print('negative_ce', negative_ce)
         scale_loss = positive_ce + negative_ce
+        print('scale_loss :', scale_loss)
         return scale_loss
 
 
@@ -143,13 +161,8 @@ class YawRegression(LossBase):
 
 class CategoryClassification(LossBase):
     def __call__(self, features, pred, auxi):
-        # print('gt_object',auxi["gt_aligned"]["object"][:,:10])
-        # print('gt category',auxi["gt_aligned"]["category"][:,:10])
-        # print('pred category',auxi["pred_select"]["category"][:,:10])
         gt_classes = (auxi["gt_aligned"]["category"] * auxi["gt_aligned"]["object"]).type(torch.int64).view(-1)# (batch*512) torch.Size([4, 512, 1])
         pred_classes = (auxi["pred_select"]["category"] * auxi["gt_aligned"]["object"]).view(-1, 3)  # (batch*512 , 3) torch.Size([4, 512, 3])
-        # print('gt_classes CategoryClassification',gt_classes[0:15])
-        # print('pred_classes CategoryClassification',pred_classes[0:15])
         num_gt = torch.sum(auxi["gt_aligned"]["object"])
         loss = F.cross_entropy(pred_classes, gt_classes, reduction="sum")
         return loss / (num_gt + 0.00001)

@@ -19,7 +19,7 @@ class VisualLog:
             os.makedirs(self.vlog_path)
         self.categories = {i: ctgr_name for i, ctgr_name in enumerate(cfg.Datasets.Standard.CATEGORY_NAMES)}
 
-    def __call__(self, step, grtr, gt_aligned, gt_feature, pred):
+    def __call__(self, step, grtr,pred_nms):
         """
         :param step: integer step index
         :param grtr:
@@ -54,49 +54,8 @@ class VisualLog:
             'yaw_rads' : torch.Size([batch, 512, class_num, 12])
             }
         """
-        # grtr_bbox_augmented = self.exapand_grtr_bbox(grtr, pred)
-        # if not os.path.isdir(self.vlog_path + '/obj_test'):
-        #     os.mkdir(self.vlog_path + '/obj_test')
-        splits = split_true_false(grtr, pred, cfg.Validation.TP_IOU_THRESH)
+        splits = split_true_false(grtr, pred_nms, cfg.Validation.TP_IOU_THRESH)
         batch = splits["grtr_tp"]["bbox2d"].shape[0]
-        feature_bbox2d = gt_feature['bbox2d']
-        feature_object = gt_feature['object']
-
-        # for batch_obj in range(gt_feature['object'][0].shape[0]):
-        #     img_per_step = []
-        #     for scale_obj, scale_name in zip(gt_feature['object'], ['small', 'medium', 'large']):
-        #         check_object_img = scale_obj.astype(np.uint8)
-        #         print(scale_obj.shape)
-        #         hw_size = np.sqrt(check_object_img.shape[1] / 3).astype(np.int16) # batch, hwa, 1
-        #         check_object_img = np.reshape(check_object_img, (2, hw_size, hw_size, 3)) * 255
-        #         check_object_img = cv2.resize(check_object_img[batch_obj, ...], (640, 640))
-        #         check_object_img[:, -1, :] = 255
-        #         img_per_step.append(check_object_img)
-        #     img_per_step = np.concatenate(img_per_step, axis=1)
-        #     print('img_per_step.shape', img_per_step.shape)
-        #     filename = op.join(self.vlog_path + '/obj_test', f"grid_test_{step * gt_feature['object'][0].shape[0] + batch_obj}.jpg")
-        #     cv2.imwrite(filename, img_per_step)
-
-        # anchors = []
-        # for anchor in grtr['anchors']:
-        #     anchor = anchor.reshape(batch, -1, anchor.shape[-1])
-        #     anchor = mu.convert_box_format_yxhw_to_tlbr(anchor) #tlbr
-        #     anchors.append(anchor)
-        # for scale, anchor,bbox2d, object in zip(cfg.Scales.DEFAULT_FEATURE_SCALES, anchors,feature_bbox2d, feature_object):
-        #     bbox2d = bbox2d * object
-        #
-        #     for i in range(batch):
-        #         org_img = grtr["image"][i].copy()
-        #         bbox2d_per_img = bbox2d[i]
-        #         anchor_per_img = anchor[i]
-        #
-        #         valid_mask = bbox2d_per_img[:, 2] > 0  # (N,) h>0
-        #         bbox2d_per_img = bbox2d_per_img[valid_mask, :]
-        #         anchor_per_img = anchor_per_img[valid_mask, :-1]
-        #         image_pred = self.draw_rpn_boxes(org_img,bbox2d_per_img, i, (0, 255, 0))
-        #         image_pred = self.draw_rpn_boxes(image_pred,anchor_per_img, i, (0, 0, 255))
-        #         filename = op.join(self.vlog_path, f"anchor_{step * batch + i :05d}scale{scale}.jpg")
-        #         cv2.imwrite(filename, image_pred)
 
         for i in range(batch):
             # grtr_log_keys = ["pred_object", "pred_ctgr_prob", "pred_score", "distance"]
@@ -119,9 +78,7 @@ class VisualLog:
                 cv2.imshow("detection_result", vlog_image)
                 cv2.waitKey(10)
             filename = op.join(self.vlog_path, f"{step * batch + i:05d}.jpg")
-            filename_ = op.join(self.vlog_path, f"{step * batch + i:05d}_.jpg")
             cv2.imwrite(filename, vlog_image)
-            cv2.imwrite(filename_, vlog_image)
 
     def draw_boxes(self, image, bboxes, frame_idx, color):
         """

@@ -13,7 +13,7 @@ class HistoryLog:
         self.start = timer()
         self.summary = dict()
 
-    def __call__(self, step, grtr, gt_aligned,gt_feature, pred, total_loss, loss_by_type):
+    def __call__(self, step, grtr, gt_feature, pred, total_loss, loss_by_type):
         """
         :param step: integer step index
         :param grtr:
@@ -39,12 +39,11 @@ class HistoryLog:
         loss_list = [loss_name for loss_name, loss_tensor in loss_by_type.items() if loss_tensor.ndim == 0]
         batch_data = {loss_name: loss_by_type[loss_name] for loss_name in loss_list}
         batch_data["total_loss"] = total_loss
-
         box_objectness = self.analyze_box_objectness(gt_feature, pred)
         batch_data.update(box_objectness)
 
-        num_ctgr = pred["category"].shape[-1] -1
-        metric = count_true_positives(grtr, pred,  num_ctgr, per_class=False)
+        num_ctgr = pred["category"].shape[-1] - 1
+        metric = count_true_positives(grtr, pred, num_ctgr, per_class=False)
         batch_data.update(metric)
         batch_data = self.set_precision(batch_data, 5)
         col_order = list(batch_data.keys())

@@ -3,9 +3,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from torchvision.ops import boxes as box_ops
-import itertools
 
-from model.submodules.box_regression import Box2BoxTransform
 import utils.util_function as uf
 import config as cfg
 import model.submodules.model_util as mu
@@ -19,7 +17,7 @@ class RPN(nn.Module):
         self.input_channels = cfg.Model.Neck.OUTPUT_CHANNELS
         self.num_anchor = len(cfg.Model.RPN.ANCHOR_RATIOS)
         self.num_proposals = (cfg.Model.RPN.NUM_PROPOSALS[0] if self.training else cfg.Model.RPN.NUM_PROPOSALS[1])
-        self.match_thresh = {'high': 0.4, 'low': 0.1}
+        self.match_thresh = cfg.Model.RPN.MATCH_THRESHOLD
         self.indices = self.init_indices(cfg.Train.BATCH_SIZE)
         self.iou_threshold = cfg.Model.RPN.NMS_IOU_THRESH
         self.score_threshold = cfg.Model.RPN.NMS_SCORE_THRESH
@@ -138,9 +136,9 @@ class RPN(nn.Module):
 
             bbox2d_yxhw = mu.apply_box_deltas(anchors, bbox2d_logit)
             bbox2d_tlbr = mu.convert_box_format_yxhw_to_tlbr(bbox2d_yxhw)  # tlbr
-            # object_logits_numpy = object_logits.to('cpu').detach().numpy()
-            # object_quant = np.quantile(object_logits_numpy, np.arange(0, 1.1, 0.1))
-            # print("object logits quantile:", object_quant)
+            object_logits_numpy = object_logits.to('cpu').detach().numpy()
+            object_quant = np.quantile(object_logits_numpy, np.arange(0, 1.1, 0.1))
+            print("object logits quantile:", object_quant)
             objectness = torch.sigmoid(object_logits)
             proposals['bbox2d'].append(bbox2d_tlbr)
             proposals['bbox2d_yxhw'].append(bbox2d_yxhw)
@@ -175,10 +173,11 @@ class RPN(nn.Module):
         # sort by score -> select top 3000 indices -> slice boxes, score, index
         bbox2d = cat_proposal['bbox2d']
         score = cat_proposal['objectness']
+
         anchor_id = cat_proposal['anchor_id']
-        # score_numpy = score.to('cpu').detach().numpy()
-        # score_quant = np.quantile(score_numpy, np.arange(0, 1.1, 0.1))
-        # print("score quantile:", score_quant)
+        score_numpy = score.to('cpu').detach().numpy()
+        score_quant = np.quantile(score_numpy, np.array([0, 0.2, 0.4, 0.6, 0.8, 0.9, 0.95, 0.995, 0.999, 1]))
+        print("score quantile:", score_quant)
 
         score_sort, sort_idx = torch.sort(score, dim=1, descending=True)
         # score_mask = score_sort > 0.3
@@ -268,8 +267,8 @@ class RPN(nn.Module):
             # (fix_num, num_proposals + fix_num)
             iou_matrix = uf.pairwise_iou(gt_bbox2d[batch_index], proposal_gt_box[batch_index])
             match_ious, match_inds = iou_matrix.max(dim=0)  # (num_proposals + fix_num)
-            positive = torch.nonzero(match_ious > self.match_thresh['high'])
-            negative = torch.nonzero(match_ious < self.match_thresh['low'])
+            positive = torch.nonzero(match_ious > self.match_thresh[1])
+            negative = torch.nonzero(match_ious < self.match_thresh[0])
 
             num_pos = int(self.num_sample * 0.25)
             num_pos = min(positive.numel(), num_pos)
