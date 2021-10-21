@@ -42,7 +42,7 @@ class RPN(nn.Module):
         indices = [torch.ones(self.num_proposals, dtype=torch.int64) * b for b in range(batch_size)]
         return indices
 
-    def forward(self, features, grtr=None):
+    def forward(self, features, anchors, grtr=None):
         """
 
         :param features: list of [batch, self.input_channels, height/scale, width/scale]
@@ -73,11 +73,11 @@ class RPN(nn.Module):
         pred_objectness_logits, pred_anchor_deltas = self.forward_layers(features)
 
         logit_features = self.merge_features(pred_objectness_logits, pred_anchor_deltas)
-        proposals_aux = self.decode_features(logit_features, grtr['anchors'])
+        proposals_aux = self.decode_features(logit_features, anchors)
         with torch.no_grad():
             proposal = self.sort_proposals(proposals_aux)
             proposals = self.select_proposals(proposal)
-            if self.training:
+            if grtr:
                 proposals = self.sample_proposals(proposals, grtr)
         return proposals, proposals_aux
 

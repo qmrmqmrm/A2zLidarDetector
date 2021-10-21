@@ -51,19 +51,24 @@ def split_true_false(grtr, pred, iou_thresh):
 
 def split_tp_fp_fn(grtr, pred, iou_thresh):
     batch, M, _ = pred["category"].shape
+    # best_cate = np.argmax(pred["category"], axis=-1)
+    # pred["category"] = np.expand_dims(best_cate,-1)
 
     valid_mask = grtr["object"]
     # iou = uf.pairwise_batch_iou(grtr["bbox2d"], pred["rpn_bbox2d"])  # (batch, N, M)
     iou = uf.compute_iou_general(grtr["bbox2d"], pred["bbox2d"], grtr_tlbr=True, pred_tlbr=True)  # (batch, N, M)
-
     best_iou = np.max(iou, axis=-1)  # (batch, N)
-
+    print('best_iou', best_iou)
     best_idx = np.argmax(iou, axis=-1)  # (batch, N)
     if len(iou_thresh) > 1:
         iou_thresh = get_iou_thresh_per_class(grtr["category"], iou_thresh) # (batch, 15,1) iou_tresh len : 3
     iou_match = best_iou > iou_thresh  # (batch, N)
+    print('iou_match', iou_match.shape)
+    print('iou_match', iou_match)
     pred_ctgr_aligned = numpy_gather(pred["category"], best_idx, 1)  # (batch, N, 8)
+    print('pred_ctgr_aligned', pred_ctgr_aligned)
     ctgr_match = grtr["category"][..., 0] == pred_ctgr_aligned  # (batch, N)
+    print('ctgr_match', ctgr_match)
     grtr_tp_mask = np.expand_dims(iou_match * ctgr_match, axis=-1)  # (batch, N, 1)
     grtr_fn_mask = ((1 - grtr_tp_mask) * valid_mask).astype(np.float32)  # (batch, N, 1)
     grtr_tp = {key: val * grtr_tp_mask for key, val in grtr.items() if key in pp.LossComb.BIRDNET}

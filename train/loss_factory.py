@@ -66,7 +66,6 @@ class IntegratedLoss:
         :return:
         """
         pred_slices = uf.merge_and_slice_features(predictions)
-
         pred = uf.slice_class(pred_slices)
         total_loss = 0
         loss_by_type = {loss_name: 0 for loss_name in self.loss_objects}
@@ -77,7 +76,7 @@ class IntegratedLoss:
             weight = self.loss_weights[loss_name] if loss_name in self.loss_weights else self.loss_weights[loss_name]
             total_loss += scalar_loss * weight
             loss_by_type[loss_name] += scalar_loss * weight
-        return total_loss, loss_by_type
+        return total_loss, loss_by_type, auxi
 
     def prepare_box_auxiliary_data(self, grtr, pred):
         """
@@ -142,8 +141,6 @@ class IntegratedLoss:
         anchors_cat = torch.cat(anchors, dim=1)
         auxiliary = dict()
         auxiliary["gt_aligned"] = self.matched_gt(grtr, pred['bbox2d'], self.align_iou_threshold)  # tlbr tlbr
-        # print('gt_object', torch.sum(grtr['object']))
-        # print('aligned object', torch.sum(auxiliary["gt_aligned"]['object']))
         auxiliary["gt_feature"] = self.matched_gt(grtr, anchors_cat[..., :-1], self.anchor_iou_threshold)  # tlbr tlbr
         auxiliary["gt_feature"] = self.split_feature(anchors, auxiliary["gt_feature"])
         auxiliary["pred_select"] = self.select_category(auxiliary['gt_aligned'], pred)

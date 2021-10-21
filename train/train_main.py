@@ -41,19 +41,21 @@ def train_by_plan(dataset_name, end_epoch, learning_rate, loss_weights, model_sa
     test_data_loader = get_dataset(dataset_name, 'test', batch_size)
     model_factory = ModelFactory(dataset_name)
     model = model_factory.make_model()
+    model = try_load_weights(ckpt_path, model)
+    print(model)
     loss_object = IntegratedLoss(batch_size, loss_weights, valid_category)
     optimizer = build_optimizer(model, learning_rate)
     trainer, validator = get_train_val(model, loss_object, optimizer, start_epoch)
     log_file = LogFile(ckpt_path)
     for epoch in range(start_epoch, end_epoch):
         print(f"========== Start dataset : {dataset_name} epoch: {epoch + 1}/{end_epoch} ==========")
-        train_result = trainer.run_epoch(False, epoch, train_data_loader)
+        train_result = trainer.run_epoch(True, epoch, train_data_loader)
         val_result = validator.run_epoch(True, epoch, test_data_loader)
         save_model_ckpt(ckpt_path, model)
         log_file.save_log(epoch, train_result, val_result)
 
-    if model_save:
-        save_model_ckpt(ckpt_path, model, f"ep{end_epoch:02d}")
+    # if model_save:
+    #     save_model_ckpt(ckpt_path, model, f"ep{end_epoch:02d}")
 
 
 def save_model_ckpt(ckpt_path, model, weights_suffix='latest'):
@@ -83,10 +85,10 @@ def read_previous_epoch(ckpt_path):
 
 
 def try_load_weights(ckpt_path, model, weights_suffix='latest'):
-    ckpt_file = op.join(ckpt_path, f"model_{weights_suffix}.h5")
+    ckpt_file = op.join(ckpt_path, f"model_{weights_suffix}.pt")
     if op.isfile(ckpt_file):
         print(f"===== Load weights from checkpoint: {ckpt_file}")
-        model = torch.load(ckpt_file)
+        model.load_state_dict(torch.load(ckpt_file))
     else:
         print(f"===== Failed to load weights from {ckpt_file}\n\ttrain from scratch ...")
     return model

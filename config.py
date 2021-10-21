@@ -68,8 +68,7 @@ class Model:
         ANCHOR_RATIOS = [0.5, 1., 2.]
         NMS_IOU_THRESH = 0.5
         MATCH_THRESHOLD = [0.1, 0.4]
-        NMS_SCORE_THRESH = 0.0
-        BBOX_REG_WEIGHTS = (1.0, 1.0, 1.0, 1.0)
+        NMS_SCORE_THRESH = 0.3
         NUM_PROPOSALS = [3000, 1000]
         NUM_SAMPLE = 512
 
@@ -104,7 +103,7 @@ class Model:
 
 
 class Train:
-    CKPT_NAME = "obj_focal"
+    CKPT_NAME = "cate_img"
 
     MODE = ["eager", "graph"][0]
     BATCH_SIZE = 2
@@ -118,21 +117,14 @@ class Loss:
 
 class NMS:
     MAX_OUT = [5, 5, 5]
-    IOU_THRESH = [0.9, 0.9, 0.9]
+    IOU_THRESH = [0.1, 0.1, 0.1]
     SCORE_THRESH = [0.25, 0.22, 0.26]
-    IOU_CANDIDATES = np.arange(0.1, 0.52, 0.02)
-    # IOU_CANDIDATES = np.arange(0.1, 0.5, 0.1)
-    # SCORE_CANDIDATES = np.arange(0.02, 0.32, 0.02)
-    SCORE_CANDIDATES = np.arange(0., 1.1, 0.1)
-    MAX_OUT_CANDIDATES = np.arange(5, 16, 1)
-    # MAX_OUT_CANDIDATES = np.arange(10, 16, 1)
 
 
 class Validation:
-    TP_IOU_THRESH = [0.1, 0.1, 0.1, 0.1]
+    TP_IOU_THRESH = [0.3, 0.3, 0.3, 0.3]
     DISTANCE_LIMIT = 25
     VAL_EPOCH = "latest"
-    MAP_TP_IOU_THRESH = [0.5]
 
 
 class Logging:

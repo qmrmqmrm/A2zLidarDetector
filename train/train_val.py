@@ -29,8 +29,8 @@ class TrainValBase:
             features = self.to_device(features)
             start = timer()
             file_name = features['image_file']
-            prediction, total_loss, loss_by_type = self.run_step(features)
-            logger.log_batch_result(step, features, prediction, total_loss, loss_by_type, epoch)
+            prediction, total_loss, loss_by_type, auxi = self.run_step(features)
+            logger.log_batch_result(step, features, prediction, total_loss, loss_by_type, auxi)
 
             features['image_file'] = file_name
             # logger.append_batch_result(step, features, prediction, total_loss, loss_by_type)
@@ -89,18 +89,15 @@ class ModelTrainer(TrainValBase):
 
     def run_step(self, features):
         prediction = self.model(features)
-        total_loss, loss_by_type = self.loss_object(features, prediction, True)
-        losses = {}
-        for key, val in loss_by_type.items():
-            losses[key] = float(val.to('cpu').detach().numpy())
-
+        total_loss, loss_by_type, auxi = self.loss_object(features, prediction, True)
         self.optimizer.zero_grad()
         total_loss.backward()
         self.optimizer.step()
-        return prediction, total_loss, loss_by_type
+        return prediction, total_loss, loss_by_type, auxi
 
     def mode_set(self):
         self.model.train()
+        self.model.set_gt_use(True)
 
 
 class ModelValidater(TrainValBase):
@@ -110,11 +107,12 @@ class ModelValidater(TrainValBase):
 
     def run_step(self, features):
         prediction = self.model(features)
-        total_loss, loss_by_type = self.loss_object(features, prediction, False)
-        return prediction, total_loss, loss_by_type
+        total_loss, loss_by_type, auxi = self.loss_object(features, prediction, False)
+        return prediction, total_loss, loss_by_type, auxi
 
     def mode_set(self):
-        self.model.eval()
+        self.model.train()
+        self.model.set_gt_use(False)
 
 
 def get_train_val(model, loss_object, optimizer, epoch_steps=0):

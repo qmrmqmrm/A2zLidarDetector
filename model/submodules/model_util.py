@@ -209,19 +209,26 @@ class NonMaximumSuppression:
         batch_indices = [[] for i in range(batch)]
         for ctgr_idx in range(numctgr):
             ctgr_mask = (categories == ctgr_idx).to(dtype=torch.int64)  # (batch, N)
-            ctgr_boxes = boxes * ctgr_mask[..., None]  # (batch, N, 4)
-
-            ctgr_scores = scores * ctgr_mask  # (batch, N)
+            score_mask = (scores >= self.score_thresh[ctgr_idx]).squeeze(-1)
+            nms_mask = ctgr_mask * score_mask
+            ctgr_boxes = boxes * nms_mask[..., None]  # (batch, N, 4)
+            ctgr_scores = scores * nms_mask  # (batch, N)
             for frame_idx in range(batch):
                 # NMS
                 selected_indices = box_ops.batched_nms(ctgr_boxes[frame_idx], ctgr_scores[frame_idx],
                                                        categories[frame_idx], self.iou_thresh[ctgr_idx])
-                print(selected_indices.shape)
-
                 numsel = ctgr_boxes[frame_idx].shape[0]
                 zero = torch.ones((numsel - selected_indices.shape[0]), device=self.device) * -1
-                selected_indices = torch.cat([selected_indices, zero], dim=0)
+                selected_indices = torch.cat([selected_indices, zero], dim=0).to(dtype=torch.int64)
                 batch_indices[frame_idx].append(selected_indices)
+                print('pred', ctgr_boxes[frame_idx, selected_indices])
+                iou = uf.pairwise_iou(ctgr_boxes[frame_idx, selected_indices], ctgr_boxes[frame_idx, selected_indices])  # (batch, N, M)
+                print('selected_indices iou', iou.shape)
+                iou_where = iou[torch.where((iou > 0) * (iou < 0.1))]
+                iou_where_not = iou[torch.where((iou > 0.1) * (iou <= 1))]
+                print('iou O', iou_where)
+                print('iou X', iou_where_not)
+
         batch_indices = [torch.cat(ctgr_indices, dim=-1) for ctgr_indices in batch_indices]
         batch_indices = torch.stack(batch_indices, dim=0)  # (batch, K*max_output)
         batch_indices = torch.maximum(batch_indices, torch.zeros(batch_indices.shape, device=self.device)).to(
