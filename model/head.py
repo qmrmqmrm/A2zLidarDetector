@@ -6,8 +6,10 @@ from typing import Dict
 import numpy as np
 
 from utils.util_class import ShapeSpec
+import utils.util_function as uf
 import config as cfg
 from model.submodules.weight_init import c2_xavier_fill
+import model.submodules.model_util as mu
 
 
 class FastRCNNHead(nn.Module):
@@ -45,14 +47,16 @@ class FastRCNNHead(nn.Module):
         # torch.Size([batch * 512, 256, 7, 7])
         box_features = self.box_pooler(features, proposals)
         # torch.Size([1024, 93]
-        pred_features = self.box_predictor(box_features)
+        pred_features = self.box_predictor(box_features['xs'])
 
+        batch, numsample, ch = proposals['bbox2d'].shape
+
+        pred_features = pred_features.view(batch, numsample, -1)
+        pred_features = self.decode(pred_features, proposals['anchors'], box_features['strides'])
         # decode()
 
-
         # torch.Size([batch, 512, 93]
-        batch, numsample, ch = proposals['bbox2d'].shape
-        pred_features = pred_features.view(batch, numsample, -1)
+
         return pred_features
 
     def box_pooler(self, features, proposals):
@@ -60,33 +64,67 @@ class FastRCNNHead(nn.Module):
         zeros = torch.zeros((bbox2d.shape[0], bbox2d.shape[1], 1), device=self.device)
         bbox2d = torch.cat([zeros, bbox2d], dim=-1)
         anchor_id = proposals['anchor_id']
-        feature_aligned = []
+        feature_aligned = {'xs': [], 'strides': []}
         for batch in range(features[0].shape[0]):
             xs = list()
             boxinds = list()
             box_list = list()
+            strides = list()
             for i, (scale, feature) in enumerate(zip(self.pooler_scales, features)):
                 # feature (batch, c, h, w), anchor_id (batch, numbox, 1)
                 boxind, ch = torch.where(anchor_id[batch] // 3 == i)
+                stride = torch.ones((1)) * i
+                stride = stride.repeat(len(boxind))
                 box = bbox2d[batch, boxind]
                 x = roi_align(feature[batch:batch + 1], box, self.pooler_resolution, scale,
                               self.sampling_ratio, self.aligned)
                 xs.append(x)
                 boxinds.append(boxind)
                 box_list.append(box)
+                strides.append(stride)
 
             xs = torch.cat(xs, dim=0)
+            strides = torch.cat(strides, dim=0)
             box_ = torch.cat(box_list, dim=0)
             boxinds = torch.cat(boxinds, dim=0)
             sort_box, sort_inds = torch.sort(boxinds)
             xs = xs[sort_inds]
+            strides = strides[sort_inds]
             box_sort = box_[sort_inds]
             assert torch.all((box_sort - bbox2d[batch]) == 0)
-            feature_aligned.append(xs)
+            feature_aligned['xs'].append(xs)
+            feature_aligned['strides'].append(strides)
 
         # [batch * numbox, channel, pooler_resolution, pooler_resolution]
-        feature_aligned = torch.cat(feature_aligned, dim=0)
+        for key in feature_aligned.keys():
+            feature_aligned[key] = torch.cat(feature_aligned[key], dim=0)
         return feature_aligned
+
+    def decode(self, pred, anchors, strides):
+        num_classes = cfg.Model.Structure.NUM_CLASSES
+        loss_channel = cfg.Model.Structure.LOSS_CHANNEL
+        sliced_features = {}
+        last_channel = 0
+        for loss, dims in loss_channel.items():
+            slice_dim = last_channel + num_classes * dims
+            if loss == 'category':
+                slice_dim = slice_dim + 1
+            sliced_features[loss] = pred[..., last_channel:slice_dim]
+            last_channel = slice_dim
+        # pred_slices = uf.merge_and_slice_features(pred)  # b, n, 18
+        pred = uf.slice_class(sliced_features)  # b, n, 3, 6
+        bbox3d_yxlw_delta = pred['bbox3d'][..., :-2]
+        bbox3d_zh = pred['bbox3d'][..., -2:]
+        bbox2d_yxlw = list()
+        for i in range(3):
+            bbox3d_split_cate = bbox3d_yxlw_delta[:, :, i, :].squeeze(-2)
+            bbox2d_yxlw_per_cate = mu.apply_box_deltas(anchors, bbox3d_split_cate, strides)
+            bbox2d_yxlw.append(bbox2d_yxlw_per_cate.unsqueeze(-2))
+        bbox2d_yxlw = torch.cat(bbox2d_yxlw, dim=-2)
+        bbox3d = torch.cat([bbox2d_yxlw, bbox3d_zh], dim=-1)
+        pred['bbox3d'] = bbox3d
+        pred['category'] = pred['category'].squeeze(-1)
+        return pred
 
 
 class FastRCNNFCOutputHead(nn.Module):

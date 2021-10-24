@@ -65,14 +65,14 @@ class IntegratedLoss:
         :param split:
         :return:
         """
-        pred_slices = uf.merge_and_slice_features(predictions) # b, n, 18
-        pred = uf.slice_class(pred_slices) # b, n, 3, 6
+        # pred_slices = uf.merge_and_slice_features(predictions) # b, n, 18
+        # pred = uf.slice_class(pred_slices) # b, n, 3, 6
         total_loss = 0
         loss_by_type = {loss_name: 0 for loss_name in self.loss_objects}
-        auxi = self.prepare_box_auxiliary_data(features, pred)
+        auxi = self.prepare_box_auxiliary_data(features, predictions)
 
         for loss_name, loss_object in self.loss_objects.items():
-            scalar_loss = loss_object(features, pred, auxi)
+            scalar_loss = loss_object(features, predictions, auxi)
             weight = self.loss_weights[loss_name] if loss_name in self.loss_weights else self.loss_weights[loss_name]
             total_loss += scalar_loss * weight
             loss_by_type[loss_name] += scalar_loss * weight

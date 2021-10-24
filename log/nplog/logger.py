@@ -53,24 +53,41 @@ class Logger:
         :param epoch:
         :return:
         """
-        pred_slices = uf.merge_and_slice_features(pred)
-        pred_slices_nms = self.nms(pred_slices)
+
+        pred.update(auxi['pred_select'])
+        pred_slices_nms = self.nms(pred)
         gt_aligned = auxi['gt_aligned']
         gt_feature = auxi['gt_feature']
+
         grtr = self.convert_tensor_to_numpy(grtr)
         pred = self.convert_tensor_to_numpy(pred)
-        pred_slices = self.convert_tensor_to_numpy(pred_slices)
         pred_slices_nms = self.convert_tensor_to_numpy(pred_slices_nms)
         loss_by_type = self.convert_tensor_to_numpy(loss_by_type)
         gt_feature = self.convert_tensor_to_numpy(gt_feature)
         gt_aligned = self.convert_tensor_to_numpy(gt_aligned)
         total_loss = total_loss.to('cpu').detach().numpy()
 
-        self.history_logger(step, grtr, gt_aligned, gt_feature, pred_slices, total_loss, loss_by_type)
+        self.history_logger(step, grtr, gt_aligned, gt_feature, pred, total_loss, loss_by_type)
         if self.visual_logger:
             self.visual_logger(step, grtr, gt_feature, pred, pred_slices_nms)
         # if self.exhuastive_logger:
         #     self.exhuastive_logger(step, grtr, gt_aligned, pred_slices, loss_by_type, epoch, cfg.Logging.USE_ANCHOR)
+
+    def select_category(self, aligned, pred):
+        gt_cate = (aligned['category'].to(torch.int64)).unsqueeze(-1)
+        select_pred = dict()
+        for key in ['bbox3d', 'yaw', 'yaw_rads']:
+            pred_key = pred[key]
+            batch, num, cate, channel = pred_key.shape
+            pred_padding = torch.zeros((batch, num, 1, channel), device=self.device)
+            pred_key = torch.cat([pred_padding, pred_key], dim=-2)
+            gather_gt = torch.gather(pred_key, dim=2, index=gt_cate.repeat(1, 1, 1, pred_key.shape[-1])).squeeze(-2)
+            if key == 'yaw_rads':
+                gt_yaw = aligned['yaw'].to(torch.int64)
+                gather_gt = torch.gather(gather_gt, dim=-1, index=gt_yaw)
+            select_pred[key] = gather_gt
+        select_pred['category'] = pred['category'].squeeze(-1)
+        return select_pred
 
     def convert_tensor_to_numpy(self, features):
         numpy_feature = dict()

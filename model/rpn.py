@@ -232,12 +232,11 @@ class RPN(nn.Module):
             keep = keep[:self.num_proposals]
             for key in proposal_dict.keys():
                 proposal_dict[key] = proposal_dict[key][keep]
-
-            if proposal_dict['object'].numel() < self.num_proposals:
-                padding = torch.zeros(self.num_proposals - proposal_dict['object'].numel(), device=self.device).view(-1,
-                                                                                                                     1)
+            obj_num = proposal_dict['object'].numel()
+            if obj_num < self.num_proposals:
 
                 for key in proposal_dict.keys():
+                    padding = torch.zeros(self.num_proposals - obj_num, device=self.device).view(-1, 1)
                     if key == 'bbox2d' or key == 'anchors':
                         padding = torch.cat([padding] * 4, dim=-1)
                     proposal_dict[key] = torch.cat([proposal_dict[key], padding])
@@ -266,7 +265,6 @@ class RPN(nn.Module):
         'anchor_id' :list(torch.Size([4, num_sample, 1]))
         }
         """
-        uf.print_structure('proposals', proposals)
         proposal_gt = dict()
         for key in proposals.keys():
             proposal_gt[key] = torch.cat([proposals[key], grtr[key]], dim=1)

@@ -123,14 +123,19 @@ def concat_box_output(output, boxes):
     return output
 
 
-def apply_box_deltas(anchors, deltas):
+def apply_box_deltas(anchors, deltas, stride=None):
     """
     :param anchors: anchor boxes in image pixel in yxhw format (batch,height,width,4)
     :param deltas: box conv output corresponding to dy,dx,dh,dw
     :return:
     """
+    device = cfg.Hardware.DEVICE
     anchor_yx, anchor_hw = anchors[..., :2], anchors[..., 2:4]
-    stride = anchor_yx[0, 1, 0, 0, 0] - anchor_yx[0, 0, 0, 0, 0]
+    anchor_yx_shape =anchor_yx.shape
+    if len(anchor_yx_shape) == 3:
+        stride = torch.pow(2,stride+2).view(anchor_yx_shape[0], -1).unsqueeze(-1).to(device=device)
+    else:
+        stride = anchor_yx[0, 1, 0, 0, 0] - anchor_yx[0, 0, 0, 0, 0]
     delta_yx, delta_hw = deltas[..., :2], deltas[..., 2:4]
     delta_hw = torch.clamp(delta_hw, -2, 2)
     anchor_yx = anchor_yx.view(delta_yx.shape)
@@ -201,11 +206,12 @@ class NonMaximumSuppression:
         :return: (batch, max_out, 8), 8: bbox, category, objectness, ctgr_prob, score
         """
         boxes = pred['bbox2d']  # (batch, N, 4(tlbr))
-        categories = torch.argmax(pred["category"], dim=-1)  # (batch, N)
-        best_probs = torch.amax(pred["category"], dim=-1)  # (batch, N)
+        category = pred["category"]
+        categories = torch.argmax(category, dim=-1)  # (batch, N)
+        best_probs = torch.amax(category, dim=-1)  # (batch, N)
         objectness = pred["object"][..., 0]  # (batch, N)
         scores = objectness * best_probs  # (batch, N)
-        batch, numbox, numctgr = pred["category"].shape
+        batch, numbox, numctgr = category.shape
         batch_indices = [[] for i in range(batch)]
         for ctgr_idx in range(1, numctgr):
             ctgr_mask = (categories == ctgr_idx).to(dtype=torch.int64)  # (batch, N)
