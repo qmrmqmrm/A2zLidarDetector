@@ -135,7 +135,7 @@ def apply_box_deltas(anchors, deltas):
     delta_hw = torch.clamp(delta_hw, -2, 2)
     anchor_yx = anchor_yx.view(delta_yx.shape)
     anchor_hw = anchor_hw.view(delta_hw.shape)
-    bbox_yx = anchor_yx + torch.sigmoid(delta_yx) * stride * 2 - (stride / 2)
+    bbox_yx = anchor_yx + torch.sigmoid(delta_yx) * stride * 1.4 - stride * 0.2
     bbox_hw = anchor_hw * torch.exp(delta_hw)
     bbox = torch.cat([bbox_yx, bbox_hw], dim=-1)
     return bbox
@@ -203,48 +203,43 @@ class NonMaximumSuppression:
         boxes = pred['bbox2d']  # (batch, N, 4(tlbr))
         categories = torch.argmax(pred["category"], dim=-1)  # (batch, N)
         best_probs = torch.amax(pred["category"], dim=-1)  # (batch, N)
-        objectness = pred["objectness"][..., 0]  # (batch, N)
+        objectness = pred["object"][..., 0]  # (batch, N)
         scores = objectness * best_probs  # (batch, N)
         batch, numbox, numctgr = pred["category"].shape
         batch_indices = [[] for i in range(batch)]
-        for ctgr_idx in range(numctgr):
+        for ctgr_idx in range(1, numctgr):
             ctgr_mask = (categories == ctgr_idx).to(dtype=torch.int64)  # (batch, N)
-            score_mask = (scores >= self.score_thresh[ctgr_idx]).squeeze(-1)
+            score_mask = (scores >= self.score_thresh[ctgr_idx-1]).squeeze(-1)
             nms_mask = ctgr_mask * score_mask
             ctgr_boxes = boxes * nms_mask[..., None]  # (batch, N, 4)
             ctgr_scores = scores * nms_mask  # (batch, N)
             for frame_idx in range(batch):
                 # NMS
                 selected_indices = box_ops.batched_nms(ctgr_boxes[frame_idx], ctgr_scores[frame_idx],
-                                                       categories[frame_idx], self.iou_thresh[ctgr_idx])
+                                                       categories[frame_idx], self.iou_thresh[ctgr_idx-1])
                 numsel = ctgr_boxes[frame_idx].shape[0]
                 zero = torch.ones((numsel - selected_indices.shape[0]), device=self.device) * -1
                 selected_indices = torch.cat([selected_indices, zero], dim=0).to(dtype=torch.int64)
                 batch_indices[frame_idx].append(selected_indices)
-                print('pred', ctgr_boxes[frame_idx, selected_indices])
-                iou = uf.pairwise_iou(ctgr_boxes[frame_idx, selected_indices], ctgr_boxes[frame_idx, selected_indices])  # (batch, N, M)
-                print('selected_indices iou', iou.shape)
-                iou_where = iou[torch.where((iou > 0) * (iou < 0.1))]
-                iou_where_not = iou[torch.where((iou > 0.1) * (iou <= 1))]
-                print('iou O', iou_where)
-                print('iou X', iou_where_not)
+                # print('pred', ctgr_boxes[frame_idx, selected_indices])
+                # iou = uf.pairwise_iou(ctgr_boxes[frame_idx, selected_indices], ctgr_boxes[frame_idx, selected_indices])  # (batch, N, M)
+                # print('selected_indices iou', iou.shape)
+                # iou_where = iou[torch.where((iou > 0) * (iou < 0.1))]
+                # iou_where_not = iou[torch.where((iou > 0.1) * (iou <= 1))]
+                # print('iou O', iou_where)
+                # print('iou X', iou_where_not)
 
         batch_indices = [torch.cat(ctgr_indices, dim=-1) for ctgr_indices in batch_indices]
         batch_indices = torch.stack(batch_indices, dim=0)  # (batch, K*max_output)
         batch_indices = torch.maximum(batch_indices, torch.zeros(batch_indices.shape, device=self.device)).to(
             dtype=torch.int64)
 
-        result = {'objectness': [], 'bbox2d': [], 'bbox3d': [], 'anchor_id': [], 'category': [], 'yaw': [],
+        result = {'object': [], 'bbox2d': [], 'bbox3d': [], 'anchor_id': [], 'category': [], 'yaw': [],
                   'yaw_rads': [], }
 
         for i, indices in enumerate(batch_indices.to(dtype=torch.int64)):
-            result['objectness'].append(pred['objectness'][i, indices])
-            result['bbox2d'].append(pred['bbox2d'][i, indices])
-            result['bbox3d'].append(pred['bbox3d'][i, indices])
-            result['anchor_id'].append(pred['anchor_id'][i, indices])
-            result['category'].append(pred['category'][i, indices])
-            result['yaw'].append(pred['yaw'][i, indices])
-            result['yaw_rads'].append(pred['yaw_rads'][i, indices])
+            for key in result.keys():
+                result[key].append(pred[key][i, indices])
         for key, val in result.items():
             result[key] = torch.stack(val, dim=0)
         return result

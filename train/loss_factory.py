@@ -65,8 +65,8 @@ class IntegratedLoss:
         :param split:
         :return:
         """
-        pred_slices = uf.merge_and_slice_features(predictions)
-        pred = uf.slice_class(pred_slices)
+        pred_slices = uf.merge_and_slice_features(predictions) # b, n, 18
+        pred = uf.slice_class(pred_slices) # b, n, 3, 6
         total_loss = 0
         loss_by_type = {loss_name: 0 for loss_name in self.loss_objects}
         auxi = self.prepare_box_auxiliary_data(features, pred)
@@ -134,7 +134,7 @@ class IntegratedLoss:
         """
         batch = grtr['bbox2d'].shape[0]
         anchors = list()
-        for anchor in grtr['anchors']:  # batch, h, w, a, 4
+        for anchor in grtr['anc_feat']:  # batch, h, w, a, 4
             anchor = anchor.view(batch, -1, anchor.shape[-1])  # b hwa 4
             anchor = mu.convert_box_format_yxhw_to_tlbr(anchor)  # tlbr
             anchors.append(anchor)
@@ -183,6 +183,9 @@ class IntegratedLoss:
         select_pred = dict()
         for key in ['bbox3d', 'yaw', 'yaw_rads']:
             pred_key = pred[key]
+            batch, num, cate, channel = pred_key.shape
+            pred_padding = torch.zeros((batch, num, 1, channel), device=self.device)
+            pred_key = torch.cat([pred_padding, pred_key], dim=-2)
             gather_gt = torch.gather(pred_key, dim=2, index=gt_cate.repeat(1, 1, 1, pred_key.shape[-1])).squeeze(-2)
             if key == 'yaw_rads':
                 gt_yaw = aligned['yaw'].to(torch.int64)
@@ -190,3 +193,24 @@ class IntegratedLoss:
             select_pred[key] = gather_gt
         select_pred['category'] = pred['category'].squeeze(-1)
         return select_pred
+
+
+def test_select_category():
+    alined = dict()
+    alined['category'] = torch.tensor([[[1], [3], [0]]], device='cuda')  # 1, 3, 1
+    pred_box = dict()
+    pred_box['bbox3d'] = torch.rand((1,3,3,2),device='cuda')
+    loss = IntegratedLoss(1, {"haha": 1}, 1)
+    sel_box = loss.select_category(alined, pred_box)
+    print('pred_box', pred_box['bbox3d'])
+    print('sel_box', sel_box)
+    numind = 0
+    cate1 = alined['category'][0, numind, 0] - 1
+    pred1 = pred_box['bbox3d'][0, numind, cate1]
+    sele1 = sel_box['bbox3d'][0, numind]
+    print("compare:", cate1, pred1, sele1)
+
+
+
+if __name__ == '__main__':
+    test_select_category()

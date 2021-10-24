@@ -46,6 +46,10 @@ class FastRCNNHead(nn.Module):
         box_features = self.box_pooler(features, proposals)
         # torch.Size([1024, 93]
         pred_features = self.box_predictor(box_features)
+
+        # decode()
+
+
         # torch.Size([batch, 512, 93]
         batch, numsample, ch = proposals['bbox2d'].shape
         pred_features = pred_features.view(batch, numsample, -1)
@@ -108,7 +112,7 @@ class FastRCNNFCOutputHead(nn.Module):
         num_classes = cfg.Model.Structure.NUM_CLASSES
         box_dim = cfg.Model.Structure.BOX_DIM
         bins = cfg.Model.Structure.VP_BINS
-        out_channels = num_classes * (1 + box_dim + (2 * bins))
+        out_channels = num_classes * (1 + box_dim + (2 * bins)) + 1
         self.pred_layer = nn.Linear(input_size, out_channels)
         nn.init.xavier_normal_(self.pred_layer.weight)
         nn.init.constant_(self.pred_layer.weight, 0)

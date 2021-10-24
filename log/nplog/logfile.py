@@ -27,7 +27,7 @@ class LogFile:
             history = pd.DataFrame([history_summary])
         print("=== history\n", history)
         history["epoch"] = history["epoch"].astype(int)
-        history.to_csv(self.history_filename.replace("history.csv", "temp.csv"), encoding='utf-8', index=False, float_format='%.4f')
+        history.to_csv(self.history_filename, encoding='utf-8', index=False, float_format='%.4f')
 
     def merge_logs(self, epoch, train_summary, val_summary):
         summary = dict()

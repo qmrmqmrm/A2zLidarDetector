@@ -4,7 +4,7 @@ import numpy as np
 class LossComb:
     STANDARD = {"ciou": 1., "object": 1., "category": 1.}
     SCALE_WEIGHT = {"ciou": 1., "object_l": 1., "object_m": 1., "object_s": 4., "category": 1.}
-    BIRDNET = {'bbox2d': .001, 'object': 10, 'bbox3d': .0001, 'yaw_reg': 1., 'yaw_cls': .001, "category": .001}
+    BIRDNET = {'bbox2d': .001, 'object': 10, 'bbox3d': .0001, 'yaw_reg': 1., 'yaw_cls': .001, "category": .01}
     BIRDNET_ = {'bbox2d': .001, 'object': 1.}
 
 

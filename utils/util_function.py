@@ -88,8 +88,9 @@ def merge_and_slice_features(features):
     for key in features:
         if key == 'head_output':
             for loss, dims in loss_channel.items():
-
                 slice_dim = last_channel + num_classes * dims
+                if loss == 'category':
+                    slice_dim = slice_dim + 1
                 sliced_features[loss] = features[key][..., last_channel:slice_dim]
                 last_channel = slice_dim
 
@@ -103,6 +104,10 @@ def slice_class(features):
     loss_channel = cfg.Model.Structure.LOSS_CHANNEL
     sliced_features = features
     for loss, dims in loss_channel.items():
+        if loss == 'category':
+            num_classes = num_classes + 1
+        else:
+            num_classes = cfg.Model.Structure.NUM_CLASSES
         sliced_features[loss] = features[loss].reshape(features[loss].shape[0], features[loss].shape[1], num_classes,
                                                    dims)
     return sliced_features
@@ -142,8 +147,6 @@ def pairwise_batch_iou(boxes1, boxes2):
     batches = boxes1.shape[0]
     batch_iou = list()
     for batch in range(batches):
-        print(boxes1[batch].shape)
-        print(boxes2[batch].shape)
         iou = pairwise_iou(boxes1[batch], boxes2[batch])
         batch_iou.append(iou)
     ious = torch.stack(batch_iou, dim=0)

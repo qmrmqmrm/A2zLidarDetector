@@ -87,9 +87,9 @@ class GeneralizedRCNN(ModelBase):
         # neck_features /neck_s5 torch.Size([2, 256, 20, 20])
         print('usegt', self.use_gt)
         if self.use_gt:
-            rpn_proposals, rpn_aux = self.proposal_generator(neck_features, batched_input['anchors'], batched_input)
+            rpn_proposals, rpn_aux = self.proposal_generator(neck_features, batched_input['anc_feat'], batched_input)
         else:
-            rpn_proposals, rpn_aux = self.proposal_generator(neck_features, batched_input['anchors'])
+            rpn_proposals, rpn_aux = self.proposal_generator(neck_features, batched_input['anc_feat'])
         # rpn_proposals /bbox2d torch.Size([2, 512, 4])
         # rpn_proposals /objectness torch.Size([2, 512, 1])
         # rpn_proposals /anchor_id torch.Size([2, 512, 1])
@@ -99,6 +99,7 @@ class GeneralizedRCNN(ModelBase):
         model_output.update({'rpn_feat_' + key: value for key, value in rpn_aux.items()})
         model_output['head_output'] = head_output
         # head_output  torch.Size([1024, 93]
+        uf.print_structure('model_output', model_output)
         return model_output
 
     def preprocess_input(self, batched_input):  ## image

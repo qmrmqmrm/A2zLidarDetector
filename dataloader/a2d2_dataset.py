@@ -58,10 +58,10 @@ class A2D2Dataset(DatasetBase):
             self.last_sample = anns
         else:
             anns = self.zero_annotation()
-        features['anchors'] = self.anchors
+        features['anc_feat'] = self.anchors
         features.update(anns)
         features['image_file'] = image_file
-        features['anchor_id'] = self.matched_anchor(features['anchors'], features['bbox2d'])
+        features['anchors'], features['anchor_id'] = self.matched_anchor(features['anc_feat'], features['bbox2d'])
 
         return features
 
@@ -84,15 +84,15 @@ class A2D2Dataset(DatasetBase):
 
             label = self.categories.index(obj_category)
             ann = dict()
-            ann['category'] = [label]
-            ann['bbox2d'] = [bbox_ymin, bbox_xmin , bbox_ymax,bbox_xmax]  # tlbr
+            ann['category'] = [label + 1]
+            ann['bbox2d'] = [bbox_ymin, bbox_xmin, bbox_ymax, bbox_xmax]  # tlbr
 
             # ONLY VALID FOR FRONTAL CAMERA (ONLY_FRONT PARAM)
             velodyne_h = 1.12
-            ann['bbox3d'] = [(bbox_ymin + bbox_ymax) / 2.,(bbox_xmin + bbox_xmax) / 2.,
+            ann['bbox3d'] = [(bbox_ymin + bbox_ymax) / 2., (bbox_xmin + bbox_xmax) / 2.,
                              round(obj['size'][1] / bvres, 3), round(obj['size'][0] / bvres, 3),
                              obj['size'][2] * 255 / 3.,
-                             ((pts_3d_velo[0][2] + velodyne_h) + obj['size'][0] * 0.5) * 255 / 3.]  # xylwzh
+                             ((pts_3d_velo[0][2] + velodyne_h) + obj['size'][0] * 0.5) * 255 / 3.]  # yxwlzh
             ann["object"] = [1]
             if yaw:
                 ann['yaw'] = [rad2bin(obj['rot_angle'], bins)]
@@ -191,8 +191,9 @@ class A2D2Dataset(DatasetBase):
         feature_anchor = torch.cat(feature_anchor)
         iou = uf.pairwise_iou(bbox2d, feature_anchor[..., :-1])
         max_iou, max_idx = iou.max(dim=1)
-        anchor_id = feature_anchor[max_idx, -1:]
-        return anchor_id
+        gt_anchors = feature_anchor[max_idx, :-1]
+        gt_anchors_ie = feature_anchor[max_idx, -1:]
+        return gt_anchors, gt_anchors_ie
 
     def gather_featmaps(self, bbox2d, objectness):
         """

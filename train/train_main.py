@@ -54,8 +54,8 @@ def train_by_plan(dataset_name, end_epoch, learning_rate, loss_weights, model_sa
         save_model_ckpt(ckpt_path, model)
         log_file.save_log(epoch, train_result, val_result)
 
-    # if model_save:
-    #     save_model_ckpt(ckpt_path, model, f"ep{end_epoch:02d}")
+    if model_save:
+        save_model_ckpt(ckpt_path, model, f"ep{end_epoch:02d}")
 
 
 def save_model_ckpt(ckpt_path, model, weights_suffix='latest'):

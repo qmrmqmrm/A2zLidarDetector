@@ -148,12 +148,12 @@ class VisualLog:
             bboxes["category"] = np.expand_dims(best_cate, -1)
         bbox2d = bboxes["bbox2d"][frame_idx]  # (N, 4)
         category = bboxes["category"][frame_idx]
-        one_hot_ctgrs = (self.one_hot(category, 3) * val).astype(np.uint8)
+        one_hot_ctgrs = (self.one_hot(category, 4) * val).astype(np.uint8)
         valid_mask = bbox2d[:, 2] > 0  # (N,) h>0
         bbox2d = bbox2d[valid_mask, :]
         for i in range(bbox2d.shape[0]):
             y1, x1, y2, x2 = bbox2d[i].astype(np.int32)
-            cv2.rectangle(image, (x1, y1), (x2, y2), [int(one_hot_ctgrs[i][0]), int(one_hot_ctgrs[i][1]), int(one_hot_ctgrs[i][2])], 2)
+            cv2.rectangle(image, (x1, y1), (x2, y2), [int(one_hot_ctgrs[i][1]), int(one_hot_ctgrs[i][2]), int(one_hot_ctgrs[i][3])], 2)
 
             # annotation = "dontcare" if category[i] < 0 else f"{self.categories[category[i]]}"
             #
