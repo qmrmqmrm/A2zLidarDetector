@@ -226,9 +226,11 @@ class RPN(nn.Module):
         for batch_idx in range(batch):
             proposal_dict = dict()
             score_mask = (proposals['object'][batch_idx] >= self.score_threshold).squeeze(-1)
+            print('rpn score_mask',score_mask)
             for key in proposals.keys():
                 proposal_dict[key] = proposals[key][batch_idx, score_mask]
             keep = box_ops.nms(proposal_dict['bbox2d'], proposal_dict['object'].view(-1), self.iou_threshold)
+            print('keep ', keep.shape)
             keep = keep[:self.num_proposals]
             for key in proposal_dict.keys():
                 proposal_dict[key] = proposal_dict[key][keep]
@@ -279,7 +281,9 @@ class RPN(nn.Module):
             negative = torch.nonzero(match_ious < self.match_thresh[0])
 
             num_pos = int(self.num_sample * 0.25)
+
             num_pos = min(positive.numel(), num_pos)
+            print('num_pos', num_pos)
             num_neg = self.num_sample - num_pos
             num_neg = min(negative.shape[0], num_neg)
             perm1 = torch.randperm(positive.numel(), device=positive.device)[:num_pos]

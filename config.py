@@ -103,7 +103,7 @@ class Model:
 
 
 class Train:
-    CKPT_NAME = "anchors"
+    CKPT_NAME = "test_222"
 
     MODE = ["eager", "graph"][0]
     BATCH_SIZE = 2

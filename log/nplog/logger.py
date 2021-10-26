@@ -67,7 +67,7 @@ class Logger:
         gt_aligned = self.convert_tensor_to_numpy(gt_aligned)
         total_loss = total_loss.to('cpu').detach().numpy()
 
-        self.history_logger(step, grtr, gt_aligned, gt_feature, pred, total_loss, loss_by_type)
+        self.history_logger(step, grtr, gt_aligned, gt_feature, pred,pred_slices_nms, total_loss, loss_by_type)
         if self.visual_logger:
             self.visual_logger(step, grtr, gt_feature, pred, pred_slices_nms)
         # if self.exhuastive_logger:

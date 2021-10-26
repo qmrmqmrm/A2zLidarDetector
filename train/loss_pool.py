@@ -4,7 +4,7 @@ import numpy as np
 import config as cfg
 import model.submodules.model_util as mu
 
-np.set_printoptions(precision=6, suppress=True, linewidth=150)
+np.set_printoptions(precision=4, suppress=True, linewidth=100)
 
 
 class LossBase:
@@ -125,8 +125,10 @@ class CategoryClassification(LossBase):
         gt_classes = (auxi["gt_aligned"]["category"]).type(torch.int64).view(-1)  # (batch*512) torch.Size([4, 512, 1])
         pred_classes = (auxi["pred_select"]["category"]).view(-1, 4)  # (batch*512 , 3) torch.Size([4, 512, 3])
 
-
-        pred_classes_numpy = pred_classes.to('cpu').detach().numpy()
+        pred_obj = pred['object'].view(-1, 1)
+        print(pred_obj.shape)
+        pred_classes_numpy = (pred_classes * pred_obj).to('cpu').detach().numpy()
+        print(pred_classes_numpy.shape)
         pred_quant = np.quantile(pred_classes_numpy, np.array([0, 0.2, 0.4, 0.6, 0.8, 0.9, 0.95, 0.995, 0.999, 1]))
         print("pred_classes quantile:", pred_quant)
         for i in range(1, pred_classes_numpy.shape[-1]):

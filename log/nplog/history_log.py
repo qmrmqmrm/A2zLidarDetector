@@ -13,9 +13,9 @@ class HistoryLog:
         self.batch_data_table = pd.DataFrame()
         self.start = timer()
         self.summary = dict()
-        self.num_categs =cfg.Model.Structure.NUM_CLASSES
+        self.num_categs = cfg.Model.Structure.NUM_CLASSES
 
-    def __call__(self, step, grtr, gt_aligned, gt_feature, pred, total_loss, loss_by_type):
+    def __call__(self, step, grtr, gt_aligned, gt_feature, pred, pred_nms, total_loss, loss_by_type):
         """
         :param step: integer step index
         :param grtr:
@@ -47,6 +47,7 @@ class HistoryLog:
         num_ctgr = pred["category"].shape[-1] - 1
 
         metric = count_true_positives(grtr, pred, num_ctgr, per_class=False)
+        print(metric)
         batch_data.update(metric)
         pred_cate = torch.softmax(torch.tensor(pred["category"]), dim=-1).to('cpu').detach().numpy()
         batch_data["true_cls"] = self.logtrueclass(gt_aligned, pred_cate)

@@ -131,9 +131,9 @@ def apply_box_deltas(anchors, deltas, stride=None):
     """
     device = cfg.Hardware.DEVICE
     anchor_yx, anchor_hw = anchors[..., :2], anchors[..., 2:4]
-    anchor_yx_shape =anchor_yx.shape
+    anchor_yx_shape = anchor_yx.shape
     if len(anchor_yx_shape) == 3:
-        stride = torch.pow(2,stride+2).view(anchor_yx_shape[0], -1).unsqueeze(-1).to(device=device)
+        stride = torch.pow(2, stride + 2).view(anchor_yx_shape[0], -1).unsqueeze(-1).to(device=device)
     else:
         stride = anchor_yx[0, 1, 0, 0, 0] - anchor_yx[0, 0, 0, 0, 0]
     delta_yx, delta_hw = deltas[..., :2], deltas[..., 2:4]
@@ -215,16 +215,21 @@ class NonMaximumSuppression:
         batch_indices = [[] for i in range(batch)]
         for ctgr_idx in range(1, numctgr):
             ctgr_mask = (categories == ctgr_idx).to(dtype=torch.int64)  # (batch, N)
-            score_mask = (scores >= self.score_thresh[ctgr_idx-1]).squeeze(-1)
+            score_mask = (scores >= self.score_thresh[ctgr_idx - 1]).squeeze(-1)
             nms_mask = ctgr_mask * score_mask
             ctgr_boxes = boxes * nms_mask[..., None]  # (batch, N, 4)
             ctgr_scores = scores * nms_mask  # (batch, N)
+            ctgr_scores_numpy = ctgr_scores.to('cpu').detach().numpy()
+            ctgr_scores_quant = np.quantile(ctgr_scores_numpy,
+                                            np.array([0, 0.2, 0.4, 0.6, 0.8, 0.9, 0.95, 0.995, 0.999, 1]))
+            print(f"ctgr_scores quantile {ctgr_idx}:", ctgr_scores_quant)
             for frame_idx in range(batch):
                 # NMS
+
                 selected_indices = box_ops.batched_nms(ctgr_boxes[frame_idx], ctgr_scores[frame_idx],
-                                                       categories[frame_idx], self.iou_thresh[ctgr_idx-1])
-                numsel = ctgr_boxes[frame_idx].shape[0]
-                zero = torch.ones((numsel - selected_indices.shape[0]), device=self.device) * -1
+                                                       categories[frame_idx], self.iou_thresh[ctgr_idx - 1])
+                max_num = ctgr_boxes[frame_idx].shape[0]
+                zero = torch.ones((max_num - selected_indices.shape[0]), device=self.device) * -1
                 selected_indices = torch.cat([selected_indices, zero], dim=0).to(dtype=torch.int64)
                 batch_indices[frame_idx].append(selected_indices)
                 # print('pred', ctgr_boxes[frame_idx, selected_indices])
@@ -234,7 +239,6 @@ class NonMaximumSuppression:
                 # iou_where_not = iou[torch.where((iou > 0.1) * (iou <= 1))]
                 # print('iou O', iou_where)
                 # print('iou X', iou_where_not)
-
         batch_indices = [torch.cat(ctgr_indices, dim=-1) for ctgr_indices in batch_indices]
         batch_indices = torch.stack(batch_indices, dim=0)  # (batch, K*max_output)
         batch_indices = torch.maximum(batch_indices, torch.zeros(batch_indices.shape, device=self.device)).to(
@@ -242,7 +246,6 @@ class NonMaximumSuppression:
 
         result = {'object': [], 'bbox2d': [], 'bbox3d': [], 'anchor_id': [], 'category': [], 'yaw': [],
                   'yaw_rads': [], }
-
         for i, indices in enumerate(batch_indices.to(dtype=torch.int64)):
             for key in result.keys():
                 result[key].append(pred[key][i, indices])
