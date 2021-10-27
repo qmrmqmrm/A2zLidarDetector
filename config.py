@@ -66,7 +66,7 @@ class Model:
         OUT_SCALES = Scales.DEFAULT_FEATURE_SCALES
         ANCHOR_SIZES = [16, 64, 80]
         ANCHOR_RATIOS = [0.5, 1., 2.]
-        NMS_IOU_THRESH = 0.5
+        NMS_IOU_THRESH = 0.4
         MATCH_THRESHOLD = [0.1, 0.4]
         NMS_SCORE_THRESH = 0.3
         NUM_PROPOSALS = [3000, 1000]
@@ -103,7 +103,7 @@ class Model:
 
 
 class Train:
-    CKPT_NAME = "test_222"
+    CKPT_NAME = "delta_v9"
 
     MODE = ["eager", "graph"][0]
     BATCH_SIZE = 2
@@ -116,9 +116,9 @@ class Loss:
 
 
 class NMS:
-    MAX_OUT = [5, 5, 5]
-    IOU_THRESH = [0.1, 0.1, 0.1]
-    SCORE_THRESH = [0.25, 0.22, 0.26]
+    MAX_OUT = [100, 100, 100]
+    IOU_THRESH = [0.2, 0.2, 0.2]
+    SCORE_THRESH = [0.3, 0.3, 0.3]
 
 
 class Validation:

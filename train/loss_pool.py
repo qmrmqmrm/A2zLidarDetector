@@ -3,8 +3,9 @@ import torch.nn.functional as F
 import numpy as np
 import config as cfg
 import model.submodules.model_util as mu
+import utils.util_function as uf
 
-np.set_printoptions(precision=4, suppress=True, linewidth=100)
+np.set_printoptions(precision=6, suppress=True, linewidth=150)
 
 
 class LossBase:
@@ -72,15 +73,21 @@ class Box2dRegression(LossBase):
     def __call__(self, features, pred, auxi):
         total_loss = 0
         for scale_idx in range(3):
-            loss_per_scale = self.cal_bbox2d_loss_per_scale(pred, auxi, scale_idx)
+            loss_per_scale = self.cal_delta2d_loss_per_scale(pred, auxi, scale_idx)
             total_loss += loss_per_scale
         return total_loss
 
-    def cal_bbox2d_loss_per_scale(self, pred, auxi, scale_idx):
+    def cal_delta2d_loss_per_scale(self, pred, auxi, scale_idx):
         gt_object_per_scale = auxi['gt_feature']['object'][scale_idx]
-        gt_bbox2d_per_scale = auxi['gt_feature']['bbox2d'][scale_idx] * gt_object_per_scale
-        rpn_bbox2d_per_scale = pred['rpn_feat_bbox2d'][scale_idx] * gt_object_per_scale
+        gt_bbox2d_per_scale = auxi['gt_feature']['delta2d'][scale_idx] * gt_object_per_scale
+        rpn_bbox2d_per_scale = pred['rpn_feat_bbox2d_logit'][scale_idx] * gt_object_per_scale
         return F.smooth_l1_loss(rpn_bbox2d_per_scale, gt_bbox2d_per_scale, reduction='sum', beta=0.5)
+
+    # def cal_bbox2d_loss_per_scale(self, pred, auxi, scale_idx):
+    #     gt_object_per_scale = auxi['gt_feature']['object'][scale_idx]
+    #     gt_bbox2d_per_scale = auxi['gt_feature']['bbox2d'][scale_idx] * gt_object_per_scale
+    #     rpn_bbox2d_per_scale = pred['rpn_feat_bbox2d'][scale_idx] * gt_object_per_scale
+    #     return F.smooth_l1_loss(rpn_bbox2d_per_scale, gt_bbox2d_per_scale, reduction='sum', beta=0.5)
 
 
 class ObjectClassification(LossBase):
@@ -106,9 +113,13 @@ class ObjectClassification(LossBase):
 
 class Box3dRegression(LossBase):
     def __call__(self, features, pred, auxi):
-        gt_bbox3d = auxi['gt_aligned']['bbox3d'] * auxi["gt_aligned"]["object"]
-        pred_bbox3d = auxi['pred_select']['bbox3d'] * auxi["gt_aligned"]["object"]
+        gt_bbox3d = auxi['gt_aligned']['delta3d'] * auxi["gt_aligned"]["object"]
+        pred_bbox3d = auxi['pred_select']['bbox3d_logit'] * auxi["gt_aligned"]["object"]
         loss = F.smooth_l1_loss(pred_bbox3d, gt_bbox3d, reduction='sum', beta=0.5)
+
+        # gt_bbox3d = auxi['gt_aligned']['bbox3d'] * auxi["gt_aligned"]["object"]
+        # pred_bbox3d = auxi['pred_select']['bbox3d'] * auxi["gt_aligned"]["object"]
+        # loss = F.smooth_l1_loss(pred_bbox3d, gt_bbox3d, reduction='sum', beta=0.5)
         return loss  # / (num_gt + 0.00001)
 
 

@@ -113,18 +113,35 @@ class FastRCNNHead(nn.Module):
             last_channel = slice_dim
         # pred_slices = uf.merge_and_slice_features(pred)  # b, n, 18
         pred = uf.slice_class(sliced_features)  # b, n, 3, 6
-        bbox3d_yxlw_delta = pred['bbox3d'][..., :-2]
-        bbox3d_zh = pred['bbox3d'][..., -2:]
-        bbox2d_yxlw = list()
+        pred['bbox3d_logit'] = pred['bbox3d']
+        bbox3d_delta = pred['bbox3d']
+        bbox3d = list()
         for i in range(3):
-            bbox3d_split_cate = bbox3d_yxlw_delta[:, :, i, :].squeeze(-2)
-            bbox2d_yxlw_per_cate = mu.apply_box_deltas(anchors, bbox3d_split_cate, strides)
-            bbox2d_yxlw.append(bbox2d_yxlw_per_cate.unsqueeze(-2))
-        bbox2d_yxlw = torch.cat(bbox2d_yxlw, dim=-2)
-        bbox3d = torch.cat([bbox2d_yxlw, bbox3d_zh], dim=-1)
-        pred['bbox3d'] = bbox3d
+            bbox3d_split_cate = bbox3d_delta[:, :, i, :].squeeze(-2)  # B, NUM, 4
+            bbox3d_per_cate = mu.apply_box_deltas_3d(anchors, bbox3d_split_cate, i, strides)  # B,NUM,4
+            bbox3d.append(bbox3d_per_cate.unsqueeze(-2))
+        pred['bbox3d'] = torch.cat(bbox3d, dim=-2)
         pred['category'] = pred['category'].squeeze(-1)
         return pred
+
+    def h_del(self):
+        gt_height = self.gt_height
+        gt_classes = self.gt_classes
+        src_heights = torch.tensor([130.05, 149.6, 147.9, 1.0]).to(gt_classes.device)  # Mean heights encoded
+
+        target_heights = gt_height[:, 0]
+        # For ground codification
+        # target_ground = gt_height[:, 1]
+        # target_ctr = target_ground + 0.5*target_heights # target_ground NOT CODIFICATED
+        target_ctr = gt_height[:, 1]
+
+        wh, wg, wz = self.weights_height
+        dh = wh * torch.log(target_heights / src_heights[gt_classes])
+        # dg = wg * target_ground
+        dz = wz * (target_ctr - src_heights[gt_classes] / 2.) / src_heights[gt_classes]
+
+        deltas = torch.stack((dh, dz), dim=1)
+        return deltas
 
 
 class FastRCNNFCOutputHead(nn.Module):

@@ -61,7 +61,15 @@ class A2D2Dataset(DatasetBase):
         features['anc_feat'] = self.anchors
         features.update(anns)
         features['image_file'] = image_file
-        features['anchors'], features['anchor_id'] = self.matched_anchor(features['anc_feat'], features['bbox2d'])
+        features['anchors'], features['anchor_id'], features['anchor_stride'] = self.matched_anchor(
+            features['anc_feat'], features['bbox2d'])
+        features['delta2d'] = mu.get_deltas_2d(features['anchors'], features['bbox2d'], features['anchor_stride'])
+        # bbox2d = mu.apply_box_deltas_2d(features['anchors'],features['delta2d'], features['anchor_stride'])
+        # print('bbox2d',bbox2d)
+        # print('bbox2d_gt',features['bbox2d'])
+        features['delta3d'] = mu.get_deltas_3d(features['anchors'], features['bbox3d'], features['category'],
+                                               features['anchor_stride'])
+
 
         return features
 
@@ -89,10 +97,11 @@ class A2D2Dataset(DatasetBase):
 
             # ONLY VALID FOR FRONTAL CAMERA (ONLY_FRONT PARAM)
             velodyne_h = 1.12
+
             ann['bbox3d'] = [(bbox_ymin + bbox_ymax) / 2., (bbox_xmin + bbox_xmax) / 2.,
-                             round(obj['size'][1] / bvres, 3), round(obj['size'][0] / bvres, 3),
-                             obj['size'][2] * 255 / 3.,
-                             ((pts_3d_velo[0][2] + velodyne_h) + obj['size'][0] * 0.5) * 255 / 3.]  # yxwlzh
+                             round(obj['size'][0] / bvres, 3), round(obj['size'][1] / bvres, 3),
+                             obj['size'][2] / 3. * 255,
+                             ((pts_3d_velo[0][2] + velodyne_h) + obj['size'][2] * 0.5) / 3. * 255]  # yxlwzh
             ann["object"] = [1]
             if yaw:
                 ann['yaw'] = [rad2bin(obj['rot_angle'], bins)]
@@ -103,16 +112,16 @@ class A2D2Dataset(DatasetBase):
     def obtain_bvbox(self, obj, bv_img, pv, bvres=0.05):
         bvrows, bvcols, _ = bv_img.shape
         centroid = [round(num, 2) for num in pv[0][:2]]  # Lidar coordinates
-        length = obj['size'][1]
-        width = obj['size'][0]
+        width = obj['size'][1]
+        length = obj['size'][0]
         yaw = obj['rot_angle']
         # print('lwh')
         # print(length, width, yaw)
         # Compute the four vertexes coordinates
-        corners = np.array([[centroid[0] - length / 2., centroid[1] + width / 2.],
-                            [centroid[0] + length / 2., centroid[1] + width / 2.],
-                            [centroid[0] + length / 2., centroid[1] - width / 2.],
-                            [centroid[0] - length / 2., centroid[1] - width / 2.]])
+        corners = np.array([[centroid[0] - width / 2., centroid[1] + length / 2.],
+                            [centroid[0] + width / 2., centroid[1] + length / 2.],
+                            [centroid[0] + width / 2., centroid[1] - length / 2.],
+                            [centroid[0] - width / 2., centroid[1] - length / 2.]])
 
         c, s = np.cos(yaw), np.sin(yaw)
         R = np.array([[c, -s], [s, c]])
@@ -189,11 +198,12 @@ class A2D2Dataset(DatasetBase):
             anchor = mu.convert_box_format_yxhw_to_tlbr(anchor)
             feature_anchor.append(anchor)
         feature_anchor = torch.cat(feature_anchor)
-        iou = uf.pairwise_iou(bbox2d, feature_anchor[..., :-1])
+        iou = uf.pairwise_iou(bbox2d, feature_anchor[..., :-2])
         max_iou, max_idx = iou.max(dim=1)
-        gt_anchors = feature_anchor[max_idx, :-1]
-        gt_anchors_ie = feature_anchor[max_idx, -1:]
-        return gt_anchors, gt_anchors_ie
+        gt_anchors = feature_anchor[max_idx, :-2]
+        gt_anchors_id = feature_anchor[max_idx, -2:-1]
+        gt_anchors_stride = feature_anchor[max_idx, -1:]
+        return gt_anchors, gt_anchors_id, gt_anchors_stride
 
     def gather_featmaps(self, bbox2d, objectness):
         """

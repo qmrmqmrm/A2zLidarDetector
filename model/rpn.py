@@ -130,20 +130,21 @@ class RPN(nn.Module):
         }
         """
         proposals = {'bbox2d': [], 'objectness': [], 'anchor_id': [], 'bbox2d_yxhw': [], 'object_logits': [],
-                     'anchors': []}
+                     'anchors': [], 'bbox2d_logit':[]}
         for logit_feature, anchors in zip(logit_features, anchors):
             bbox2d_logit, object_logits, anchor_id = logit_feature[..., :4], logit_feature[..., 4:5], logit_feature[...,
                                                                                                       5:6]
 
-            bbox2d_yxhw = mu.apply_box_deltas(anchors, bbox2d_logit)
+            bbox2d_yxhw = mu.apply_box_deltas_2d(anchors, bbox2d_logit) # b,h,w,a,c
             bbox2d_tlbr = mu.convert_box_format_yxhw_to_tlbr(bbox2d_yxhw)  # tlbr
-            object_logits_numpy = object_logits.to('cpu').detach().numpy()
-            object_quant = np.quantile(object_logits_numpy, np.arange(0, 1.1, 0.1))
-            print("object logits quantile:", object_quant)
-            b, h, w, a, c = anchors[..., :-1].shape
-            anchors = anchors[..., :-1].view(b, h * w * a, c)
+            # object_logits_numpy = object_logits.to('cpu').detach().numpy()
+            # object_quant = np.quantile(object_logits_numpy, np.arange(0, 1.1, 0.1))
+            # print("object logits quantile:", object_quant)
+            b, h, w, a, c = anchors[..., :-2].shape
+            anchors = anchors[..., :-2].view(b, h * w * a, c)
             objectness = torch.sigmoid(object_logits)
             proposals['bbox2d'].append(bbox2d_tlbr)
+            proposals['bbox2d_logit'].append(bbox2d_logit)
             proposals['anchors'].append(anchors)
             proposals['bbox2d_yxhw'].append(bbox2d_yxhw)
             proposals['objectness'].append(objectness)
@@ -222,15 +223,13 @@ class RPN(nn.Module):
         """
         batch, hwa, channel = proposals['bbox2d'].shape
         selected_proposals = {'bbox2d': [], 'object': [], 'anchor_id': [], 'anchors': []}
-
+        uf.print_structure('proposals', proposals)
         for batch_idx in range(batch):
             proposal_dict = dict()
             score_mask = (proposals['object'][batch_idx] >= self.score_threshold).squeeze(-1)
-            print('rpn score_mask',score_mask)
             for key in proposals.keys():
                 proposal_dict[key] = proposals[key][batch_idx, score_mask]
             keep = box_ops.nms(proposal_dict['bbox2d'], proposal_dict['object'].view(-1), self.iou_threshold)
-            print('keep ', keep.shape)
             keep = keep[:self.num_proposals]
             for key in proposal_dict.keys():
                 proposal_dict[key] = proposal_dict[key][keep]
@@ -283,7 +282,6 @@ class RPN(nn.Module):
             num_pos = int(self.num_sample * 0.25)
 
             num_pos = min(positive.numel(), num_pos)
-            print('num_pos', num_pos)
             num_neg = self.num_sample - num_pos
             num_neg = min(negative.shape[0], num_neg)
             perm1 = torch.randperm(positive.numel(), device=positive.device)[:num_pos]

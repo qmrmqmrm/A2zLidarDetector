@@ -63,13 +63,6 @@ class VisualLog:
             'yaw_rads' : torch.Size([batch, 512, class_num, 12])
             }
         """
-        category = pred_nms['category']
-        categories = np.argmax(category, axis=-1)
-        print(categories)
-        for i in range(4):
-            t = np.where(categories == i)
-            print(f'categories_vi {i}', categories[t].shape)
-
         splits = split_true_false(grtr, pred_nms, cfg.Validation.TP_IOU_THRESH)
         batch = splits["grtr_tp"]["bbox2d"].shape[0]
         for batch_idx in range(batch):
@@ -92,6 +85,8 @@ class VisualLog:
             image_pred = self.draw_boxes(image_pred, splits["pred_tp"]['bbox2d'], splits["pred_tp"]['category'],
                                          batch_idx, (0, 255, 0))
 
+
+
             image_grtr_3d = grtr["image"][batch_idx].copy()
             grtr_fn_bbox3d = mu.convert_box_format_yxhw_to_tlbr(splits["grtr_fn"]['bbox3d'])
             image_grtr_3d = self.draw_boxes(image_grtr_3d, grtr_fn_bbox3d[..., :-2], splits["grtr_fn"]['category'],
@@ -107,6 +102,22 @@ class VisualLog:
             pred_tp_bbox3d = mu.convert_box_format_yxhw_to_tlbr(splits["pred_tp"]['bbox3d'])
             image_pred_3d = self.draw_boxes(image_pred_3d, pred_tp_bbox3d[..., :-2], splits["pred_tp"]['category'],
                                             batch_idx, (0, 255, 0))
+
+
+            #
+            # image_grtr_3d_org = image_org.copy()
+            # image_grtr_3d_org = self.draw_boxes(image_grtr_3d_org, splits["grtr_fn"]['bbox3d'][..., :-2], splits["grtr_fn"]['category'],
+            #                                 batch_idx, (0, 0, 255))
+            # image_grtr_3d_org = self.draw_boxes(image_grtr_3d_org, splits["grtr_tp"]['bbox3d'][..., :-2], splits["grtr_tp"]['category'],
+            #                                 batch_idx, (0, 255, 0))
+            #
+            # image_pred_3d_org = image_org.copy()
+            # image_pred_3d_org = self.draw_boxes(image_pred_3d_org, splits["pred_fp"]['bbox3d'][..., :-2], splits["pred_fp"]['category'],
+            #                                 batch_idx, (0, 0, 255))
+            # image_pred_3d_org = self.draw_boxes(image_pred_3d_org, splits["pred_tp"]['bbox3d'][..., :-2], splits["pred_tp"]['category'],
+            #                                 batch_idx, (0, 255, 0))
+
+
             # image_pred = self.draw_boxes(image_pred, splits["grtr_tp"], batch_idx, (0, 255, 255))
             # image_pred = self.draw_boxes(image_pred, splits["grtr_fn"], batch_idx, (0, 255, 255))
 
@@ -130,6 +141,8 @@ class VisualLog:
             vlog_image_3d = np.concatenate([image_pred_3d, image_grtr_3d], axis=1)
             vlog_image_3d = np.concatenate([image_org, vlog_image_3d], axis=0)
 
+            # vlog_image_3d_org = np.concatenate([image_grtr_3d_org, image_pred_3d_org], axis=0)
+
             if step % 50 == 10:
                 cv2.imshow("detection_result", vlog_image)
                 cv2.waitKey(10)
@@ -141,6 +154,9 @@ class VisualLog:
 
             filename = op.join(self.scale_path, f"{step * batch + batch_idx:05d}.jpg")
             cv2.imwrite(filename, scale_img)
+
+            # filename = op.join(self.vlog_path, f"{step * batch + batch_idx:05d}_3d_org.jpg")
+            # cv2.imwrite(filename, vlog_image_3d_org)
 
             gt_obj_imgs = []
             pred_obj_imgs = []

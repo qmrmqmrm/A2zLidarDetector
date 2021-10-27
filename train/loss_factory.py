@@ -67,6 +67,7 @@ class IntegratedLoss:
         """
         # pred_slices = uf.merge_and_slice_features(predictions) # b, n, 18
         # pred = uf.slice_class(pred_slices) # b, n, 3, 6
+
         total_loss = 0
         loss_by_type = {loss_name: 0 for loss_name in self.loss_objects}
         auxi = self.prepare_box_auxiliary_data(features, predictions)
@@ -141,7 +142,7 @@ class IntegratedLoss:
         anchors_cat = torch.cat(anchors, dim=1)
         auxiliary = dict()
         auxiliary["gt_aligned"] = self.matched_gt(grtr, pred['bbox2d'], self.align_iou_threshold)  # tlbr tlbr
-        auxiliary["gt_feature"] = self.matched_gt(grtr, anchors_cat[..., :-1], self.anchor_iou_threshold)  # tlbr tlbr
+        auxiliary["gt_feature"] = self.matched_gt(grtr, anchors_cat[..., :-2], self.anchor_iou_threshold)  # tlbr tlbr
         auxiliary["gt_feature"] = self.split_feature(anchors, auxiliary["gt_feature"])
         auxiliary["pred_select"] = self.select_category(auxiliary['gt_aligned'], pred)
 
@@ -149,7 +150,7 @@ class IntegratedLoss:
 
     def matched_gt(self, grtr, pred_box, iou_threshold):
         matched = {key: [] for key in
-                   ['bbox3d', 'category', 'bbox2d', 'yaw', 'yaw_rads', 'anchor_id', 'object', 'negative']}
+                   ['bbox3d', 'category', 'bbox2d', 'yaw', 'yaw_rads', 'anchor_id', 'object', 'negative', 'delta2d', 'delta3d']}
         for i in range(self.batch_size):
             iou_matrix = uf.pairwise_iou(grtr['bbox2d'][i], pred_box[i])
 
@@ -181,7 +182,7 @@ class IntegratedLoss:
     def select_category(self, aligned, pred):
         gt_cate = (aligned['category'].to(torch.int64)).unsqueeze(-1)
         select_pred = dict()
-        for key in ['bbox3d', 'yaw', 'yaw_rads']:
+        for key in ['bbox3d', 'yaw', 'yaw_rads','bbox3d_logit']:
             pred_key = pred[key]
             batch, num, cate, channel = pred_key.shape
             pred_padding = torch.zeros((batch, num, 1, channel), device=self.device)

@@ -6,6 +6,8 @@ import numpy as np
 import config as cfg
 import utils.util_function as uf
 
+device = cfg.Hardware.DEVICE
+
 
 class Conv2d(torch.nn.Conv2d):
     """
@@ -123,27 +125,74 @@ def concat_box_output(output, boxes):
     return output
 
 
-def apply_box_deltas(anchors, deltas, stride=None):
+def apply_box_deltas_2d(anchors, deltas, stride=None):
     """
     :param anchors: anchor boxes in image pixel in yxhw format (batch,height,width,4)
     :param deltas: box conv output corresponding to dy,dx,dh,dw
     :return:
     """
-    device = cfg.Hardware.DEVICE
     anchor_yx, anchor_hw = anchors[..., :2], anchors[..., 2:4]
-    anchor_yx_shape = anchor_yx.shape
-    if len(anchor_yx_shape) == 3:
-        stride = torch.pow(2, stride + 2).view(anchor_yx_shape[0], -1).unsqueeze(-1).to(device=device)
-    else:
+    if len(anchor_yx.shape) == 5:
         stride = anchor_yx[0, 1, 0, 0, 0] - anchor_yx[0, 0, 0, 0, 0]
     delta_yx, delta_hw = deltas[..., :2], deltas[..., 2:4]
-    delta_hw = torch.clamp(delta_hw, -2, 2)
     anchor_yx = anchor_yx.view(delta_yx.shape)
     anchor_hw = anchor_hw.view(delta_hw.shape)
-    bbox_yx = anchor_yx + torch.sigmoid(delta_yx) * stride * 1.4 - stride * 0.2
+    # bbox_yx = anchor_yx + torch.sigmoid(delta_yx) * stride * 1.4 - stride * 0.2
+    bbox_yx = anchor_yx + delta_yx * stride
     bbox_hw = anchor_hw * torch.exp(delta_hw)
     bbox = torch.cat([bbox_yx, bbox_hw], dim=-1)
     return bbox
+
+
+def get_deltas_2d(anchors, bboxes, stride=None):
+    bboxes_yxlw = convert_box_format_tlbr_to_yxhw(bboxes)
+    anchors_yxlw = convert_box_format_tlbr_to_yxhw(anchors)
+    anchor_yx, anchor_lw = anchors_yxlw[..., :2], anchors_yxlw[..., 2:4]
+    bboxes_yx, bboxes_lw = bboxes_yxlw[..., :2], bboxes_yxlw[..., 2:4]
+    anchor_yx = anchor_yx.view(bboxes_yx.shape)
+    anchor_lw = anchor_lw.view(bboxes_lw.shape)
+    delta_yx = (bboxes_yx - anchor_yx) / stride
+    delta_lw = torch.log(bboxes_lw / anchor_lw + 1e-10)
+    valid_mask = (bboxes_lw[..., 0:1] > 0)
+    delta_bbox = torch.cat([delta_yx, delta_lw], dim=-1) * valid_mask
+    return delta_bbox
+
+
+def apply_box_deltas_3d(anchors, deltas, category, stride):
+    """
+    :param anchors: anchor boxes in image pixel in yxhw format (batch,height,width,4)
+    :param deltas: box conv output corresponding to dy,dx,dh,dw
+    :return:
+    """
+    anchor_yx, anchor_lw = anchors[..., :2], anchors[..., 2:4]
+    anchor_h = torch.tensor([149.6, 130.05, 147.9, 1.0])  # Mean heights encoded
+    anchor_z = anchor_h / 2
+    stride = torch.pow(2, stride + 2).view(anchor_yx.shape[0], -1).unsqueeze(-1).to(device=device)
+    delta_yx, delta_lw, delta_h, delta_z = deltas[..., :2], deltas[..., 2:4], deltas[..., 4:5], deltas[..., 5:6]
+
+    bbox_yx = anchor_yx + delta_yx * stride
+    bbox_lw = anchor_lw * torch.exp(delta_lw)
+    bbox_h = anchor_h[category] * torch.exp(delta_h)
+    bbox_z = anchor_z[category] + delta_z * anchor_h[category] / 4
+    bbox = torch.cat([bbox_yx, bbox_lw, bbox_z, bbox_h], dim=-1)
+    return bbox
+
+
+def get_deltas_3d(anchors, bboxes, category, stride=None):
+    category = category.to(dtype=torch.int64)
+    anchor_yx, anchor_lw = anchors[..., :2], anchors[..., 2:4]
+    anchor_h = torch.tensor([149.6, 130.05, 147.9, 1.0])  # Mean heights encoded
+    anchor_z = anchor_h / 2
+    bboxes_yx, bboxes_lw, bboxes_h, bboxes_z = bboxes[..., :2], bboxes[..., 2:4], bboxes[..., 4:5], bboxes[..., 5:6]
+    anchor_yx = anchor_yx.view(bboxes_yx.shape)
+    anchor_lw = anchor_lw.view(bboxes_lw.shape)
+    delta_h = torch.log(bboxes_h / anchor_h[category] + 1e-10)
+    delta_z = (bboxes_z - anchor_z[category]) / (anchor_h[category] / 4)
+    delta_yx = (bboxes_yx - anchor_yx) / stride
+    delta_lw = torch.log(bboxes_lw / anchor_lw + 1e-10)
+    valid_mask = (bboxes_lw[..., 0:1] > 0)
+    delta_bbox = torch.cat([delta_yx, delta_lw, delta_z, delta_h], dim=-1) * valid_mask
+    return delta_bbox
 
 
 class NonMaximumSuppression:
@@ -228,8 +277,11 @@ class NonMaximumSuppression:
 
                 selected_indices = box_ops.batched_nms(ctgr_boxes[frame_idx], ctgr_scores[frame_idx],
                                                        categories[frame_idx], self.iou_thresh[ctgr_idx - 1])
-                max_num = ctgr_boxes[frame_idx].shape[0]
-                zero = torch.ones((max_num - selected_indices.shape[0]), device=self.device) * -1
+                selected_indices = selected_indices[:self.max_out[frame_idx]]
+                max_num = self.max_out[frame_idx]
+
+                if selected_indices.numel() <= max_num:
+                    zero = torch.ones((max_num - selected_indices.shape[0]), device=self.device) * -1
                 selected_indices = torch.cat([selected_indices, zero], dim=0).to(dtype=torch.int64)
                 batch_indices[frame_idx].append(selected_indices)
                 # print('pred', ctgr_boxes[frame_idx, selected_indices])

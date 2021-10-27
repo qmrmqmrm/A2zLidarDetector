@@ -15,9 +15,9 @@ import utils.util_function as uf
 
 
 def train_main():
-    end_epoch = get_end_epohcs()
+    end_epoch = 0
     for dataset_name, epochs, learning_rate, loss_weights, model_save in cfg.Train.TRAINING_PLAN:
-        # end_epoch += epochs
+        end_epoch += epochs
         train_by_plan(dataset_name, end_epoch, learning_rate, loss_weights, model_save)
 
 
@@ -37,8 +37,8 @@ def train_by_plan(dataset_name, end_epoch, learning_rate, loss_weights, model_sa
         print(f"!! end_epoch {end_epoch} <= start_epoch {start_epoch}, no need to train")
         return
 
-    train_data_loader = get_dataset(dataset_name, 'train', batch_size)
-    test_data_loader = get_dataset(dataset_name, 'test', batch_size)
+    train_data_loader = get_dataset(dataset_name, 'train', batch_size, True)
+    test_data_loader = get_dataset(dataset_name, 'test', batch_size, False)
     model_factory = ModelFactory(dataset_name)
     model = model_factory.make_model()
     model = try_load_weights(ckpt_path, model)
@@ -49,11 +49,10 @@ def train_by_plan(dataset_name, end_epoch, learning_rate, loss_weights, model_sa
     log_file = LogFile(ckpt_path)
     for epoch in range(start_epoch, end_epoch):
         print(f"========== Start dataset : {dataset_name} epoch: {epoch + 1}/{end_epoch} ==========")
-        train_result = trainer.run_epoch(True, epoch, train_data_loader)
+        train_result = trainer.run_epoch(False, epoch, train_data_loader)
         val_result = validator.run_epoch(True, epoch, test_data_loader)
         save_model_ckpt(ckpt_path, model)
         log_file.save_log(epoch, train_result, val_result)
-
     if model_save:
         save_model_ckpt(ckpt_path, model, f"ep{end_epoch:02d}")
 
