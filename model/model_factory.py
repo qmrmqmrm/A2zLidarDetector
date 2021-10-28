@@ -2,147 +2,125 @@ import torch
 from torch import nn
 import numpy as np
 
-import utils.util_function as uf
-from config import Config as cfg
+import config as cfg
+from utils.util_class import ShapeSpec, MyExceptionToCatch
+from model.backbone import ResNet, BasicStem, BottleneckBlock, make_stage
+from model.neck import FPN, LastLevelMaxPool
 from model.rpn import RPN
-from utils.util_class import ShapeSpec
-from utils.image_list import ImageList
-from model.fpn import build_resnet_fpn_backbone
-from model.head import StandardROIHeads
+from model.head import FastRCNNHead
+from model.architecture import GeneralizedRCNN
 
 
-class GeneralizedRCNN(nn.Module):
-    """
-    Generalized R-CNN. Any models that contains the following three components:
-    1. Per-image feature extraction (aka backbone)
-    2. Region proposal generation
-    3. Per-region feature extraction and prediction
-    """
+class ModelFactory:
+    def __init__(self, dataset_name):
+        self.backbone_name = cfg.Model.Backbone.ARCHITECTURE
+        self.neck_name = cfg.Model.Neck.ARCHITECTURE
+        self.rpn_name = cfg.Model.RPN.ARCHITECTURE
+        self.head_name = cfg.Model.Head.ARCHITECTURE
+        self.model_name = cfg.Model.MODEL_NAME
+        self.dataset_name = dataset_name
 
-    def __init__(self, input_shape):
-        super().__init__()
+    def make_model(self):
+        backbone = self.backbone_factory(self.backbone_name)
+        neck = self.neck_factory(self.neck_name, backbone.out_feature_channels)
+        rpn = self.rpn_factory(self.rpn_name, self.dataset_name)
+        head = self.head_factory(self.head_name, neck.output_shape())
+        ModelClass = self.select_model(self.model_name)
+        model = ModelClass(backbone=backbone, neck=neck, rpn=rpn, head=head)
+        # print(model)
+        return model
 
-        self.device = torch.device("cuda")
-        input_shape = ShapeSpec(channels=len(cfg.Model.Structure.PIXEL_MEAN))
-        self.backbone = build_resnet_fpn_backbone(input_shape=input_shape)
-        self.proposal_generator = RPN(self.backbone.output_shape())
-        self.roi_heads = StandardROIHeads(self.backbone.output_shape())
-
-        assert len(cfg.Model.Structure.PIXEL_MEAN) == len(cfg.Model.Structure.PIXEL_STD)
-        num_channels = len(cfg.Model.Structure.PIXEL_MEAN)
-        pixel_mean = torch.Tensor(cfg.Model.Structure.PIXEL_MEAN).to(self.device).view(num_channels, 1, 1)
-        pixel_std = torch.Tensor(cfg.Model.Structure.PIXEL_STD).to(self.device).view(num_channels, 1, 1)
-        self.normalizer = lambda x: (x - pixel_mean) / pixel_std
-        self.to(self.device)
-        self.rotated_box_training = cfg.Model.Structure.ROTATED_BOX_TRAINING
-
-    def forward(self, batched_inputs):
+    def backbone_factory(self, backbone_name):
         """
-        Args:
-            batched_inputs: a list, batched outputs of :class:`DatasetMapper` .
-                Each item in the list contains the inputs for one image.
-                For now, each item in the list is a dict that contains:
-
-                * image: Tensor, image in (C, H, W) format.
-                * instances (optional): groundtruth :class:`Instances`
-                * proposals (optional): :class:`Instances`, precomputed proposals.
-
-                Other information that's included in the original dicts, such as:
-
-                * "height", "width" (int): the output resolution of the model, used in inference.
-                    See :meth:`postprocess` for details.
-
-        Returns:
-            list[dict]:
-                Each dict is the output for one input image.
-                The dict contains one key "instances" whose value is a :class:`Instances`.
-                The :class:`Instances` object has the following keys:
-                    "pred_boxes", "pred_classes", "scores", "pred_masks", "pred_keypoints"
+        try except, split functions, specify inputs
+        :param backbone_name:
+        :param neck_name:
+        :return:
         """
-        if not self.training:
-            return self.inference(batched_inputs)
+        if backbone_name == "ResNet":
+            # need registration of new blocks/stems?
+            input_shape = ShapeSpec(channels=len(cfg.Model.Structure.PIXEL_MEAN))
+            norm = cfg.Model.Backbone.NORM
+            stem = BasicStem(
+                in_channels=input_shape.channels,
+                out_channels=cfg.Model.Backbone.STEM_OUT_CHANNELS,
+                norm=norm,
+            )
+            freeze_at = 0
 
-        images = self.preprocess_image(batched_inputs)
-        gt_instances = batched_inputs.copy()
-        gt = list()
-        for gt_instance in gt_instances:
-            x = gt_instance
-            x.pop('image')
-            gt.append(x)
-        features = self.backbone(images.tensor)
+            # fmt: off
+            out_features = cfg.Model.Backbone.OUT_FEATURES
+            depth = cfg.Model.Backbone.DEPTH
+            num_groups = cfg.Model.Backbone.NUM_GROUPS
+            width_per_group = cfg.Model.Backbone.WIDTH_PER_GROUP
+            bottleneck_channels = num_groups * width_per_group
+            in_channels = cfg.Model.Backbone.STEM_OUT_CHANNELS
+            out_channels = cfg.Model.Backbone.RES_OUT_CHANNELS
+            stride_in_1x1 = cfg.Model.Backbone.STRIDE_IN_1X1
+            res5_dilation = cfg.Model.Backbone.RES5_DILATION
 
-        if self.proposal_generator:
-            proposals, proposal_losses = self.proposal_generator(images, features, gt_instances)
+            # fmt: on
+            assert res5_dilation in {1, 2}, "res5_dilation cannot be {}.".format(res5_dilation)
+            num_blocks_per_stage = {50: [3, 4, 6, 3], 101: [3, 4, 23, 3], 152: [3, 8, 36, 3]}[depth]
+            stages = []
+
+            # Avoid creating variables without gradients
+            # It consumes extra memory and may cause allreduce to fail
+            out_stage_idx = [{"backbone_s2": 2, "backbone_s3": 3, "backbone_s4": 4, "backbone_s5": 5}[f] for f in
+                             out_features]
+            max_stage_idx = max(out_stage_idx)
+            for idx, stage_idx in enumerate(range(2, max_stage_idx + 1)):
+                dilation = res5_dilation if stage_idx == 5 else 1
+                first_stride = 1 if idx == 0 or (stage_idx == 5 and dilation == 2) else 2
+                stage_kargs = {"num_blocks": num_blocks_per_stage[idx], "first_stride": first_stride,
+                               "in_channels": in_channels, "bottleneck_channels": bottleneck_channels,
+                               "out_channels": out_channels, "num_groups": num_groups, "norm": norm,
+                               "stride_in_1x1": stride_in_1x1, "dilation": dilation, "block_class": BottleneckBlock}
+
+                blocks = make_stage(**stage_kargs)
+                in_channels = out_channels
+                out_channels *= 2
+                bottleneck_channels *= 2
+
+                if freeze_at >= stage_idx:
+                    for block in blocks:
+                        block.freeze()
+                stages.append(blocks)
+            bottom_up = ResNet(stem, stages, out_features=out_features)
+            return bottom_up
         else:
-            assert "proposals" in batched_inputs[0]
-            proposals = [x["proposals"].to(self.device) for x in batched_inputs]
-            proposal_losses = {}
+            raise MyExceptionToCatch(f"[backbone] EMPTY")
 
-        _, detector_losses = self.roi_heads(images, features, proposals, gt_instances)
-
-        losses = {}
-        losses.update(detector_losses)
-        losses.update(proposal_losses)
-        return losses
-
-    def inference(self, batched_inputs, detected_instances=None, do_postprocess=True):
-        """
-        Run inference on the given inputs.
-
-        Args:
-            batched_inputs (list[dict]): same as in :meth:`forward`
-            detected_instances (None or list[Instances]): if not None, it
-                contains an `Instances` object per image. The `Instances`
-                object contains "pred_boxes" and "pred_classes" which are
-                known boxes in the image.
-                The inference will then skip the detection of bounding boxes,
-                and only predict other per-ROI outputs.
-            do_postprocess (bool): whether to apply post-processing on the outputs.
-
-        Returns:
-            same as in :meth:`forward`.
-        """
-        assert not self.training
-
-        images = self.preprocess_image(batched_inputs)
-        features = self.backbone(images.tensor)
-
-        if detected_instances is None:
-            if self.proposal_generator:
-                proposals, _ = self.proposal_generator(images, features, None)
-            else:
-                assert "proposals" in batched_inputs[0]
-                proposals = [x["proposals"].to(self.device) for x in batched_inputs]
-
-            results, _ = self.roi_heads(images, features, proposals, None)
+    def neck_factory(self, neck_name, backbone_out_channels):
+        if neck_name == "FPN":
+            in_features = cfg.Model.Backbone.OUT_FEATURES
+            out_channels = cfg.Model.Neck.OUTPUT_CHANNELS
+            neck = FPN(
+                backbone_out_channels=backbone_out_channels,
+                in_features=in_features,
+                out_channels=out_channels,
+                norm=cfg.Model.Neck.NORM,
+                top_block=LastLevelMaxPool(cfg.Model.Neck.OUT_FEATURES[-1]),
+                fuse_type='sum',
+            )
+            return neck
         else:
-            detected_instances = [x.to(self.device) for x in detected_instances]
-            results = self.roi_heads.forward_with_given_boxes(features, detected_instances)
+            raise MyExceptionToCatch(f"[neck] EMPTY")
 
-        if do_postprocess:
-            processed_results = []
-            for results_per_image, input_per_image, image_size in zip(
-                    results, batched_inputs, images.image_sizes
-            ):
-                height = input_per_image.get("height", image_size[0])
-                width = input_per_image.get("width", image_size[1])
-                r = detector_postprocess(results_per_image, height, width,
-                                         rotated_box_training=self.rotated_box_training)
-                processed_results.append({"instances": r})
-            return processed_results
+    def rpn_factory(self, rpn_name, dataset_name):
+        if rpn_name == 'RPN':
+            return RPN(dataset_name)
         else:
-            return results
+            raise MyExceptionToCatch(f"[rpn] EMPTY")
 
-    def preprocess_image(self, batched_inputs):
-        """
-        Normalize, pad and batch the input images.
-        """
-        images = [x["image"].to(self.device) for x in batched_inputs]
-        # images = [x.permute(2, 0, 1) for x in images]
-        images = [self.normalizer(x) for x in images]
-        images = ImageList.from_tensors(images, self.backbone.size_divisibility)
-        return images
+    def head_factory(self, head_name, output_shape):
+        if head_name == 'FRCNN':
+            return FastRCNNHead(output_shape)
+        else:
+            raise MyExceptionToCatch(f"[head] EMPTY")
 
-# if __name__ == "__main__":
-#     uf.set_gpu_configs()
-#     test_model_factory()
+    def select_model(self, model_name):
+        if model_name == "RCNN":
+            return GeneralizedRCNN
+        else:
+            raise MyExceptionToCatch(f"[model] EMPTY")

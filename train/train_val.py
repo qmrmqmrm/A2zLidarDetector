@@ -1,24 +1,10 @@
-
-import numpy as np
 from timeit import default_timer as timer
+import os.path as op
+import torch
 
 import utils.util_function as uf
-
-
-
-def trainer_factory(mode, model, loss_object, optimizer, steps):
-    if mode == "eager":
-        return ModelEagerTrainer(model, loss_object, optimizer, steps)
-    elif mode == "graph":
-        return ModelGraphTrainer(model, loss_object, optimizer, steps)
-
-
-def validater_factory(mode, model, loss_object, steps):
-    if mode == "eager":
-        return ModelEagerValidater(model, loss_object, steps)
-    elif mode == "graph":
-        return ModelGraphValidater(model, loss_object, steps)
-
+from log.nplog.logger import Logger
+import config as cfg
 
 class TrainValBase:
     def __init__(self, model, loss_object, optimizer, epoch_steps):
@@ -26,69 +12,111 @@ class TrainValBase:
         self.loss_object = loss_object
         self.optimizer = optimizer
         self.epoch_steps = epoch_steps
+        self.split = ""
+        self.device = cfg.Hardware.DEVICE
 
-    def run_epoch(self, dataset):
-        # logger = LogData()
-        for step, features in enumerate(dataset):
+    def run_epoch(self, logger, epoch, data_loader):
+
+        self.mode_set()
+        logger = Logger(logger,logger, op.join(cfg.Paths.CHECK_POINT, cfg.Train.CKPT_NAME), epoch, self.split)
+        train_loader_iter = iter(data_loader)
+        steps = len(train_loader_iter)
+
+        for step in range(steps):
+            # if step > 10:
+            #     break
+            features = next(train_loader_iter)
+            features = self.to_device(features)
             start = timer()
-            prediction, total_loss, loss_by_type = self.run_batch(features)
+            file_name = features['image_file']
+            prediction, total_loss, loss_by_type, auxi = self.run_step(features)
+            logger.log_batch_result(step, features, prediction, total_loss, loss_by_type, auxi)
+
+            features['image_file'] = file_name
             # logger.append_batch_result(step, features, prediction, total_loss, loss_by_type)
-            uf.print_progress(f"training {step}/{self.epoch_steps} steps, "
+            uf.print_progress(f"({self.split}) {step}/{steps} steps in {epoch} epoch, "
                               f"time={timer() - start:.3f}, "
                               f"loss={total_loss:.3f}, ")
-            # if step > 20:
-            #     break
 
-        # logger.finalize()
-        # return logger
+        logger.finalize()
+        return logger
 
-    def run_batch(self, features):
+    def to_device(self, features):
+        for key in features:
+            if isinstance(features[key], torch.Tensor):
+                features[key] = features[key].to(device=self.device)
+            if isinstance(features[key], list):
+                data = list()
+                for feature in features[key]:
+                    if isinstance(feature, torch.Tensor):
+                        feature = feature.to(device=self.device)
+                    data.append(feature)
+                features[key] = data
+        return features
+
+    def run_step(self, features):
+        """
+
+        :param features:
+            {'image': [batch, height, width, channel],
+             'anchors': [batch, height/stride, width/stride, anchor, yxwh + id] * features
+            'category': [batch, fixbox, 1],
+            'bbox2d': [batch, fixbox, 4](tlbr), 'bbox3d': [batch, fixbox, 6], 'object': [batch, fixbox, 1],
+            'yaw': [batch, fixbox, 1], 'yaw_rads': [batch, fixbox, 1]}, 'anchor_id': [batch, fixbox, 1]
+            'image_file': image file name per batch
+            }
+        :return:
+           prediction: {
+                        'bbox2d' : torch.Size([batch, 512, 4(tlbr)])
+                        'objectness' : torch.Size([batch, 512, 1])
+                        'anchor_id' torch.Size([batch, 512, 1])
+                        'rpn_feat_bbox2d' : list(torch.Size([batch, height/stride* width/stride* anchor, 4(tlbr)])
+                        'rpn_feat_objectness' : list(torch.Size([batch, height/stride* width/stride* anchor, 1])
+                        'rpn_feat_anchor_id' : list(torch.Size([batch, height/stride* width/stride* anchor, 1])
+                        'head_output' : torch.Size([4, 512, 93])
+                        }
+        """
+        raise NotImplementedError()
+
+    def mode_set(self):
         raise NotImplementedError()
 
 
-class ModelEagerTrainer(TrainValBase):
+class ModelTrainer(TrainValBase):
     def __init__(self, model, loss_object, optimizer, epoch_steps=0):
         super().__init__(model, loss_object, optimizer, epoch_steps)
-    
-    def run_batch(self, features):
-        return self.train_step(features)
+        self.split = "train"
 
-    def train_step(self, features):
-        with tf.GradientTape() as tape:
-            prediction = self.model(features["image"])
-            total_loss, loss_by_type = self.loss_object(features, prediction)
+    def run_step(self, features):
+        prediction = self.model(features)
+        total_loss, loss_by_type, auxi = self.loss_object(features, prediction, True)
+        print(loss_by_type)
+        self.optimizer.zero_grad()
+        total_loss.backward()
+        self.optimizer.step()
+        return prediction, total_loss, loss_by_type, auxi
 
-        grads = tape.gradient(total_loss, self.model.trainable_weights)
-        self.optimizer.apply_gradients(zip(grads, self.model.trainable_weights))
-        return prediction, total_loss, loss_by_type
-
-
-class ModelGraphTrainer(ModelEagerTrainer):
-    def __init__(self, model, loss_object, optimizer, epoch_steps=0):
-        super().__init__(model, loss_object, optimizer, epoch_steps)
-    
-
-    def run_batch(self, features):
-        return self.train_step(features)
+    def mode_set(self):
+        self.model.train()
+        self.model.set_gt_use(True)
 
 
-class ModelEagerValidater(TrainValBase):
+class ModelValidater(TrainValBase):
     def __init__(self, model, loss_object, epoch_steps=0):
         super().__init__(model, loss_object, None, epoch_steps)
+        self.split = "val"
 
-    def run_batch(self, features):
-        return self.validate_step(features)
+    def run_step(self, features):
+        prediction = self.model(features)
+        total_loss, loss_by_type, auxi = self.loss_object(features, prediction, False)
+        return prediction, total_loss, loss_by_type, auxi
 
-    def validate_step(self, features):
-        prediction = self.model(features["image"])
-        total_loss, loss_by_type = self.loss_object(features, prediction)
-        return prediction, total_loss, loss_by_type
+    def mode_set(self):
+        self.model.train()
+        self.model.set_gt_use(False)
 
 
-class ModelGraphValidater(ModelEagerValidater):
-    def __init__(self, model, loss_object, epoch_steps=0):
-        super().__init__(model, loss_object, epoch_steps)
-
-    def run_batch(self, features):
-        return self.validate_step(features)
-
+def get_train_val(model, loss_object, optimizer, epoch_steps=0):
+    trainer = ModelTrainer(model, loss_object, optimizer, epoch_steps)
+    validator = ModelValidater(model, loss_object, epoch_steps)
+    return trainer, validator

@@ -1,19 +1,17 @@
 import os
 import os.path as op
 from typing import Any, Dict, List
-import cv2
-import numpy as np
 import torch
-from torch.utils.data import DataLoader
+import pandas as pd
 
-from dataloader.a2z_loader import A2D2_Loader
-from dataloader.sampler import TrainingSampler
+import config as cfg
+import settings
+from model.model_factory import ModelFactory
+from dataloader.loader_factory import get_dataset
+from train.train_val import get_train_val
+from train.loss_factory import IntegratedLoss
+from log.nplog.logfile import LogFile
 import utils.util_function as uf
-from config import Config as cfg
-from model.model_factory import GeneralizedRCNN
-
-import train.train_val as tv
-from train.train_loop import SimpleTrainer, DefaultTrainer
 
 
 def train_main():
@@ -23,31 +21,48 @@ def train_main():
         train_by_plan(dataset_name, end_epoch, learning_rate, loss_weights, model_save)
 
 
+def get_end_epohcs():
+    end_epochs = 0
+    for dataset_name, epochs, learning_rate, loss_weights, model_save in cfg.Train.TRAINING_PLAN:
+        end_epochs += epochs
+    return end_epochs
+
+
 def train_by_plan(dataset_name, end_epoch, learning_rate, loss_weights, model_save):
     batch_size, train_mode = cfg.Train.BATCH_SIZE, cfg.Train.MODE
-    path, ckpt_path = cfg.Datasets.A2D2.PATH, op.join(cfg.Paths.CHECK_POINT, cfg.Train.CKPT_NAME)
-    # valid_category = cfg.get_valid_category_mask(dataset_name)
+    ckpt_path = op.join(cfg.Paths.CHECK_POINT, cfg.Train.CKPT_NAME)
+    valid_category = cfg.get_valid_category_mask(dataset_name)
     start_epoch = read_previous_epoch(ckpt_path)
     if end_epoch <= start_epoch:
         print(f"!! end_epoch {end_epoch} <= start_epoch {start_epoch}, no need to train")
         return
 
-    data_loader = get_dataset(path, batch_size)
-    # dataset_val, val_steps, _, _ = get_dataset(tfrd_path, dataset_name, False, batch_size, "val")
-    # print(dataset_train)
-    model = GeneralizedRCNN(3)
-
+    train_data_loader = get_dataset(dataset_name, 'train', batch_size, True)
+    test_data_loader = get_dataset(dataset_name, 'test', batch_size, False)
+    model_factory = ModelFactory(dataset_name)
+    model = model_factory.make_model()
+    model = try_load_weights(ckpt_path, model)
+    print(model)
+    loss_object = IntegratedLoss(batch_size, loss_weights, valid_category)
     optimizer = build_optimizer(model, learning_rate)
-    trainer = DefaultTrainer(model, data_loader, optimizer)
-    # trainer = tv.trainer_factory(train_mode, model, loss_object, optimizer, train_steps)
-
+    trainer, validator = get_train_val(model, loss_object, optimizer, start_epoch)
+    log_file = LogFile(ckpt_path)
     for epoch in range(start_epoch, end_epoch):
         print(f"========== Start dataset : {dataset_name} epoch: {epoch + 1}/{end_epoch} ==========")
-        train_result = trainer.train()
-        print(train_result)
-
+        train_result = trainer.run_epoch(False, epoch, train_data_loader)
+        val_result = validator.run_epoch(True, epoch, test_data_loader)
+        save_model_ckpt(ckpt_path, model)
+        log_file.save_log(epoch, train_result, val_result)
     if model_save:
         save_model_ckpt(ckpt_path, model, f"ep{end_epoch:02d}")
+
+
+def save_model_ckpt(ckpt_path, model, weights_suffix='latest'):
+    ckpt_file = op.join(ckpt_path, f"model_{weights_suffix}.pt")
+    if not op.isdir(ckpt_path):
+        os.makedirs(ckpt_path, exist_ok=True)
+    print("=== save model:", ckpt_file)
+    torch.save(model.state_dict(), ckpt_file)
 
 
 def read_previous_epoch(ckpt_path):
@@ -68,33 +83,11 @@ def read_previous_epoch(ckpt_path):
         return 0
 
 
-def get_dataset(path, batch_size, shuffle=True):
-    loader = A2D2_Loader(path)
-    sampler = TrainingSampler(len(loader))
-    batch_sampler = torch.utils.data.sampler.BatchSampler(
-        sampler, batch_size, drop_last=True
-    )
-    data_loader = DataLoader(dataset=loader,
-                             batch_sampler=batch_sampler,
-                             collate_fn=trivial_batch_collator,
-                             num_workers=2)
-
-    print("\n")
-    return data_loader
-
-
-def trivial_batch_collator(batch):
-    """
-    A batch collator that does nothing.
-    """
-    return batch
-
-
 def try_load_weights(ckpt_path, model, weights_suffix='latest'):
-    ckpt_file = op.join(ckpt_path, f"model_{weights_suffix}.h5")
+    ckpt_file = op.join(ckpt_path, f"model_{weights_suffix}.pt")
     if op.isfile(ckpt_file):
         print(f"===== Load weights from checkpoint: {ckpt_file}")
-        model.load_weights(ckpt_file)
+        model.load_state_dict(torch.load(ckpt_file))
     else:
         print(f"===== Failed to load weights from {ckpt_file}\n\ttrain from scratch ...")
     return model
@@ -117,40 +110,8 @@ def build_optimizer(model: torch.nn.Module, learning_rate) -> torch.optim.Optimi
             weight_decay = cfg.Model.Output.WEIGHT_DECAY_BIAS
         params += [{"params": [value], "lr": lr, "weight_decay": weight_decay}]
 
-    optimizer = torch.optim.SGD(params, lr, momentum=cfg.Model.Output.MOMENTUM)
+    optimizer = torch.optim.SGD(model.parameters(), learning_rate, momentum=cfg.Model.Output.MOMENTUM)
     return optimizer
-
-
-def drow_box(img, bboxes_2d):
-    # print(bboxes_2d)
-    img = img.permute(1, 2, 0)
-    drow_img = img.numpy()
-    # bboxes_2d = bboxes_2d.numpy()
-    bboxes_2d = bboxes_2d[np.where(bboxes_2d > 0)].reshape(-1, 4)
-    shape = bboxes_2d.shape
-    for i in range(shape[0]):
-        bbox = bboxes_2d[i, :]
-        x0 = int(bbox[0] - bbox[2] / 2)
-        x1 = int(bbox[0] + bbox[2] / 2)
-        y0 = int(bbox[1] - bbox[3] / 2)
-        y1 = int(bbox[1] + bbox[3] / 2)
-
-        drow_img = cv2.rectangle(drow_img, (x0, y0), (x1, y1), (255, 255, 255), 2)
-    cv2.imshow("drow_img", drow_img)
-    cv2.waitKey()
-
-
-def test_():
-    path = "/media/dolphin/intHDD/birdnet_data/my_a2d2"
-    train_loader = get_dataset(path, 2)
-    train_loader_iter = iter(train_loader)
-    for i in range(3):
-        batch = next(train_loader_iter)
-        img = batch[0].get("image")
-        drow_box(img, batch[0].get('bbox2D'))
-        # cv2.imshow("img",img)
-        # cv2.waitKey()
-
 
 
 if __name__ == '__main__':

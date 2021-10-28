@@ -21,24 +21,19 @@ for feature in dataloader:
 from torch.utils.data import Dataset
 
 
-class Dataset_Base(Dataset):
+class DatasetBase(Dataset):
     """ Diabetes dataset."""
 
     # Initialize your data, download, etc.
-    def __init__(self, anns_dict):
-        self.anns_dict = anns_dict
-        self.anns_list = self.anns_list.get("annotations")
-        self.len = len(self.anns_list)
+    def __init__(self, root_dir, split):
+        self.root_dir = root_dir
+        self.img_files = self.list_frames(root_dir, split)
 
-    def get_anno_data(self, img_file):
+    def list_frames(self, root_dir, split):
         raise NotImplementedError
 
     def __getitem__(self, index):
-        # self.annotation = torch.from_numpy(self.anno_dict[index].values())
-        anns = self.anns_list[index]
-        ann_feature = self.get_anno_data(anns)
-        return ann_feature
+        raise NotImplementedError
 
-    #
     def __len__(self):
-        return self.len
+        return len(self.img_files)
