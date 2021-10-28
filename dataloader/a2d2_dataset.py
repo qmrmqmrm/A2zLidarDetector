@@ -61,15 +61,8 @@ class A2D2Dataset(DatasetBase):
         features['anc_feat'] = self.anchors
         features.update(anns)
         features['image_file'] = image_file
-        features['anchors'], features['anchor_id'], features['anchor_stride'] = self.matched_anchor(
-            features['anc_feat'], features['bbox2d'])
-        features['delta2d'] = mu.get_deltas_2d(features['anchors'], features['bbox2d'], features['anchor_stride'])
-        # bbox2d = mu.apply_box_deltas_2d(features['anchors'],features['delta2d'], features['anchor_stride'])
-        # print('bbox2d',bbox2d)
-        # print('bbox2d_gt',features['bbox2d'])
-        features['delta3d'] = mu.get_deltas_3d(features['anchors'], features['bbox3d'], features['category'],
-                                               features['anchor_stride'])
-
+        gt_anchors, features['anchor_id'], gt_anchors_stride = self.matched_anchor(features['anc_feat'], features['bbox2d'])
+        features['bbox2d_delta'] = mu.get_deltas_2d(gt_anchors, features['bbox2d'], gt_anchors_stride)
 
         return features
 

@@ -52,7 +52,8 @@ class FastRCNNHead(nn.Module):
         batch, numsample, ch = proposals['bbox2d'].shape
 
         pred_features = pred_features.view(batch, numsample, -1)
-        pred_features = self.decode(pred_features, proposals['anchors'], box_features['strides'])
+        pred_features = self.decode(pred_features, proposals['bbox2d'], box_features['strides'])
+        pred_features['strides'] = box_features['strides']
         # decode()
 
         # torch.Size([batch, 512, 93]
@@ -100,7 +101,7 @@ class FastRCNNHead(nn.Module):
             feature_aligned[key] = torch.cat(feature_aligned[key], dim=0)
         return feature_aligned
 
-    def decode(self, pred, anchors, strides):
+    def decode(self, pred, bbox2d, strides):
         num_classes = cfg.Model.Structure.NUM_CLASSES
         loss_channel = cfg.Model.Structure.LOSS_CHANNEL
         sliced_features = {}
@@ -113,12 +114,12 @@ class FastRCNNHead(nn.Module):
             last_channel = slice_dim
         # pred_slices = uf.merge_and_slice_features(pred)  # b, n, 18
         pred = uf.slice_class(sliced_features)  # b, n, 3, 6
-        pred['bbox3d_logit'] = pred['bbox3d']
+        pred['bbox3d_delta'] = pred['bbox3d']
         bbox3d_delta = pred['bbox3d']
         bbox3d = list()
         for i in range(3):
             bbox3d_split_cate = bbox3d_delta[:, :, i, :].squeeze(-2)  # B, NUM, 4
-            bbox3d_per_cate = mu.apply_box_deltas_3d(anchors, bbox3d_split_cate, i, strides)  # B,NUM,4
+            bbox3d_per_cate = mu.apply_box_deltas_3d(bbox2d, bbox3d_split_cate, i, strides)  # B,NUM,4
             bbox3d.append(bbox3d_per_cate.unsqueeze(-2))
         pred['bbox3d'] = torch.cat(bbox3d, dim=-2)
         pred['category'] = pred['category'].squeeze(-1)

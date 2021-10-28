@@ -103,7 +103,7 @@ class Model:
 
 
 class Train:
-    CKPT_NAME = "delta_v9"
+    CKPT_NAME = "max_match"
 
     MODE = ["eager", "graph"][0]
     BATCH_SIZE = 2

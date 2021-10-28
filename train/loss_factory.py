@@ -142,26 +142,35 @@ class IntegratedLoss:
         anchors_cat = torch.cat(anchors, dim=1)
         auxiliary = dict()
         auxiliary["gt_aligned"] = self.matched_gt(grtr, pred['bbox2d'], self.align_iou_threshold)  # tlbr tlbr
+
         auxiliary["gt_feature"] = self.matched_gt(grtr, anchors_cat[..., :-2], self.anchor_iou_threshold)  # tlbr tlbr
         auxiliary["gt_feature"] = self.split_feature(anchors, auxiliary["gt_feature"])
         auxiliary["pred_select"] = self.select_category(auxiliary['gt_aligned'], pred)
-
+        bbox2d = mu.convert_box_format_tlbr_to_yxhw(pred['bbox2d'])
+        auxiliary["gt_aligned"]['bbox3d_delta'] = mu.get_deltas_3d(bbox2d, auxiliary["gt_aligned"]['bbox3d'],
+                                                              auxiliary["gt_aligned"]['category'],
+                                                              pred['strides'])
         return auxiliary
 
-    def matched_gt(self, grtr, pred_box, iou_threshold):
+    def matched_gt(self, grtr, target_box, iou_threshold):
         matched = {key: [] for key in
-                   ['bbox3d', 'category', 'bbox2d', 'yaw', 'yaw_rads', 'anchor_id', 'object', 'negative', 'delta2d', 'delta3d']}
+                   ['bbox3d', 'category', 'bbox2d', 'yaw', 'yaw_rads', 'anchor_id', 'object', 'negative', 'bbox2d_delta']}
         for i in range(self.batch_size):
-            iou_matrix = uf.pairwise_iou(grtr['bbox2d'][i], pred_box[i])
-
+            iou_matrix = uf.pairwise_iou(grtr['bbox2d'][i], target_box[i])
+            max_iou_per_gt, max_ind_per_gt = iou_matrix.max(dim=1)  # (gt_num)
             match_ious, match_inds = iou_matrix.max(dim=0)  # (height*width*anchor)
             positive = (match_ious >= iou_threshold[1]).unsqueeze(-1)
             negative = (match_ious < iou_threshold[0]).unsqueeze(-1)
+            matched["negative"].append(negative)
             for key in matched:
                 if key == "negative":
-                    matched["negative"].append(negative)
-                else:
-                    matched[key].append(grtr[key][i, match_inds] * positive)
+                    continue
+                max_match = torch.zeros((target_box[i].shape[0], grtr[key][i].shape[-1]), device=self.device)
+                max_match[max_ind_per_gt] = grtr[key][i]
+                max_match = max_match * (~positive)
+                iou_match = grtr[key][i, match_inds] * positive
+                gt_match = iou_match + max_match
+                matched[key].append(gt_match)
 
         for key in matched:
             matched[key] = torch.stack(matched[key], dim=0)
@@ -182,7 +191,7 @@ class IntegratedLoss:
     def select_category(self, aligned, pred):
         gt_cate = (aligned['category'].to(torch.int64)).unsqueeze(-1)
         select_pred = dict()
-        for key in ['bbox3d', 'yaw', 'yaw_rads','bbox3d_logit']:
+        for key in ['bbox3d', 'yaw', 'yaw_rads', 'bbox3d_delta']:
             pred_key = pred[key]
             batch, num, cate, channel = pred_key.shape
             pred_padding = torch.zeros((batch, num, 1, channel), device=self.device)
@@ -200,7 +209,7 @@ def test_select_category():
     alined = dict()
     alined['category'] = torch.tensor([[[1], [3], [0]]], device='cuda')  # 1, 3, 1
     pred_box = dict()
-    pred_box['bbox3d'] = torch.rand((1,3,3,2),device='cuda')
+    pred_box['bbox3d'] = torch.rand((1, 3, 3, 2), device='cuda')
     loss = IntegratedLoss(1, {"haha": 1}, 1)
     sel_box = loss.select_category(alined, pred_box)
     print('pred_box', pred_box['bbox3d'])
@@ -210,7 +219,6 @@ def test_select_category():
     pred1 = pred_box['bbox3d'][0, numind, cate1]
     sele1 = sel_box['bbox3d'][0, numind]
     print("compare:", cate1, pred1, sele1)
-
 
 
 if __name__ == '__main__':

@@ -152,7 +152,7 @@ def get_deltas_2d(anchors, bboxes, stride=None):
     anchor_yx = anchor_yx.view(bboxes_yx.shape)
     anchor_lw = anchor_lw.view(bboxes_lw.shape)
     delta_yx = (bboxes_yx - anchor_yx) / stride
-    delta_lw = torch.log(bboxes_lw / anchor_lw + 1e-10)
+    delta_lw = torch.log(bboxes_lw / (anchor_lw + 1e-10) + 1e-10)
     valid_mask = (bboxes_lw[..., 0:1] > 0)
     delta_bbox = torch.cat([delta_yx, delta_lw], dim=-1) * valid_mask
     return delta_bbox
@@ -179,18 +179,22 @@ def apply_box_deltas_3d(anchors, deltas, category, stride):
 
 
 def get_deltas_3d(anchors, bboxes, category, stride=None):
+    print(stride)
     category = category.to(dtype=torch.int64)
     anchor_yx, anchor_lw = anchors[..., :2], anchors[..., 2:4]
-    anchor_h = torch.tensor([149.6, 130.05, 147.9, 1.0])  # Mean heights encoded
+    anchor_h = torch.tensor([149.6, 130.05, 147.9, 1.0], device=device)  # Mean heights encoded
     anchor_z = anchor_h / 2
+    stride = torch.pow(2, stride + 2).view(anchor_yx.shape[0], -1).unsqueeze(-1).to(device=device)
     bboxes_yx, bboxes_lw, bboxes_h, bboxes_z = bboxes[..., :2], bboxes[..., 2:4], bboxes[..., 4:5], bboxes[..., 5:6]
     anchor_yx = anchor_yx.view(bboxes_yx.shape)
     anchor_lw = anchor_lw.view(bboxes_lw.shape)
-    delta_h = torch.log(bboxes_h / anchor_h[category] + 1e-10)
-    delta_z = (bboxes_z - anchor_z[category]) / (anchor_h[category] / 4)
-    delta_yx = (bboxes_yx - anchor_yx) / stride
-    delta_lw = torch.log(bboxes_lw / anchor_lw + 1e-10)
+
+    delta_yx = (bboxes_yx - anchor_yx) / (stride + 1e-10)
     valid_mask = (bboxes_lw[..., 0:1] > 0)
+    delta_lw = torch.log(bboxes_lw / (anchor_lw + 1e-10) + 1e-10)
+    delta_z = (bboxes_z - anchor_z[category]) / (anchor_h[category] / 4 + 1e-10)
+    delta_h = torch.log(bboxes_h / (anchor_h[category] + 1e-10) + 1e-10)
+
     delta_bbox = torch.cat([delta_yx, delta_lw, delta_z, delta_h], dim=-1) * valid_mask
     return delta_bbox
 

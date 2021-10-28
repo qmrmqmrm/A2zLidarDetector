@@ -228,7 +228,7 @@ class VisualLog:
 
     def convert_img(self, feature, scale):
         feature_imge = feature.reshape((scale, scale, 3)) * 255
-        feature_imge = cv2.resize(feature_imge, (640, 640))
+        feature_imge = cv2.resize(feature_imge, (640, 640), interpolation=cv2.INTER_NEAREST)
         feature_imge[-1, :] = [255, 255, 255]
         feature_imge[:, -1] = [255, 255, 255]
         return feature_imge

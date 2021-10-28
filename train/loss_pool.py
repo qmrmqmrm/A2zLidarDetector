@@ -79,8 +79,8 @@ class Box2dRegression(LossBase):
 
     def cal_delta2d_loss_per_scale(self, pred, auxi, scale_idx):
         gt_object_per_scale = auxi['gt_feature']['object'][scale_idx]
-        gt_bbox2d_per_scale = auxi['gt_feature']['delta2d'][scale_idx] * gt_object_per_scale
-        rpn_bbox2d_per_scale = pred['rpn_feat_bbox2d_logit'][scale_idx] * gt_object_per_scale
+        gt_bbox2d_per_scale = auxi['gt_feature']['bbox2d_delta'][scale_idx] * gt_object_per_scale
+        rpn_bbox2d_per_scale = pred['rpn_feat_bbox2d_delta'][scale_idx] * gt_object_per_scale
         return F.smooth_l1_loss(rpn_bbox2d_per_scale, gt_bbox2d_per_scale, reduction='sum', beta=0.5)
 
     # def cal_bbox2d_loss_per_scale(self, pred, auxi, scale_idx):
@@ -113,8 +113,10 @@ class ObjectClassification(LossBase):
 
 class Box3dRegression(LossBase):
     def __call__(self, features, pred, auxi):
-        gt_bbox3d = auxi['gt_aligned']['delta3d'] * auxi["gt_aligned"]["object"]
-        pred_bbox3d = auxi['pred_select']['bbox3d_logit'] * auxi["gt_aligned"]["object"]
+
+        gt_bbox3d = auxi['gt_aligned']['bbox3d_delta']
+        pred_bbox3d = auxi['pred_select']['bbox3d_delta'] * auxi["gt_aligned"]["object"]
+        gt_bbox3d = gt_bbox3d * auxi["gt_aligned"]["object"]
         loss = F.smooth_l1_loss(pred_bbox3d, gt_bbox3d, reduction='sum', beta=0.5)
 
         # gt_bbox3d = auxi['gt_aligned']['bbox3d'] * auxi["gt_aligned"]["object"]

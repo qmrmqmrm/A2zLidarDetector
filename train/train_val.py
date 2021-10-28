@@ -90,7 +90,6 @@ class ModelTrainer(TrainValBase):
     def run_step(self, features):
         prediction = self.model(features)
         total_loss, loss_by_type, auxi = self.loss_object(features, prediction, True)
-        print(loss_by_type)
         self.optimizer.zero_grad()
         total_loss.backward()
         self.optimizer.step()
