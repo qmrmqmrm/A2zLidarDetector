@@ -45,9 +45,8 @@ class HistoryLog:
         batch_data.update(box_objectness)
 
         num_ctgr = pred["category"].shape[-1] - 1
-        uf.print_structure('pred', pred)
+
         metric = count_true_positives(grtr, pred, num_ctgr, per_class=False)
-        print(metric)
         batch_data.update(metric)
         pred_cate = torch.softmax(torch.tensor(pred["category"]), dim=-1).to('cpu').detach().numpy()
         batch_data["true_cls"] = self.logtrueclass(gt_aligned, pred_cate)

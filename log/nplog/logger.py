@@ -55,6 +55,7 @@ class Logger:
         """
 
         pred.update(auxi['pred_select'])
+
         pred_slices_nms = self.nms(pred)
         gt_aligned = auxi['gt_aligned']
         gt_feature = auxi['gt_feature']

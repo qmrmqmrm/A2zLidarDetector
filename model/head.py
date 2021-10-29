@@ -22,6 +22,7 @@ class FastRCNNHead(nn.Module):
         self.sampling_ratio = cfg.Model.Head.POOLER_SAMPLING_RATIO
         self.aligned = cfg.Model.Head.ALIGNED
         self.num_sample = cfg.Model.RPN.NUM_SAMPLE
+        self.num_cate = cfg.Model.Structure.NUM_CLASSES
 
         in_channels = [input_shape[f].channels for f in self.in_features]
         assert len(set(in_channels)) == 1, in_channels
@@ -62,8 +63,9 @@ class FastRCNNHead(nn.Module):
 
     def box_pooler(self, features, proposals):
         bbox2d = proposals['bbox2d']
-        zeros = torch.zeros((bbox2d.shape[0], bbox2d.shape[1], 1), device=self.device)
-        bbox2d = torch.cat([zeros, bbox2d], dim=-1)
+        box_tlbr = mu.convert_box_format_yxhw_to_tlbr(bbox2d)
+        zeros = torch.zeros((box_tlbr.shape[0], box_tlbr.shape[1], 1), device=self.device)
+        bbox2d = torch.cat([zeros, box_tlbr], dim=-1)
         anchor_id = proposals['anchor_id']
         feature_aligned = {'xs': [], 'strides': []}
         for batch in range(features[0].shape[0]):
@@ -112,14 +114,13 @@ class FastRCNNHead(nn.Module):
                 slice_dim = slice_dim + 1
             sliced_features[loss] = pred[..., last_channel:slice_dim]
             last_channel = slice_dim
-        # pred_slices = uf.merge_and_slice_features(pred)  # b, n, 18
         pred = uf.slice_class(sliced_features)  # b, n, 3, 6
-        pred['bbox3d_delta'] = pred['bbox3d']
-        bbox3d_delta = pred['bbox3d']
         bbox3d = list()
-        for i in range(3):
-            bbox3d_split_cate = bbox3d_delta[:, :, i, :].squeeze(-2)  # B, NUM, 4
-            bbox3d_per_cate = mu.apply_box_deltas_3d(bbox2d, bbox3d_split_cate, i, strides)  # B,NUM,4
+        for cate_idx in range(self.num_cate):
+            bbox3d_split_cate = pred['bbox3d_delta'][:, :, cate_idx, :].squeeze(-2)  # B, NUM, 6
+            batch, box_num, ch = bbox3d_split_cate.shape
+            category = torch.ones((batch, box_num, 1), device=self.device, dtype=torch.int64) * cate_idx
+            bbox3d_per_cate = mu.apply_box_deltas_3d(bbox2d, bbox3d_split_cate, category, strides)  # B,NUM,6
             bbox3d.append(bbox3d_per_cate.unsqueeze(-2))
         pred['bbox3d'] = torch.cat(bbox3d, dim=-2)
         pred['category'] = pred['category'].squeeze(-1)

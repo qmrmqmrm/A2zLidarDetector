@@ -49,7 +49,7 @@ class GeneralizedRCNN(ModelBase):
         pixel_std = torch.Tensor(cfg.Model.Structure.PIXEL_STD).to(self.device).view(num_channels, 1, 1)
         self.normalizer = lambda x: (x - pixel_mean) / pixel_std
         self.use_gt = True
-    
+
     def set_gt_use(self, use):
         self.use_gt = use
 
@@ -86,9 +86,11 @@ class GeneralizedRCNN(ModelBase):
         # neck_features /neck_s4 torch.Size([2, 256, 40, 40])
         # neck_features /neck_s5 torch.Size([2, 256, 20, 20])
         if self.use_gt:
-            rpn_proposals, rpn_aux = self.proposal_generator(neck_features, batched_input['anc_feat'], batched_input)
+            rpn_proposals, rpn_aux = self.proposal_generator(neck_features, batched_input['anc_feat'], batched_input,
+                                                             use_gt=self.use_gt)
         else:
-            rpn_proposals, rpn_aux = self.proposal_generator(neck_features, batched_input['anc_feat'])
+            rpn_proposals, rpn_aux = self.proposal_generator(neck_features, batched_input['anc_feat'],
+                                                             use_gt=self.use_gt)
         # rpn_proposals /bbox2d torch.Size([2, 512, 4])
         # rpn_proposals /objectness torch.Size([2, 512, 1])
         # rpn_proposals /anchor_id torch.Size([2, 512, 1])

@@ -62,7 +62,8 @@ def convert_bev(label, image, calib, vp_res, bins, bvres=0.05, yaw=False):
         label = categories.index(obj_category)
         ann = dict()
         ann['category'] = [label]
-        ann['bbox2d'] = [bbox_xmin, bbox_ymin, bbox_xmax, bbox_ymax]
+        ann['bbox2d'] = [(bbox_ymin + bbox_ymax) / 2., (bbox_xmin + bbox_xmax) / 2.,
+                         (bbox_ymax - bbox_ymin), (bbox_xmax - bbox_xmin)]  # yxlw
 
         # ONLY VALID FOR FRONTAL CAMERA (ONLY_FRONT PARAM)
         velodyne_h = 1.12

@@ -54,7 +54,7 @@ def split_tp_fp_fn(grtr, pred, iou_thresh):
     category = np.expand_dims(best_cate,-1)
     valid_mask = grtr["object"]
     # iou = uf.pairwise_batch_iou(grtr["bbox2d"], pred["rpn_bbox2d"])  # (batch, N, M)
-    iou = uf.compute_iou_general(grtr["bbox2d"], pred["bbox2d"], grtr_tlbr=True, pred_tlbr=True)  # (batch, N, M)
+    iou = uf.compute_iou_general(grtr["bbox2d"], pred["bbox2d"])  # (batch, N, M)
     best_iou = np.max(iou, axis=-1)  # (batch, N)
     best_idx = np.argmax(iou, axis=-1)  # (batch, N)
     if len(iou_thresh) > 1:

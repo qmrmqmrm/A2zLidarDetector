@@ -65,6 +65,7 @@ class IntegratedLoss:
         :param split:
         :return:
         """
+
         # pred_slices = uf.merge_and_slice_features(predictions) # b, n, 18
         # pred = uf.slice_class(pred_slices) # b, n, 3, 6
 
@@ -134,27 +135,28 @@ class IntegratedLoss:
         }
         """
         batch = grtr['bbox2d'].shape[0]
-        anchors = list()
-        for anchor in grtr['anc_feat']:  # batch, h, w, a, 4
-            anchor = anchor.view(batch, -1, anchor.shape[-1])  # b hwa 4
-            anchor = mu.convert_box_format_yxhw_to_tlbr(anchor)  # tlbr
-            anchors.append(anchor)
-        anchors_cat = torch.cat(anchors, dim=1)
+        # anchors = list()
+        # for anchor_yxlw in grtr['anc_feat']:  # batch, h, w, a, 4
+        #     anchor_yxlw = anchor_yxlw.view(batch, -1, anchor_yxlw.shape[-1])  # b hwa 4
+        #     anchors.append(anchor_yxlw)
+        # anchors_cat = torch.cat(anchors, dim=1)
+        anchors_yxlw = [scale_anchor_yxlw.view(batch, -1, scale_anchor_yxlw.shape[-1]) for scale_anchor_yxlw in
+                        grtr['anc_feat']]
+        anchors_yxlw_cat = torch.cat(anchors_yxlw, dim=1)
         auxiliary = dict()
-        auxiliary["gt_aligned"] = self.matched_gt(grtr, pred['bbox2d'], self.align_iou_threshold)  # tlbr tlbr
-
-        auxiliary["gt_feature"] = self.matched_gt(grtr, anchors_cat[..., :-2], self.anchor_iou_threshold)  # tlbr tlbr
-        auxiliary["gt_feature"] = self.split_feature(anchors, auxiliary["gt_feature"])
+        auxiliary["gt_aligned"] = self.matched_gt(grtr, pred['bbox2d'], self.align_iou_threshold)
+        auxiliary["gt_feature"] = self.matched_gt(grtr, anchors_yxlw_cat[..., :4], self.anchor_iou_threshold)
+        auxiliary["gt_feature"] = self.split_feature(anchors_yxlw, auxiliary["gt_feature"])
         auxiliary["pred_select"] = self.select_category(auxiliary['gt_aligned'], pred)
-        bbox2d = mu.convert_box_format_tlbr_to_yxhw(pred['bbox2d'])
-        auxiliary["gt_aligned"]['bbox3d_delta'] = mu.get_deltas_3d(bbox2d, auxiliary["gt_aligned"]['bbox3d'],
-                                                              auxiliary["gt_aligned"]['category'],
-                                                              pred['strides'])
+        auxiliary["gt_aligned"]['bbox3d_delta'] = mu.get_deltas_3d(pred['bbox2d'], auxiliary["gt_aligned"]['bbox3d'],
+                                                                   auxiliary["gt_aligned"]['category'],
+                                                                   pred['strides'])
         return auxiliary
 
     def matched_gt(self, grtr, target_box, iou_threshold):
         matched = {key: [] for key in
-                   ['bbox3d', 'category', 'bbox2d', 'yaw', 'yaw_rads', 'anchor_id', 'object', 'negative', 'bbox2d_delta']}
+                   ['bbox3d', 'category', 'bbox2d', 'yaw', 'yaw_rads', 'anchor_id', 'object', 'negative',
+                    'bbox2d_delta']}
         for i in range(self.batch_size):
             iou_matrix = uf.pairwise_iou(grtr['bbox2d'][i], target_box[i])
             max_iou_per_gt, max_ind_per_gt = iou_matrix.max(dim=1)  # (gt_num)
@@ -174,7 +176,7 @@ class IntegratedLoss:
 
         for key in matched:
             matched[key] = torch.stack(matched[key], dim=0)
-
+        matched['category'] = matched['category'].to(dtype=torch.int64)
         return matched
 
     def split_feature(self, anchors, feature):

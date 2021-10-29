@@ -138,16 +138,15 @@ class CategoryClassification(LossBase):
         gt_classes = (auxi["gt_aligned"]["category"]).type(torch.int64).view(-1)  # (batch*512) torch.Size([4, 512, 1])
         pred_classes = (auxi["pred_select"]["category"]).view(-1, 4)  # (batch*512 , 3) torch.Size([4, 512, 3])
 
-        pred_obj = pred['object'].view(-1, 1)
-        print(pred_obj.shape)
-        pred_classes_numpy = (pred_classes * pred_obj).to('cpu').detach().numpy()
-        print(pred_classes_numpy.shape)
-        pred_quant = np.quantile(pred_classes_numpy, np.array([0, 0.2, 0.4, 0.6, 0.8, 0.9, 0.95, 0.995, 0.999, 1]))
-        print("pred_classes quantile:", pred_quant)
-        for i in range(1, pred_classes_numpy.shape[-1]):
-            pred_quant = np.quantile(pred_classes_numpy[:, i] - pred_classes_numpy[:, 0],
-                                       np.array([0, 0.2, 0.4, 0.6, 0.8, 0.9, 0.95, 0.995, 0.999, 1]))
-            print(f"pred_classes quantile {i} :", pred_quant)
+        # pred_obj = pred['object'].view(-1, 1)
+        # pred_classes_numpy = (pred_classes * pred_obj).to('cpu').detach().numpy()
+        # print(pred_classes_numpy.shape)
+        # pred_quant = np.quantile(pred_classes_numpy, np.array([0, 0.2, 0.4, 0.6, 0.8, 0.9, 0.95, 0.995, 0.999, 1]))
+        # print("pred_classes quantile:", pred_quant)
+        # for i in range(1, pred_classes_numpy.shape[-1]):
+        #     pred_quant = np.quantile(pred_classes_numpy[:, i] - pred_classes_numpy[:, 0],
+        #                                np.array([0, 0.2, 0.4, 0.6, 0.8, 0.9, 0.95, 0.995, 0.999, 1]))
+        #     print(f"pred_classes quantile {i} :", pred_quant)
         ce_loss = F.cross_entropy(pred_classes, gt_classes, reduction="none")
         bgd_ce = ce_loss * auxi["gt_aligned"]["object"] * (gt_classes == 0) * 0.001
         tr_ce = ce_loss * auxi["gt_aligned"]["object"] * (gt_classes > 0)

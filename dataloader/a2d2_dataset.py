@@ -62,8 +62,8 @@ class A2D2Dataset(DatasetBase):
         features.update(anns)
         features['image_file'] = image_file
         gt_anchors, features['anchor_id'], gt_anchors_stride = self.matched_anchor(features['anc_feat'], features['bbox2d'])
-        features['bbox2d_delta'] = mu.get_deltas_2d(gt_anchors, features['bbox2d'], gt_anchors_stride)
 
+        features['bbox2d_delta'] = mu.get_deltas_2d(gt_anchors, features['bbox2d'], gt_anchors_stride)
         return features
 
     def convert_bev(self, label, image, calib, bins, bvres=0.05, yaw=False):
@@ -86,7 +86,8 @@ class A2D2Dataset(DatasetBase):
             label = self.categories.index(obj_category)
             ann = dict()
             ann['category'] = [label + 1]
-            ann['bbox2d'] = [bbox_ymin, bbox_xmin, bbox_ymax, bbox_xmax]  # tlbr
+            ann['bbox2d'] = [(bbox_ymin + bbox_ymax) / 2., (bbox_xmin + bbox_xmax) / 2.,
+                             (bbox_ymax - bbox_ymin), (bbox_xmax - bbox_xmin)]  # yxlw
 
             # ONLY VALID FOR FRONTAL CAMERA (ONLY_FRONT PARAM)
             velodyne_h = 1.12
@@ -179,23 +180,19 @@ class A2D2Dataset(DatasetBase):
         gathered_anns = {key: torch.zeros(val.shape, dtype=torch.float32) for key, val in self.last_sample.items()}
         return gathered_anns
 
-    def matched_anchor(self, anchors, bbox2d):
+    def matched_anchor(self, anchors, bbox2d_yxlw):
         """
         :param anchors: (height,width,anchor,5(yxhw+anchor_id))
         :param bbox2d: (fixed_num(15), 4(tlbr))
         :return: (fixed_num(15), 1)
         """
-        feature_anchor = list()
-        for anchor in anchors:
-            anchor = anchor.view(-1, anchor.shape[-1])
-            anchor = mu.convert_box_format_yxhw_to_tlbr(anchor)
-            feature_anchor.append(anchor)
-        feature_anchor = torch.cat(feature_anchor)
-        iou = uf.pairwise_iou(bbox2d, feature_anchor[..., :-2])
+        anchors_yxlw = [scale_anchor_yxlw.view(-1, scale_anchor_yxlw.shape[-1]) for scale_anchor_yxlw in anchors]
+        anchors_yxlw = torch.cat(anchors_yxlw, dim=0)
+        iou = uf.pairwise_iou(bbox2d_yxlw, anchors_yxlw[..., :4]) # (h * w*  a ,4)
         max_iou, max_idx = iou.max(dim=1)
-        gt_anchors = feature_anchor[max_idx, :-2]
-        gt_anchors_id = feature_anchor[max_idx, -2:-1]
-        gt_anchors_stride = feature_anchor[max_idx, -1:]
+        gt_anchors = anchors_yxlw[max_idx, :4]
+        gt_anchors_id = anchors_yxlw[max_idx, 4:5]
+        gt_anchors_stride = anchors_yxlw[max_idx, 5:6]
         return gt_anchors, gt_anchors_id, gt_anchors_stride
 
     def gather_featmaps(self, bbox2d, objectness):

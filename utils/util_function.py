@@ -36,10 +36,12 @@ def pairwise_intersection(boxes1, boxes2) -> torch.Tensor:
     return intersection
 
 
-def pairwise_iou(boxes1, boxes2):
-    area1 = (boxes1[:, 2] - boxes1[:, 0]) * (boxes1[:, 3] - boxes1[:, 1])
-    area2 = (boxes2[:, 2] - boxes2[:, 0]) * (boxes2[:, 3] - boxes2[:, 1])
-    inter = pairwise_intersection(boxes1, boxes2)
+def pairwise_iou(boxes1_yxlw, boxes2_yxlw):
+    boxes1_tlbr = mu.convert_box_format_yxhw_to_tlbr(boxes1_yxlw)
+    boxes2_tlbr = mu.convert_box_format_yxhw_to_tlbr(boxes2_yxlw)
+    area1 = (boxes1_tlbr[:, 2] - boxes1_tlbr[:, 0]) * (boxes1_tlbr[:, 3] - boxes1_tlbr[:, 1])
+    area2 = (boxes2_tlbr[:, 2] - boxes2_tlbr[:, 0]) * (boxes2_tlbr[:, 3] - boxes2_tlbr[:, 1])
+    inter = pairwise_intersection(boxes1_tlbr, boxes2_tlbr)
     iou = torch.where(inter > 0, inter / (area1[:, None] + area2 - inter),
                       torch.zeros(1, dtype=inter.dtype, device=inter.device),
                       )
@@ -119,28 +121,25 @@ def compute_iou_general(grtr_yxhw, pred_yxhw, grtr_tlbr=None, pred_tlbr=None):
     :param pred_yxhw: predicted bounding box in yxhw format (batch, N2, D2(>4))
     :return: iou (batch, N1, N2)
     """
-
-    grtr_yxhw_exp = np.expand_dims(grtr_yxhw, axis=-2)  # (batch, N1, 1, D1)
-    pred_yxhw_exp = np.expand_dims(pred_yxhw, axis=-3)  # (batch, 1, N2, D2)
+    grtr_yxhw = np.expand_dims(grtr_yxhw, axis=-2)  # (batch, N1, 1, D1)
+    pred_yxhw = np.expand_dims(pred_yxhw, axis=-3)  # (batch, 1, N2, D2)
 
     if grtr_tlbr is None:
         grtr_tlbr = mu.convert_box_format_yxhw_to_tlbr(grtr_yxhw)  # (batch, N1, 1, D1)
-    else:
-        grtr_tlbr = grtr_yxhw_exp
     if pred_tlbr is None:
         pred_tlbr = mu.convert_box_format_yxhw_to_tlbr(pred_yxhw)  # (batch, 1, N2, D2)
-    else:
-        pred_tlbr = pred_yxhw_exp
+
     inter_tl = np.maximum(grtr_tlbr[..., :2], pred_tlbr[..., :2])  # (batch, N1, N2, 2)
     inter_br = np.minimum(grtr_tlbr[..., 2:4], pred_tlbr[..., 2:4])  # (batch, N1, N2, 2)
     inter_hw = inter_br - inter_tl  # (batch, N1, N2, 2)
     inter_hw = np.maximum(inter_hw, 0)
     inter_area = inter_hw[..., 0] * inter_hw[..., 1]  # (batch, N1, N2)
 
-    pred_area = (pred_tlbr[..., 2] - pred_tlbr[..., 0]) * (pred_tlbr[..., 3]- pred_tlbr[..., 1])  # (batch, 1, N2)
-    grtr_area = (grtr_tlbr[..., 2] - grtr_tlbr[..., 0]) * (grtr_tlbr[..., 3]- grtr_tlbr[..., 1])  # (batch, N1, 1)
-    iou = inter_area / (pred_area + grtr_area - inter_area + 1e-5)  # (batch, N1, N2)
+    pred_area = pred_yxhw[..., 2] * pred_yxhw[..., 3]                   # (batch, 1, N2)
+    grtr_area = grtr_yxhw[..., 2] * grtr_yxhw[..., 3]                   # (batch, N1, 1)
+    iou = inter_area / (pred_area + grtr_area - inter_area + 1e-5)      # (batch, N1, N2)
     return iou
+
 
 
 def pairwise_batch_iou(boxes1, boxes2):

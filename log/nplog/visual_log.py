@@ -88,19 +88,15 @@ class VisualLog:
 
 
             image_grtr_3d = grtr["image"][batch_idx].copy()
-            grtr_fn_bbox3d = mu.convert_box_format_yxhw_to_tlbr(splits["grtr_fn"]['bbox3d'])
-            image_grtr_3d = self.draw_boxes(image_grtr_3d, grtr_fn_bbox3d[..., :-2], splits["grtr_fn"]['category'],
+            image_grtr_3d = self.draw_boxes(image_grtr_3d, splits["grtr_fn"]['bbox3d'][..., :-2], splits["grtr_fn"]['category'],
                                             batch_idx, (0, 0, 255))
-            grtr_tp_bbox3d = mu.convert_box_format_yxhw_to_tlbr(splits["grtr_tp"]['bbox3d'])
-            image_grtr_3d = self.draw_boxes(image_grtr_3d, grtr_tp_bbox3d[..., :-2], splits["grtr_tp"]['category'],
+            image_grtr_3d = self.draw_boxes(image_grtr_3d, splits["grtr_tp"]['bbox3d'][..., :-2], splits["grtr_tp"]['category'],
                                             batch_idx, (0, 255, 0))
 
             image_pred_3d = grtr["image"][batch_idx].copy()
-            pred_fp_bbox3d = mu.convert_box_format_yxhw_to_tlbr(splits["pred_fp"]['bbox3d'])
-            image_pred_3d = self.draw_boxes(image_pred_3d, pred_fp_bbox3d[..., :-2], splits["pred_fp"]['category'],
+            image_pred_3d = self.draw_boxes(image_pred_3d, splits["pred_fp"]['bbox3d'][..., :-2], splits["pred_fp"]['category'],
                                             batch_idx, (0, 0, 255))
-            pred_tp_bbox3d = mu.convert_box_format_yxhw_to_tlbr(splits["pred_tp"]['bbox3d'])
-            image_pred_3d = self.draw_boxes(image_pred_3d, pred_tp_bbox3d[..., :-2], splits["pred_tp"]['category'],
+            image_pred_3d = self.draw_boxes(image_pred_3d, splits["pred_tp"]['bbox3d'][..., :-2], splits["pred_tp"]['category'],
                                             batch_idx, (0, 255, 0))
 
 
@@ -186,7 +182,9 @@ class VisualLog:
         valid_mask = bbox2d[:, 2] > 0  # (N,) h>0
 
         bbox2d = bbox2d[valid_mask, :]
+        bbox2d = mu.convert_box_format_yxhw_to_tlbr(bbox2d)
         for i in range(bbox2d.shape[0]):
+
             y1, x1, y2, x2 = bbox2d[i].astype(np.int32)
             cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
         return image
@@ -211,6 +209,7 @@ class VisualLog:
 
         valid_mask = bbox2d[:, 2] > 0  # (N,) h>0
         bbox2d = bbox2d[valid_mask, :]
+        bbox2d = mu.convert_box_format_yxhw_to_tlbr(bbox2d)
         for i in range(bbox2d.shape[0]):
             if one_hot_ctgrs[i][0] == 0:
                 y1, x1, y2, x2 = bbox2d[i].astype(np.int32)

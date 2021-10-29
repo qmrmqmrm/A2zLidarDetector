@@ -16,7 +16,7 @@ class Datasets:
 
     class A2D2:
         NAME = "a2d2"
-        PATH = "/media/falcon/IanBook8T/datasets/bv_a2d2"
+        PATH = "/home/falcon/workspace/datasets"
         CATEGORIES_TO_USE = ["Pedestrian", "Car", "Cyclist"]
         CATEGORY_REMAP = {}
         MAX_NUM = 15
@@ -99,11 +99,11 @@ class Model:
         BOX_DIM = 6
         IMAGE_SHAPE = [640, 640]
         STRIDE_SHAPE = Scales.DEFAULT_FEATURE_SCALES
-        LOSS_CHANNEL = {'category': 1, 'bbox3d': BOX_DIM, 'yaw': VP_BINS, 'yaw_rads': VP_BINS}
+        LOSS_CHANNEL = {'category': 1, 'bbox3d_delta': BOX_DIM, 'yaw': VP_BINS, 'yaw_rads': VP_BINS}
 
 
 class Train:
-    CKPT_NAME = "max_match"
+    CKPT_NAME = "aligned_v3"
 
     MODE = ["eager", "graph"][0]
     BATCH_SIZE = 2
@@ -134,6 +134,10 @@ class Logging:
     COLUMNS_TO_MEAN = ["anchor", "category", "ciou_loss", "object_loss", "maj_cat_loss", "dist_loss", "pos_obj",
                        "neg_obj", "iou", "box_hw", "box_yx", "true_class", "false_class"]
     COLUMNS_TO_SUM = ["anchor", "category", "trpo", "grtr", "pred"]
+
+
+class Debug:
+    DEBUG = False
 
 
 def summary(cls):
