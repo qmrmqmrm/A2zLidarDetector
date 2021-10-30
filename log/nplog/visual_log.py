@@ -85,20 +85,21 @@ class VisualLog:
             image_pred = self.draw_boxes(image_pred, splits["pred_tp"]['bbox2d'], splits["pred_tp"]['category'],
                                          batch_idx, (0, 255, 0))
 
-
-
             image_grtr_3d = grtr["image"][batch_idx].copy()
-            image_grtr_3d = self.draw_boxes(image_grtr_3d, splits["grtr_fn"]['bbox3d'][..., :-2], splits["grtr_fn"]['category'],
+            image_grtr_3d = self.draw_boxes(image_grtr_3d, splits["grtr_fn"]['bbox3d'][..., :-2],
+                                            splits["grtr_fn"]['category'],
                                             batch_idx, (0, 0, 255))
-            image_grtr_3d = self.draw_boxes(image_grtr_3d, splits["grtr_tp"]['bbox3d'][..., :-2], splits["grtr_tp"]['category'],
+            image_grtr_3d = self.draw_boxes(image_grtr_3d, splits["grtr_tp"]['bbox3d'][..., :-2],
+                                            splits["grtr_tp"]['category'],
                                             batch_idx, (0, 255, 0))
 
             image_pred_3d = grtr["image"][batch_idx].copy()
-            image_pred_3d = self.draw_boxes(image_pred_3d, splits["pred_fp"]['bbox3d'][..., :-2], splits["pred_fp"]['category'],
+            image_pred_3d = self.draw_boxes(image_pred_3d, splits["pred_fp"]['bbox3d'][..., :-2],
+                                            splits["pred_fp"]['category'],
                                             batch_idx, (0, 0, 255))
-            image_pred_3d = self.draw_boxes(image_pred_3d, splits["pred_tp"]['bbox3d'][..., :-2], splits["pred_tp"]['category'],
+            image_pred_3d = self.draw_boxes(image_pred_3d, splits["pred_tp"]['bbox3d'][..., :-2],
+                                            splits["pred_tp"]['category'],
                                             batch_idx, (0, 255, 0))
-
 
             #
             # image_grtr_3d_org = image_org.copy()
@@ -112,7 +113,6 @@ class VisualLog:
             #                                 batch_idx, (0, 0, 255))
             # image_pred_3d_org = self.draw_boxes(image_pred_3d_org, splits["pred_tp"]['bbox3d'][..., :-2], splits["pred_tp"]['category'],
             #                                 batch_idx, (0, 255, 0))
-
 
             # image_pred = self.draw_boxes(image_pred, splits["grtr_tp"], batch_idx, (0, 255, 255))
             # image_pred = self.draw_boxes(image_pred, splits["grtr_fn"], batch_idx, (0, 255, 255))
@@ -184,7 +184,6 @@ class VisualLog:
         bbox2d = bbox2d[valid_mask, :]
         bbox2d = mu.convert_box_format_yxhw_to_tlbr(bbox2d)
         for i in range(bbox2d.shape[0]):
-
             y1, x1, y2, x2 = bbox2d[i].astype(np.int32)
             cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
         return image
@@ -220,6 +219,36 @@ class VisualLog:
             #
             # cv2.putText(image, annotation, (x1, y1), cv2.FONT_HERSHEY_PLAIN, 1.0, color, 2)
         return image
+
+    def draw_3d_boxes(self, image, bboxes, yaw_cls, yaw_ras, frame_idx, val):
+        """
+        all input arguments are numpy arrays
+        :param image: (H, W, 3)
+        :param bboxes: {'yxhw': (B, N, 4), 'category': (B, N, 1), ...}
+        :param frame_idx
+        :param color: box color
+        :return: box drawn image
+        """
+        yaw_cls_shape = yaw_cls.shape
+
+        if yaw_cls_shape[-1] > 1:
+            best_yaw = np.argmax(yaw_cls, axis=-1)
+            yaw_bin = np.expand_dims(best_yaw, -1)
+        bbox2d = bboxes[frame_idx]  # (N, 4)
+        yaw_bin = yaw_bin[frame_idx]
+        yaw = (yaw_bin * 12) + yaw_ras
+
+
+        # one_hot_ctgrs = (self.one_hot(yaw_bin, 12) * val).astype(np.uint8)
+
+        valid_mask = bbox2d[:, 2] > 0  # (N,) h>0
+        bbox2d = bbox2d[valid_mask, :]
+        bbox2d = mu.convert_box_format_yxhw_to_tlbr(bbox2d)
+        for i in range(bbox2d.shape[0]):
+            if one_hot_ctgrs[i][0] == 0:
+                y1, x1, y2, x2 = bbox2d[i].astype(np.int32)
+                cv2.rectangle(image, (x1, y1), (x2, y2),
+                              [int(one_hot_ctgrs[i][1]), int(one_hot_ctgrs[i][2]), int(one_hot_ctgrs[i][3])], 2)
 
     def one_hot(self, grtr_category, category_shape):
         one_hot_data = np.eye(category_shape, dtype=np.float32)[grtr_category[..., 0].astype(np.int32)]

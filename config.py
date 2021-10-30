@@ -103,7 +103,7 @@ class Model:
 
 
 class Train:
-    CKPT_NAME = "aligned_v3"
+    CKPT_NAME = "aligned_v4"
 
     MODE = ["eager", "graph"][0]
     BATCH_SIZE = 2

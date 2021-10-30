@@ -127,7 +127,7 @@ class Box3dRegression(LossBase):
 
 class YawRegression(LossBase):
     def __call__(self, features, pred, auxi):
-        gt_yaw_rads = auxi["gt_aligned"]["yaw_rads"] * auxi["gt_aligned"]["object"]
+        gt_yaw_rads = auxi["gt_aligned"]["yaw_delta"] * auxi["gt_aligned"]["object"]
         pred_yaw_residuals = auxi["pred_select"]["yaw_rads"] * auxi["gt_aligned"]["object"]
         loss = F.smooth_l1_loss(pred_yaw_residuals, gt_yaw_rads, reduction='sum', beta=0.5)
         return loss  # / (num_gt + 0.00001)

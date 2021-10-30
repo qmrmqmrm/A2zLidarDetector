@@ -172,7 +172,8 @@ def apply_box_deltas_3d(anchors_yxlw, deltas_yxlw, category, stride):
     anchor_h = torch.tensor([149.6, 130.05, 147.9, 1.0], device=device)  # Mean heights encoded
     anchor_z = anchor_h / 2
     stride = torch.pow(2, stride + 2).view(anchor_yx.shape[0], -1).unsqueeze(-1).to(device=device)
-    delta_yx, delta_lw, delta_z, delta_h = deltas_yxlw[..., :2], deltas_yxlw[..., 2:4], deltas_yxlw[..., 4:5], deltas_yxlw[..., 5:6]
+    delta_yx, delta_lw, delta_z, delta_h = deltas_yxlw[..., :2], deltas_yxlw[..., 2:4], deltas_yxlw[...,
+                                                                                        4:5], deltas_yxlw[..., 5:6]
     delta_lw = torch.clamp(delta_lw, max=_DEFAULT_SCALE_CLAMP)
     bbox_yx = anchor_yx + delta_yx * stride
     bbox_lw = anchor_lw * torch.exp(delta_lw)
@@ -189,7 +190,8 @@ def get_deltas_3d(anchors_yxlw, bboxes_yxlw, category, stride=None):
     anchor_h = torch.tensor([149.6, 130.05, 147.9, 1.0], device=device)  # Mean heights encoded
     anchor_z = anchor_h / 2
     stride = torch.pow(2, stride + 2).view(anchor_yx.shape[0], -1).unsqueeze(-1).to(device=device)
-    bboxes_yx, bboxes_lw, bboxes_z, bboxes_h = bboxes_yxlw[..., :2], bboxes_yxlw[..., 2:4], bboxes_yxlw[..., 4:5], bboxes_yxlw[..., 5:6]
+    bboxes_yx, bboxes_lw, bboxes_z, bboxes_h = bboxes_yxlw[..., :2], bboxes_yxlw[..., 2:4], bboxes_yxlw[...,
+                                                                                            4:5], bboxes_yxlw[..., 5:6]
     anchor_yx = anchor_yx.view(bboxes_yx.shape)
     anchor_lw = anchor_lw.view(bboxes_lw.shape)
 
@@ -202,6 +204,20 @@ def get_deltas_3d(anchors_yxlw, bboxes_yxlw, category, stride=None):
     delta_bbox = torch.cat([delta_yx, delta_lw, delta_z, delta_h], dim=-1) * valid_mask
     return delta_bbox
 
+
+def get_deltas_yaw(yaw_cls, yaw_rad, bin_num=cfg.Model.Structure.VP_BINS):
+    yaw_cls = yaw_cls.to(dtype=torch.int64)
+    bin_dist = np.linspace(-math.pi, math.pi, bin_num + 1)  # vp_bins = 12
+    bin_res = (bin_dist[1] - bin_dist[0]) / 2.
+
+    src_vp_res = torch.tensor(bin_dist - bin_res, dtype=torch.float32).to(device)
+    target_vp = yaw_rad  # gt_viewpoint rads = gt_yaw_residual
+    src_vp_proposals = src_vp_res[yaw_cls]
+    src_vp_proposals[target_vp>src_vp_res[bin_num]] = src_vp_res[bin_num]
+    wvp = np.trunc(1/bin_res)
+    dvp = wvp * (target_vp - src_vp_proposals - bin_res)
+    deltas = dvp
+    return deltas
 
 class NonMaximumSuppression:
     def __init__(self, max_out=cfg.NMS.MAX_OUT,

@@ -61,7 +61,8 @@ class A2D2Dataset(DatasetBase):
         features['anc_feat'] = self.anchors
         features.update(anns)
         features['image_file'] = image_file
-        gt_anchors, features['anchor_id'], gt_anchors_stride = self.matched_anchor(features['anc_feat'], features['bbox2d'])
+        gt_anchors, features['anchor_id'], gt_anchors_stride = self.matched_anchor(features['anc_feat'],
+                                                                                   features['bbox2d'])
 
         features['bbox2d_delta'] = mu.get_deltas_2d(gt_anchors, features['bbox2d'], gt_anchors_stride)
         return features
@@ -71,6 +72,7 @@ class A2D2Dataset(DatasetBase):
 
         for boxes, obj in label.items():
             obj_category = obj['class']
+
             if obj_category not in self.categories:
                 continue
 
@@ -97,9 +99,14 @@ class A2D2Dataset(DatasetBase):
                              obj['size'][2] / 3. * 255,
                              ((pts_3d_velo[0][2] + velodyne_h) + obj['size'][2] * 0.5) / 3. * 255]  # yxlwzh
             ann["object"] = [1]
+
             if yaw:
                 ann['yaw'] = [rad2bin(obj['rot_angle'], bins)]
                 ann['yaw_rads'] = [obj['rot_angle']]
+            print('bbox3d', ann['bbox3d'])
+            print('rot_angle', obj['rot_angle'])
+            print('yaw', ann['yaw'])
+            print('yaw_rads', ann['yaw_rads'])
             annotations.append(ann)
         return annotations
 
@@ -188,7 +195,7 @@ class A2D2Dataset(DatasetBase):
         """
         anchors_yxlw = [scale_anchor_yxlw.view(-1, scale_anchor_yxlw.shape[-1]) for scale_anchor_yxlw in anchors]
         anchors_yxlw = torch.cat(anchors_yxlw, dim=0)
-        iou = uf.pairwise_iou(bbox2d_yxlw, anchors_yxlw[..., :4]) # (h * w*  a ,4)
+        iou = uf.pairwise_iou(bbox2d_yxlw, anchors_yxlw[..., :4])  # (h * w*  a ,4)
         max_iou, max_idx = iou.max(dim=1)
         gt_anchors = anchors_yxlw[max_idx, :4]
         gt_anchors_id = anchors_yxlw[max_idx, 4:5]
@@ -230,8 +237,8 @@ class A2D2Dataset(DatasetBase):
 def rad2bin(rad, bins):
     bin_dist = np.linspace(-math.pi, math.pi, bins + 1)  # for each class (bins*n_classes)
     bin_res = (bin_dist[1] - bin_dist[0]) / 2.
-    bin_dist = [bin - bin_res for bin in
-                bin_dist]  # Substracting half of the resolution to each bin it obtains one bin for each direction (N,W,S,E)
+    # Substracting half of the resolution to each bin it obtains one bin for each direction (N,W,S,E)
+    bin_dist = [bin - bin_res for bin in bin_dist]
     for i_bin in range(len(bin_dist) - 1):
         if bin_dist[i_bin] <= rad and bin_dist[i_bin + 1] >= rad:
             return i_bin

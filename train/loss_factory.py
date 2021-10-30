@@ -143,14 +143,22 @@ class IntegratedLoss:
         anchors_yxlw = [scale_anchor_yxlw.view(batch, -1, scale_anchor_yxlw.shape[-1]) for scale_anchor_yxlw in
                         grtr['anc_feat']]
         anchors_yxlw_cat = torch.cat(anchors_yxlw, dim=1)
+        print('bbox3d', grtr['bbox3d'])
+        print('yaw', grtr['yaw'])
+        print('yaw_rads', grtr['yaw_rads'])
         auxiliary = dict()
         auxiliary["gt_aligned"] = self.matched_gt(grtr, pred['bbox2d'], self.align_iou_threshold)
+
         auxiliary["gt_feature"] = self.matched_gt(grtr, anchors_yxlw_cat[..., :4], self.anchor_iou_threshold)
         auxiliary["gt_feature"] = self.split_feature(anchors_yxlw, auxiliary["gt_feature"])
         auxiliary["pred_select"] = self.select_category(auxiliary['gt_aligned'], pred)
         auxiliary["gt_aligned"]['bbox3d_delta'] = mu.get_deltas_3d(pred['bbox2d'], auxiliary["gt_aligned"]['bbox3d'],
                                                                    auxiliary["gt_aligned"]['category'],
                                                                    pred['strides'])
+
+        auxiliary["gt_aligned"]['yaw_delta'] = mu.get_deltas_yaw(auxiliary['gt_aligned']['yaw'],
+                                                                 auxiliary['gt_aligned']['yaw_rads'])
+
         return auxiliary
 
     def matched_gt(self, grtr, target_box, iou_threshold):
