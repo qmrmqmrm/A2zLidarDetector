@@ -92,7 +92,7 @@ class Model:
         MINOR_CTGR = False
 
     class Structure:
-        VP_BINS = 12
+        VP_BINS = 6
         PIXEL_MEAN = [0.0, 0.0, 0.0]
         PIXEL_STD = [1.0, 1.0, 1.0]
         NUM_CLASSES = 3
@@ -103,7 +103,7 @@ class Model:
 
 
 class Train:
-    CKPT_NAME = "aligned_v4"
+    CKPT_NAME = "yaw_check_v2"
 
     MODE = ["eager", "graph"][0]
     BATCH_SIZE = 2

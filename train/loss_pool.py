@@ -1,6 +1,8 @@
 import torch
 import torch.nn.functional as F
 import numpy as np
+import math
+
 import config as cfg
 import model.submodules.model_util as mu
 import utils.util_function as uf
@@ -11,6 +13,7 @@ np.set_printoptions(precision=6, suppress=True, linewidth=150)
 class LossBase:
     def __init__(self):
         self.device = cfg.Hardware.DEVICE
+        self.bin_num = cfg.Model.Structure.VP_BINS
 
     def __call__(self, features, pred, auxi):
         """
@@ -126,11 +129,29 @@ class Box3dRegression(LossBase):
 
 
 class YawRegression(LossBase):
+    def __init__(self):
+        super().__init__()
+
+        bin_edge = np.linspace(0, math.pi, self.bin_num + 1)
+        self.bin_res = (bin_edge[1] - bin_edge[0]) / 2.
+        self.bin_edge = torch.tensor(bin_edge - self.bin_res, dtype=torch.float32).to(self.device)
+
     def __call__(self, features, pred, auxi):
-        gt_yaw_rads = auxi["gt_aligned"]["yaw_delta"] * auxi["gt_aligned"]["object"]
+        rad_delta = self.get_deltas_yaw(auxi['gt_aligned']['yaw'], auxi['gt_aligned']['yaw_rads'])
+        gt_yaw_rads = rad_delta * auxi["gt_aligned"]["object"]
         pred_yaw_residuals = auxi["pred_select"]["yaw_rads"] * auxi["gt_aligned"]["object"]
+        # yaw residual range: -15deg ~ 15deg = -0.26rad ~ 0.26rad
+        pred_yaw_residuals = torch.sigmoid(pred_yaw_residuals) * 0.6 - 0.3
         loss = F.smooth_l1_loss(pred_yaw_residuals, gt_yaw_rads, reduction='sum', beta=0.5)
         return loss  # / (num_gt + 0.00001)
+
+    def get_deltas_yaw(self, yaw_cls, yaw_rad):
+        yaw_cls = yaw_cls.to(dtype=torch.int64)
+        bin_begin = self.bin_edge[yaw_cls]
+        yaw_rad = torch.where(yaw_rad < self.bin_edge[0], yaw_rad + math.pi, yaw_rad)
+        yaw_rad = torch.where(yaw_rad > self.bin_edge[-1], yaw_rad - math.pi, yaw_rad)
+        delta = yaw_rad - bin_begin - self.bin_res
+        return delta
 
 
 class CategoryClassification(LossBase):
@@ -157,7 +178,7 @@ class CategoryClassification(LossBase):
 class YawClassification(LossBase):
     def __call__(self, features, pred, auxi):
         gt_yaw = (auxi['gt_aligned']['yaw']).view(-1).to(torch.int64)
-        pred_yaw = (auxi['pred_select']['yaw']).view(-1, 12)
+        pred_yaw = (auxi['pred_select']['yaw']).view(-1, self.bin_num)
         # pred(N,C), gt(N)
         ce_loss = F.cross_entropy(pred_yaw, gt_yaw, reduction="none")
         pos_ce = ce_loss * auxi["gt_aligned"]["object"]

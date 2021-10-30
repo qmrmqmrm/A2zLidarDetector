@@ -205,20 +205,6 @@ def get_deltas_3d(anchors_yxlw, bboxes_yxlw, category, stride=None):
     return delta_bbox
 
 
-def get_deltas_yaw(yaw_cls, yaw_rad, bin_num=cfg.Model.Structure.VP_BINS):
-    yaw_cls = yaw_cls.to(dtype=torch.int64)
-    bin_dist = np.linspace(-math.pi, math.pi, bin_num + 1)  # vp_bins = 12
-    bin_res = (bin_dist[1] - bin_dist[0]) / 2.
-
-    src_vp_res = torch.tensor(bin_dist - bin_res, dtype=torch.float32).to(device)
-    target_vp = yaw_rad  # gt_viewpoint rads = gt_yaw_residual
-    src_vp_proposals = src_vp_res[yaw_cls]
-    src_vp_proposals[target_vp>src_vp_res[bin_num]] = src_vp_res[bin_num]
-    wvp = np.trunc(1/bin_res)
-    dvp = wvp * (target_vp - src_vp_proposals - bin_res)
-    deltas = dvp
-    return deltas
-
 class NonMaximumSuppression:
     def __init__(self, max_out=cfg.NMS.MAX_OUT,
                  iou_thresh=cfg.NMS.IOU_THRESH,

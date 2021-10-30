@@ -51,7 +51,7 @@ class A2D2Dataset(DatasetBase):
         with open(label_file, 'r') as f:
             label = json.load(f)
 
-        anns = self.convert_bev(label, image, self.calib_dict, bins=12, yaw=True)
+        anns = self.convert_bev(label, image, self.calib_dict, bins=cfg.Model.Structure.VP_BINS, yaw=True)
 
         if anns:
             anns = self.gather_and_zeropad(anns)
@@ -103,10 +103,6 @@ class A2D2Dataset(DatasetBase):
             if yaw:
                 ann['yaw'] = [rad2bin(obj['rot_angle'], bins)]
                 ann['yaw_rads'] = [obj['rot_angle']]
-            print('bbox3d', ann['bbox3d'])
-            print('rot_angle', obj['rot_angle'])
-            print('yaw', ann['yaw'])
-            print('yaw_rads', ann['yaw_rads'])
             annotations.append(ann)
         return annotations
 
@@ -235,15 +231,19 @@ class A2D2Dataset(DatasetBase):
 
 
 def rad2bin(rad, bins):
-    bin_dist = np.linspace(-math.pi, math.pi, bins + 1)  # for each class (bins*n_classes)
-    bin_res = (bin_dist[1] - bin_dist[0]) / 2.
+    bin_edge = np.linspace(0, math.pi, bins + 1)  # for each class (bins*n_classes)
+    bin_res = (bin_edge[1] - bin_edge[0]) / 2.
     # Substracting half of the resolution to each bin it obtains one bin for each direction (N,W,S,E)
-    bin_dist = [bin - bin_res for bin in bin_dist]
-    for i_bin in range(len(bin_dist) - 1):
-        if bin_dist[i_bin] <= rad and bin_dist[i_bin + 1] >= rad:
-            return i_bin
-    return 0  # If the angle is above max angle, it won't match so it corresponds to initial bin, initial bin must be from (-pi+bin_res) to (pi-bin_res)
+    bin_edge = [bin - bin_res for bin in bin_edge]
+    if rad < bin_edge[0]:
+        rad += math.pi
+    elif rad > bin_edge[-1]:
+        rad -= math.pi
 
+    for i_bin in range(len(bin_edge) - 1):
+        if bin_edge[i_bin] <= rad and bin_edge[i_bin + 1] >= rad:
+            return i_bin
+    return 0
 
 def drow_box(img, bbox):
     bbox = bbox.detach().numpy()

@@ -1,8 +1,9 @@
 import torch
 import numpy as np
 import cv2
-import train.loss_pool as loss
 
+
+import train.loss_pool as loss
 import utils.util_function as uf
 import model.submodules.model_util as mu
 import config as cfg
@@ -143,9 +144,6 @@ class IntegratedLoss:
         anchors_yxlw = [scale_anchor_yxlw.view(batch, -1, scale_anchor_yxlw.shape[-1]) for scale_anchor_yxlw in
                         grtr['anc_feat']]
         anchors_yxlw_cat = torch.cat(anchors_yxlw, dim=1)
-        print('bbox3d', grtr['bbox3d'])
-        print('yaw', grtr['yaw'])
-        print('yaw_rads', grtr['yaw_rads'])
         auxiliary = dict()
         auxiliary["gt_aligned"] = self.matched_gt(grtr, pred['bbox2d'], self.align_iou_threshold)
 
@@ -155,9 +153,6 @@ class IntegratedLoss:
         auxiliary["gt_aligned"]['bbox3d_delta'] = mu.get_deltas_3d(pred['bbox2d'], auxiliary["gt_aligned"]['bbox3d'],
                                                                    auxiliary["gt_aligned"]['category'],
                                                                    pred['strides'])
-
-        auxiliary["gt_aligned"]['yaw_delta'] = mu.get_deltas_yaw(auxiliary['gt_aligned']['yaw'],
-                                                                 auxiliary['gt_aligned']['yaw_rads'])
 
         return auxiliary
 
