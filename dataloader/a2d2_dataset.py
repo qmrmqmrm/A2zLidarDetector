@@ -231,7 +231,7 @@ class A2D2Dataset(DatasetBase):
 
 
 def rad2bin(rad, bins):
-    bin_edge = np.linspace(0, math.pi, bins + 1)  # for each class (bins*n_classes)
+    bin_edge = np.linspace(-math.pi / 2, math.pi / 2, bins + 1)  # for each class (bins*n_classes)
     bin_res = (bin_edge[1] - bin_edge[0]) / 2.
     # Substracting half of the resolution to each bin it obtains one bin for each direction (N,W,S,E)
     bin_edge = [bin - bin_res for bin in bin_edge]
@@ -244,6 +244,7 @@ def rad2bin(rad, bins):
         if bin_edge[i_bin] <= rad and bin_edge[i_bin + 1] >= rad:
             return i_bin
     return 0
+
 
 def drow_box(img, bbox):
     bbox = bbox.detach().numpy()

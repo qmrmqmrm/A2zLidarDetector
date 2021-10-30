@@ -116,7 +116,6 @@ class ObjectClassification(LossBase):
 
 class Box3dRegression(LossBase):
     def __call__(self, features, pred, auxi):
-
         gt_bbox3d = auxi['gt_aligned']['bbox3d_delta']
         pred_bbox3d = auxi['pred_select']['bbox3d_delta'] * auxi["gt_aligned"]["object"]
         gt_bbox3d = gt_bbox3d * auxi["gt_aligned"]["object"]
@@ -132,7 +131,7 @@ class YawRegression(LossBase):
     def __init__(self):
         super().__init__()
 
-        bin_edge = np.linspace(0, math.pi, self.bin_num + 1)
+        bin_edge = np.linspace(-math.pi / 2, math.pi / 2, self.bin_num + 1)
         self.bin_res = (bin_edge[1] - bin_edge[0]) / 2.
         self.bin_edge = torch.tensor(bin_edge - self.bin_res, dtype=torch.float32).to(self.device)
 
