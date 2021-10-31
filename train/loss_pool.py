@@ -86,12 +86,6 @@ class Box2dRegression(LossBase):
         rpn_bbox2d_per_scale = pred['rpn_feat_bbox2d_delta'][scale_idx] * gt_object_per_scale
         return F.smooth_l1_loss(rpn_bbox2d_per_scale, gt_bbox2d_per_scale, reduction='sum', beta=0.5)
 
-    # def cal_bbox2d_loss_per_scale(self, pred, auxi, scale_idx):
-    #     gt_object_per_scale = auxi['gt_feature']['object'][scale_idx]
-    #     gt_bbox2d_per_scale = auxi['gt_feature']['bbox2d'][scale_idx] * gt_object_per_scale
-    #     rpn_bbox2d_per_scale = pred['rpn_feat_bbox2d'][scale_idx] * gt_object_per_scale
-    #     return F.smooth_l1_loss(rpn_bbox2d_per_scale, gt_bbox2d_per_scale, reduction='sum', beta=0.5)
-
 
 class ObjectClassification(LossBase):
     def __call__(self, features, pred, auxi):
@@ -106,6 +100,7 @@ class ObjectClassification(LossBase):
         gt_negative = auxi['gt_feature']['negative'][scale_idx]
         rpn_object = pred['rpn_feat_objectness'][scale_idx]
         focal_loss = torch.pow(rpn_object - gt_object, 2)
+
         ce_loss = F.binary_cross_entropy_with_logits(rpn_object, gt_object, reduction='none') * focal_loss
         ps_ce = ce_loss * gt_object
         positive_ce = torch.sum(ps_ce) / (torch.sum(gt_object) + 0.00001)
@@ -120,10 +115,6 @@ class Box3dRegression(LossBase):
         pred_bbox3d = auxi['pred_select']['bbox3d_delta'] * auxi["gt_aligned"]["object"]
         gt_bbox3d = gt_bbox3d * auxi["gt_aligned"]["object"]
         loss = F.smooth_l1_loss(pred_bbox3d, gt_bbox3d, reduction='sum', beta=0.5)
-
-        # gt_bbox3d = auxi['gt_aligned']['bbox3d'] * auxi["gt_aligned"]["object"]
-        # pred_bbox3d = auxi['pred_select']['bbox3d'] * auxi["gt_aligned"]["object"]
-        # loss = F.smooth_l1_loss(pred_bbox3d, gt_bbox3d, reduction='sum', beta=0.5)
         return loss  # / (num_gt + 0.00001)
 
 
@@ -158,18 +149,9 @@ class CategoryClassification(LossBase):
         gt_classes = (auxi["gt_aligned"]["category"]).type(torch.int64).view(-1)  # (batch*512) torch.Size([4, 512, 1])
         pred_classes = (auxi["pred_select"]["category"]).view(-1, 4)  # (batch*512 , 3) torch.Size([4, 512, 3])
 
-        # pred_obj = pred['object'].view(-1, 1)
-        # pred_classes_numpy = (pred_classes * pred_obj).to('cpu').detach().numpy()
-        # print(pred_classes_numpy.shape)
-        # pred_quant = np.quantile(pred_classes_numpy, np.array([0, 0.2, 0.4, 0.6, 0.8, 0.9, 0.95, 0.995, 0.999, 1]))
-        # print("pred_classes quantile:", pred_quant)
-        # for i in range(1, pred_classes_numpy.shape[-1]):
-        #     pred_quant = np.quantile(pred_classes_numpy[:, i] - pred_classes_numpy[:, 0],
-        #                                np.array([0, 0.2, 0.4, 0.6, 0.8, 0.9, 0.95, 0.995, 0.999, 1]))
-        #     print(f"pred_classes quantile {i} :", pred_quant)
         ce_loss = F.cross_entropy(pred_classes, gt_classes, reduction="none")
-        bgd_ce = ce_loss * auxi["gt_aligned"]["object"] * (gt_classes == 0) * 0.001
-        tr_ce = ce_loss * auxi["gt_aligned"]["object"] * (gt_classes > 0)
+        bgd_ce = ce_loss * auxi["gt_aligned"]["object"].view(-1) * (gt_classes == 0) * 0.001
+        tr_ce = ce_loss * auxi["gt_aligned"]["object"].view(-1) * (gt_classes > 0)
         loss = torch.sum(bgd_ce) + torch.sum(tr_ce)
         return loss  # / (num_gt + 0.00001)
 
@@ -179,7 +161,9 @@ class YawClassification(LossBase):
         gt_yaw = (auxi['gt_aligned']['yaw']).view(-1).to(torch.int64)
         pred_yaw = (auxi['pred_select']['yaw']).view(-1, self.bin_num)
         # pred(N,C), gt(N)
+
         ce_loss = F.cross_entropy(pred_yaw, gt_yaw, reduction="none")
-        pos_ce = ce_loss * auxi["gt_aligned"]["object"]
+        pos_ce = ce_loss * auxi["gt_aligned"]["object"].view(-1)
         loss = torch.sum(pos_ce)
+
         return loss  # / (num_gt + 0.00001)

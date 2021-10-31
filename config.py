@@ -4,7 +4,7 @@ import numpy as np
 
 
 class Paths:
-    RESULT_ROOT = "/media/falcon/IanBook8T/datasets/bv_a2d2/result"
+    RESULT_ROOT = "/home/oem/workspace/datasets/bv/result"
     TFRECORD = op.join(RESULT_ROOT, "pyloader")
     CHECK_POINT = op.join(RESULT_ROOT, "ckpt")
 
@@ -16,7 +16,7 @@ class Datasets:
 
     class A2D2:
         NAME = "a2d2"
-        PATH = "/home/falcon/workspace/datasets"
+        PATH = "/home/oem/workspace/datasets/bv"
         CATEGORIES_TO_USE = ["Pedestrian", "Car", "Cyclist"]
         CATEGORY_REMAP = {}
         MAX_NUM = 15
@@ -103,7 +103,7 @@ class Model:
 
 
 class Train:
-    CKPT_NAME = "yaw_check_v2"
+    CKPT_NAME = "check_loss_v4"
 
     MODE = ["eager", "graph"][0]
     BATCH_SIZE = 2
