@@ -127,7 +127,7 @@ class YawRegression(LossBase):
         self.bin_edge = torch.tensor(bin_edge - self.bin_res, dtype=torch.float32).to(self.device)
 
     def __call__(self, features, pred, auxi):
-        rad_delta = self.get_deltas_yaw(auxi['gt_aligned']['yaw'], auxi['gt_aligned']['yaw_rads'])
+        rad_delta = self.get_deltas_yaw(auxi['gt_aligned']['yaw_cls'], auxi['gt_aligned']['yaw_rads'])
         gt_yaw_rads = rad_delta * auxi["gt_aligned"]["object"]
         pred_yaw_residuals = auxi["pred_select"]["yaw_rads"] * auxi["gt_aligned"]["object"]
         # yaw residual range: -15deg ~ 15deg = -0.26rad ~ 0.26rad
@@ -158,8 +158,8 @@ class CategoryClassification(LossBase):
 
 class YawClassification(LossBase):
     def __call__(self, features, pred, auxi):
-        gt_yaw = (auxi['gt_aligned']['yaw']).view(-1).to(torch.int64)
-        pred_yaw = (auxi['pred_select']['yaw']).view(-1, self.bin_num)
+        gt_yaw = (auxi['gt_aligned']['yaw_cls']).view(-1).to(torch.int64)
+        pred_yaw = (auxi['pred_select']['yaw_cls']).view(-1, self.bin_num)
         # pred(N,C), gt(N)
 
         ce_loss = F.cross_entropy(pred_yaw, gt_yaw, reduction="none")

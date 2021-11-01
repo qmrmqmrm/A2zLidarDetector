@@ -22,6 +22,9 @@ def count_true_positives(grtr, pred, num_ctgr, iou_thresh=cfg.Validation.TP_IOU_
     grtr_valid_fn = splits["grtr_fn"]["bbox2d"][..., 2:3] > 0
     pred_valid_tp = splits["pred_tp"]["bbox2d"][..., 2:3] > 0
     pred_valid_fp = splits["pred_fp"]["bbox2d"][..., 2:3] > 0
+    print('pred_fp', splits["pred_fp"]["bbox2d"][..., 2:3].shape)
+    print('pred_fp valid ', pred_valid_tp.shape)
+    print('pred_fp valid ', splits["pred_fp"]["bbox2d"][..., 2:3])
     if per_class:
         print("grtr_tp")
         grtr_tp_count = count_per_class(splits["grtr_tp"], grtr_valid_tp, num_ctgr)
@@ -40,18 +43,14 @@ def count_true_positives(grtr, pred, num_ctgr, iou_thresh=cfg.Validation.TP_IOU_
 
         pred_count = np.sum(pred_valid_tp + pred_valid_fp)
         trpo_count = np.sum(pred_valid_tp)
+        print('pred_count',pred_count)
         return {"trpo": trpo_count, "grtr": grtr_count, "pred": pred_count}
 
 
 def split_true_false(grtr, pred, iou_thresh):
-    splits = split_tp_fp_fn(grtr, pred, iou_thresh)
-    return splits
-
-
-def split_tp_fp_fn(grtr, pred, iou_thresh):
     batch, M, _ = pred["category"].shape
     best_cate = np.argmax(pred["category"], axis=-1)
-    category = np.expand_dims(best_cate,-1)
+    category = np.expand_dims(best_cate, -1)
     valid_mask = grtr["object"]
     # iou = uf.pairwise_batch_iou(grtr["bbox2d"], pred["rpn_bbox2d"])  # (batch, N, M)
     iou = uf.compute_iou_general(grtr["bbox2d"], pred["bbox2d"])  # (batch, N, M)

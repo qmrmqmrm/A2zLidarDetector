@@ -99,11 +99,11 @@ class Model:
         BOX_DIM = 6
         IMAGE_SHAPE = [640, 640]
         STRIDE_SHAPE = Scales.DEFAULT_FEATURE_SCALES
-        LOSS_CHANNEL = {'category': 1, 'bbox3d_delta': BOX_DIM, 'yaw': VP_BINS, 'yaw_rads': VP_BINS}
+        LOSS_CHANNEL = {'category': 1, 'bbox3d_delta': BOX_DIM, 'yaw_cls': VP_BINS, 'yaw_rads': VP_BINS}
 
 
 class Train:
-    CKPT_NAME = "check_loss_v4"
+    CKPT_NAME = "nms_max_num"
 
     MODE = ["eager", "graph"][0]
     BATCH_SIZE = 2

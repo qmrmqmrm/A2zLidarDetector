@@ -101,7 +101,7 @@ class A2D2Dataset(DatasetBase):
             ann["object"] = [1]
 
             if yaw:
-                ann['yaw'] = [rad2bin(obj['rot_angle'], bins)]
+                ann['yaw_cls'] = [rad2bin(obj['rot_angle'], bins)]
                 ann['yaw_rads'] = [obj['rot_angle']]
             annotations.append(ann)
         return annotations
@@ -123,7 +123,6 @@ class A2D2Dataset(DatasetBase):
         c, s = np.cos(yaw), np.sin(yaw)
         R = np.array([[c, -s], [s, c]])
         rotated_corners = np.dot(corners - centroid, R) + centroid
-
         x1 = bvcols / 2 + min(rotated_corners[:, 0]) / bvres
         x2 = bvcols / 2 + max(rotated_corners[:, 0]) / bvres
         y1 = bvrows - max(rotated_corners[:, 1]) / bvres
@@ -165,7 +164,7 @@ class A2D2Dataset(DatasetBase):
             if self.max_box - numbox > 0:
                 if key == 'category':
                     pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
-                elif key == 'yaw':
+                elif key == 'yaw_cls':
                     pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
                 elif key == 'yaw_rads':
                     pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)

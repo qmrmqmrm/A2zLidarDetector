@@ -158,7 +158,7 @@ class IntegratedLoss:
 
     def matched_gt(self, grtr, target_box, iou_threshold):
         matched = {key: [] for key in
-                   ['bbox3d', 'category', 'bbox2d', 'yaw', 'yaw_rads', 'anchor_id', 'object', 'negative',
+                   ['bbox3d', 'category', 'bbox2d', 'yaw_cls', 'yaw_rads', 'anchor_id', 'object', 'negative',
                     'bbox2d_delta']}
         for i in range(self.batch_size):
             iou_matrix = uf.pairwise_iou(grtr['bbox2d'][i], target_box[i])
@@ -196,14 +196,14 @@ class IntegratedLoss:
     def select_category(self, aligned, pred):
         gt_cate = (aligned['category'].to(torch.int64)).unsqueeze(-1)
         select_pred = dict()
-        for key in ['bbox3d', 'yaw', 'yaw_rads', 'bbox3d_delta']:
+        for key in ['bbox3d', 'yaw_cls', 'yaw_rads', 'bbox3d_delta']:
             pred_key = pred[key]
             batch, num, cate, channel = pred_key.shape
             pred_padding = torch.zeros((batch, num, 1, channel), device=self.device)
             pred_key = torch.cat([pred_padding, pred_key], dim=-2)
             gather_gt = torch.gather(pred_key, dim=2, index=gt_cate.repeat(1, 1, 1, pred_key.shape[-1])).squeeze(-2)
             if key == 'yaw_rads':
-                gt_yaw = aligned['yaw'].to(torch.int64)
+                gt_yaw = aligned['yaw_cls'].to(torch.int64)
                 gather_gt = torch.gather(gather_gt, dim=-1, index=gt_yaw)
             select_pred[key] = gather_gt
         select_pred['category'] = pred['category'].squeeze(-1)

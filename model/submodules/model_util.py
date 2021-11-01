@@ -71,7 +71,7 @@ def remove_padding(batch_input):
         category = category[torch.where(category < 3)]
         category_batch.append(category)
 
-        valid_yaw = batch_input['yaw'][i, :][torch.where(batch_input['yaw'][i, :] < 13)]
+        valid_yaw = batch_input['yaw_cls'][i, :][torch.where(batch_input['yaw_cls'][i, :] < 13)]
         yaw_batch.append(valid_yaw)
 
         valid_yaw_rads = batch_input['yaw_rads'][i, :][torch.where(batch_input['yaw_rads'][i, :] >= 0)]
@@ -306,7 +306,7 @@ class NonMaximumSuppression:
         batch_indices = torch.maximum(batch_indices, torch.zeros(batch_indices.shape, device=self.device)).to(
             dtype=torch.int64)
 
-        result = {'object': [], 'bbox2d': [], 'bbox3d': [], 'anchor_id': [], 'category': [], 'yaw': [],
+        result = {'object': [], 'bbox2d': [], 'bbox3d': [], 'anchor_id': [], 'category': [], 'yaw_cls': [],
                   'yaw_rads': [], }
         for i, indices in enumerate(batch_indices.to(dtype=torch.int64)):
             for key in result.keys():

@@ -44,9 +44,9 @@ class HistoryLog:
         box_objectness = self.analyze_box_objectness(gt_feature, pred)
         batch_data.update(box_objectness)
 
-        num_ctgr = pred["category"].shape[-1] - 1
+        num_ctgr = pred_nms["category"].shape[-1] - 1
 
-        metric = count_true_positives(grtr, pred, num_ctgr, per_class=False)
+        metric = count_true_positives(grtr, pred_nms, num_ctgr, per_class=False)
         batch_data.update(metric)
         pred_cate = torch.softmax(torch.tensor(pred["category"]), dim=-1).to('cpu').detach().numpy()
         batch_data["true_cls"] = self.logtrueclass(gt_aligned, pred_cate)
