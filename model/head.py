@@ -52,8 +52,10 @@ class FastRCNNHead(nn.Module):
 
         batch, numsample, ch = proposals['bbox2d'].shape
 
-        pred_features = pred_features.view(batch, numsample, -1)
-        pred_features = self.decode(pred_features, proposals['bbox2d'], box_features['strides'])
+        pred = dict()
+        for key, logit in pred_features.items():
+            pred[key] = logit.view(batch, numsample, -1)
+        pred_features = self.decode(pred, proposals['bbox2d'], box_features['strides'])
         pred_features['strides'] = box_features['strides']
         # decode()
 
@@ -104,17 +106,17 @@ class FastRCNNHead(nn.Module):
         return feature_aligned
 
     def decode(self, pred, bbox2d, strides):
-        num_classes = cfg.Model.Structure.NUM_CLASSES
-        loss_channel = cfg.Model.Structure.LOSS_CHANNEL
-        sliced_features = {}
-        last_channel = 0
-        for loss, dims in loss_channel.items():
-            slice_dim = last_channel + num_classes * dims
-            if loss == 'category':
-                slice_dim = slice_dim + 1
-            sliced_features[loss] = pred[..., last_channel:slice_dim]
-            last_channel = slice_dim
-        pred = uf.slice_class(sliced_features)  # b, n, 3, 6
+        # num_classes = cfg.Model.Structure.NUM_CLASSES
+        # loss_channel = cfg.Model.Structure.LOSS_CHANNEL
+        # sliced_features = {}
+        # last_channel = 0
+        # for loss, dims in loss_channel.items():
+        #     slice_dim = last_channel + num_classes * dims
+        #     if loss == 'category':
+        #         slice_dim = slice_dim + 1
+        #     sliced_features[loss] = pred[..., last_channel:slice_dim]
+        #     last_channel = slice_dim
+        pred = uf.slice_class(pred)  # b, n, 3, 6
         bbox3d = list()
         for cate_idx in range(self.num_cate):
             bbox3d_split_cate = pred['bbox3d_delta'][:, :, cate_idx, :].squeeze(-2)  # B, NUM, 6
@@ -151,9 +153,22 @@ class FastRCNNFCOutputHead(nn.Module):
         box_dim = cfg.Model.Structure.BOX_DIM
         bins = cfg.Model.Structure.VP_BINS
         out_channels = num_classes * (1 + box_dim + (2 * bins)) + 1
-        self.pred_layer = nn.Linear(input_size, out_channels)
-        nn.init.xavier_normal_(self.pred_layer.weight)
-        nn.init.constant_(self.pred_layer.weight, 0)
+        self.cate_layer = nn.Linear(input_size, num_classes +1)
+        self.bbox3d_layer = nn.Linear(input_size, num_classes * box_dim)
+        nn.init.normal_(self.cate_layer.weight, std=0.01)
+        nn.init.normal_(self.bbox3d_layer.weight, std=0.001)
+        for l in [self.cate_layer, self.bbox3d_layer]:
+            nn.init.constant_(l.bias, 0)
+        self.yaw_cls_layer = nn.Linear(input_size, num_classes * bins)
+        self.yaw_rads_layer = nn.Linear(input_size, num_classes * bins)
+        self.height_layer = nn.Linear(input_size, num_classes * 2)
+
+        nn.init.xavier_normal_(self.yaw_cls_layer.weight)
+        nn.init.constant_(self.yaw_cls_layer.weight, 0)
+        nn.init.xavier_normal_(self.yaw_rads_layer.weight)
+        nn.init.constant_(self.yaw_rads_layer.weight, 0)
+        nn.init.xavier_normal_(self.height_layer.weight)
+        nn.init.constant_(self.height_layer.weight, 0)
 
     def forward(self, x):
         if x.dim() > 2:
@@ -161,5 +176,10 @@ class FastRCNNFCOutputHead(nn.Module):
         for layer, bn in zip(self.fcs, self.bns):
             x = F.relu(bn(layer(x)))
 
-        x = self.pred_layer(x)
-        return x
+        cate = self.cate_layer(x)
+        bbox3d = self.bbox3d_layer(x)
+        yaw_cls = self.yaw_cls_layer(x)
+        yaw_rads = self.yaw_rads_layer(x)
+        height = self.height_layer(x)
+        pred_logit = {'category': cate, 'bbox3d_delta': bbox3d, 'yaw_cls': yaw_cls, 'yaw_rads': yaw_rads, 'height': height}
+        return pred_logit

@@ -184,24 +184,30 @@ def apply_box_deltas_3d(anchors_yxlw, deltas_yxlw, category, stride):
     return bbox_yxlw
 
 
-def get_deltas_3d(anchors_yxlw, bboxes_yxlw, category, stride=None):
-    category = category.to(dtype=torch.int64)
+def get_deltas_3d(anchors_yxlw, bboxes_yxlw, stride=None):
     anchor_yx, anchor_lw = anchors_yxlw[..., :2], anchors_yxlw[..., 2:4]
-    anchor_h = torch.tensor([149.6, 130.05, 147.9, 1.0], device=device)  # Mean heights encoded
-    anchor_z = anchor_h / 2
     stride = torch.pow(2, stride + 2).view(anchor_yx.shape[0], -1).unsqueeze(-1).to(device=device)
-    bboxes_yx, bboxes_lw, bboxes_z, bboxes_h = bboxes_yxlw[..., :2], bboxes_yxlw[..., 2:4], bboxes_yxlw[...,
-                                                                                            4:5], bboxes_yxlw[..., 5:6]
+    bboxes_yx, bboxes_lw = bboxes_yxlw[..., :2], bboxes_yxlw[..., 2:4]
     anchor_yx = anchor_yx.view(bboxes_yx.shape)
     anchor_lw = anchor_lw.view(bboxes_lw.shape)
 
     delta_yx = (bboxes_yx - anchor_yx) / (stride + 1e-10)
     valid_mask = (bboxes_lw[..., 0:1] > 0)
     delta_lw = torch.log(bboxes_lw / (anchor_lw + 1e-10) + 1e-10)
+    delta_bbox = torch.cat([delta_yx, delta_lw], dim=-1) * valid_mask
+    return delta_bbox
+
+
+def get_deltas_h(height, category):
+    category = category.to(dtype=torch.int64)
+    anchor_h = torch.tensor([149.6, 130.05, 147.9, 1.0], device=device)  # Mean heights encoded
+    anchor_z = anchor_h / 2
+    bboxes_z, bboxes_h = height[..., :1], height[..., 1:2]
+    valid_mask = (bboxes_z[..., 0:1] > 0)
     delta_z = (bboxes_z - anchor_z[category]) / ((anchor_h[category] / 4) + 1e-10)
     delta_h = torch.log(bboxes_h / (anchor_h[category] + 1e-10) + 1e-10)
 
-    delta_bbox = torch.cat([delta_yx, delta_lw, delta_z, delta_h], dim=-1) * valid_mask
+    delta_bbox = torch.cat([delta_z, delta_h], dim=-1) * valid_mask
     return delta_bbox
 
 
@@ -306,7 +312,7 @@ class NonMaximumSuppression:
         batch_indices = torch.maximum(batch_indices, torch.zeros(batch_indices.shape, device=self.device)).to(
             dtype=torch.int64)
 
-        result = {'object': [], 'bbox2d': [], 'bbox3d': [], 'anchor_id': [], 'category': [], 'yaw': [],
+        result = {'object': [], 'bbox2d': [], 'bbox3d': [], 'anchor_id': [], 'category': [], 'yaw_cls': [],
                   'yaw_rads': [], }
         for i, indices in enumerate(batch_indices.to(dtype=torch.int64)):
             for key in result.keys():

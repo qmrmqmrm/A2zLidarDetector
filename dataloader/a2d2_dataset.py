@@ -95,13 +95,13 @@ class A2D2Dataset(DatasetBase):
             velodyne_h = 1.12
 
             ann['bbox3d'] = [(bbox_ymin + bbox_ymax) / 2., (bbox_xmin + bbox_xmax) / 2.,
-                             round(obj['size'][0] / bvres, 3), round(obj['size'][1] / bvres, 3),
-                             obj['size'][2] / 3. * 255,
+                             round(obj['size'][0] / bvres, 3), round(obj['size'][1] / bvres, 3)]
+            ann['height'] = [obj['size'][2] / 3. * 255,
                              ((pts_3d_velo[0][2] + velodyne_h) + obj['size'][2] * 0.5) / 3. * 255]  # yxlwzh
             ann["object"] = [1]
 
             if yaw:
-                ann['yaw'] = [rad2bin(obj['rot_angle'], bins)]
+                ann['yaw_cls'] = [rad2bin(obj['rot_angle'], bins)]
                 ann['yaw_rads'] = [obj['rot_angle']]
             annotations.append(ann)
         return annotations
@@ -163,17 +163,7 @@ class A2D2Dataset(DatasetBase):
         for key in gathered_anns:
             numbox, channel = gathered_anns[key].shape
             if self.max_box - numbox > 0:
-                if key == 'category':
-                    pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
-                elif key == 'yaw':
-                    pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
-                elif key == 'yaw_rads':
-                    pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
-                elif key == 'object':
-                    pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
-                else:
-                    pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
-
+                pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
                 gathered_anns[key] = torch.cat([gathered_anns[key], pad], dim=0)
             else:
                 gathered_anns[key] = gathered_anns[key][:self.max_box, :]

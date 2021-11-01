@@ -96,14 +96,14 @@ class Model:
         PIXEL_MEAN = [0.0, 0.0, 0.0]
         PIXEL_STD = [1.0, 1.0, 1.0]
         NUM_CLASSES = 3
-        BOX_DIM = 6
+        BOX_DIM = 4
         IMAGE_SHAPE = [640, 640]
         STRIDE_SHAPE = Scales.DEFAULT_FEATURE_SCALES
-        LOSS_CHANNEL = {'category': 1, 'bbox3d_delta': BOX_DIM, 'yaw': VP_BINS, 'yaw_rads': VP_BINS}
+        LOSS_CHANNEL = {'category': 1, 'bbox3d_delta': BOX_DIM, 'yaw_cls': VP_BINS, 'yaw_rads': VP_BINS, 'height': 2}
 
 
 class Train:
-    CKPT_NAME = "check_loss_v4"
+    CKPT_NAME = "height_v3"
 
     MODE = ["eager", "graph"][0]
     BATCH_SIZE = 2

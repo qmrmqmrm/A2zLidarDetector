@@ -1,6 +1,5 @@
 import os
 import os.path as op
-import torch
 import numpy as np
 import cv2
 
@@ -65,60 +64,37 @@ class VisualLog:
         """
         splits = split_true_false(grtr, pred_nms, cfg.Validation.TP_IOU_THRESH)
         batch = splits["grtr_tp"]["bbox2d"].shape[0]
+        keys = splits.keys()
+        grtr_keys = ["grtr_fn", "grtr_tp"]
+        pred_keys = ["pred_fp", "pred_tp"]
         for batch_idx in range(batch):
             # grtr_log_keys = ["pred_object", "pred_ctgr_prob", "pred_score", "distance"]
             image_org_file_name = grtr["image_file"][batch_idx].replace('image/', 'camera/')
             image_org = cv2.imread(image_org_file_name)
             image_org = cv2.resize(image_org, (1280, 640))
+            # bbox2d
+            for key in ['bbox2d', 'bbox3d']:
+                image_grtr = grtr["image"][batch_idx].copy()
+                image_grtr = self.draw_boxes(image_grtr, splits["grtr_fn"][key], batch_idx, (0, 0, 255))
+                image_grtr = self.draw_boxes(image_grtr, splits["grtr_tp"][key], batch_idx, (0, 255, 0))
 
-            image_grtr = grtr["image"][batch_idx].copy()
+                image_pred = grtr["image"][batch_idx].copy()
 
-            image_grtr = self.draw_boxes(image_grtr, splits["grtr_fn"]['bbox2d'], splits["grtr_fn"]['category'],
-                                         batch_idx, (0, 0, 255))
-            image_grtr = self.draw_boxes(image_grtr, splits["grtr_tp"]['bbox2d'], splits["grtr_tp"]['category'],
-                                         batch_idx, (0, 255, 0))
+                image_pred = self.draw_boxes(image_pred, splits["pred_fp"][key], batch_idx, (0, 0, 255))
+                image_pred = self.draw_boxes(image_pred, splits["pred_tp"][key], batch_idx, (0, 255, 0))
 
-            image_pred = grtr["image"][batch_idx].copy()
+                vlog_image = np.concatenate([image_pred, image_grtr], axis=1)
+                vlog_image = np.concatenate([image_org, vlog_image], axis=0)
+                if step % 50 == 10:
+                    cv2.imshow("detection_result", vlog_image)
+                    cv2.waitKey(10)
+                filename = op.join(self.vlog_path, f"{step * batch + batch_idx:05d}_{key}.jpg")
+                cv2.imwrite(filename, vlog_image)
 
-            image_pred = self.draw_boxes(image_pred, splits["pred_fp"]['bbox2d'], splits["pred_fp"]['category'],
-                                         batch_idx, (0, 0, 255))
-            image_pred = self.draw_boxes(image_pred, splits["pred_tp"]['bbox2d'], splits["pred_tp"]['category'],
-                                         batch_idx, (0, 255, 0))
-
-            image_grtr_3d = grtr["image"][batch_idx].copy()
-            image_grtr_3d = self.draw_boxes(image_grtr_3d, splits["grtr_fn"]['bbox3d'][..., :-2],
-                                            splits["grtr_fn"]['category'],
-                                            batch_idx, (0, 0, 255))
-            image_grtr_3d = self.draw_boxes(image_grtr_3d, splits["grtr_tp"]['bbox3d'][..., :-2],
-                                            splits["grtr_tp"]['category'],
-                                            batch_idx, (0, 255, 0))
-
-            image_pred_3d = grtr["image"][batch_idx].copy()
-            image_pred_3d = self.draw_boxes(image_pred_3d, splits["pred_fp"]['bbox3d'][..., :-2],
-                                            splits["pred_fp"]['category'],
-                                            batch_idx, (0, 0, 255))
-            image_pred_3d = self.draw_boxes(image_pred_3d, splits["pred_tp"]['bbox3d'][..., :-2],
-                                            splits["pred_tp"]['category'],
-                                            batch_idx, (0, 255, 0))
-
-            #
-            # image_grtr_3d_org = image_org.copy()
-            # image_grtr_3d_org = self.draw_boxes(image_grtr_3d_org, splits["grtr_fn"]['bbox3d'][..., :-2], splits["grtr_fn"]['category'],
-            #                                 batch_idx, (0, 0, 255))
-            # image_grtr_3d_org = self.draw_boxes(image_grtr_3d_org, splits["grtr_tp"]['bbox3d'][..., :-2], splits["grtr_tp"]['category'],
-            #                                 batch_idx, (0, 255, 0))
-            #
-            # image_pred_3d_org = image_org.copy()
-            # image_pred_3d_org = self.draw_boxes(image_pred_3d_org, splits["pred_fp"]['bbox3d'][..., :-2], splits["pred_fp"]['category'],
-            #                                 batch_idx, (0, 0, 255))
-            # image_pred_3d_org = self.draw_boxes(image_pred_3d_org, splits["pred_tp"]['bbox3d'][..., :-2], splits["pred_tp"]['category'],
-            #                                 batch_idx, (0, 255, 0))
-
-            # image_pred = self.draw_boxes(image_pred, splits["grtr_tp"], batch_idx, (0, 255, 255))
-            # image_pred = self.draw_boxes(image_pred, splits["grtr_fn"], batch_idx, (0, 255, 255))
-
+            # category
             scale_img = grtr["image"][batch_idx].copy()
             # print('pred_tp')
+
             scale_img = self.draw_ctgr_boxes(scale_img, splits["pred_tp"]['bbox2d'], splits["pred_tp"]['category'],
                                              batch_idx, 120)
             # print('pred_fp')
@@ -134,26 +110,12 @@ class VisualLog:
             vlog_image = np.concatenate([image_pred, image_grtr], axis=1)
             vlog_image = np.concatenate([image_org, vlog_image], axis=0)
 
-            vlog_image_3d = np.concatenate([image_pred_3d, image_grtr_3d], axis=1)
-            vlog_image_3d = np.concatenate([image_org, vlog_image_3d], axis=0)
-
             # vlog_image_3d_org = np.concatenate([image_grtr_3d_org, image_pred_3d_org], axis=0)
-
-            if step % 50 == 10:
-                cv2.imshow("detection_result", vlog_image)
-                cv2.waitKey(10)
-            filename = op.join(self.vlog_path, f"{step * batch + batch_idx:05d}.jpg")
-            cv2.imwrite(filename, vlog_image)
-
-            filename = op.join(self.vlog_path, f"{step * batch + batch_idx:05d}_3d.jpg")
-            cv2.imwrite(filename, vlog_image_3d)
 
             filename = op.join(self.scale_path, f"{step * batch + batch_idx:05d}.jpg")
             cv2.imwrite(filename, scale_img)
 
-            # filename = op.join(self.vlog_path, f"{step * batch + batch_idx:05d}_3d_org.jpg")
-            # cv2.imwrite(filename, vlog_image_3d_org)
-
+            # object
             gt_obj_imgs = []
             pred_obj_imgs = []
             for scale_idx, (gt_scale_object, pred_scale_object) in enumerate(
@@ -169,7 +131,7 @@ class VisualLog:
             filename = op.join(self.obj_path, f"{step * batch + batch_idx:05d}.jpg")
             cv2.imwrite(filename, obj_img)
 
-    def draw_boxes(self, image, bboxes, category, frame_idx, color):
+    def draw_boxes(self, image, bboxes, frame_idx, color):
         """
         all input arguments are numpy arrays
         :param image: (H, W, 3)
@@ -220,7 +182,7 @@ class VisualLog:
             # cv2.putText(image, annotation, (x1, y1), cv2.FONT_HERSHEY_PLAIN, 1.0, color, 2)
         return image
 
-    def draw_3d_boxes(self, image, bboxes, yaw_cls, yaw_ras, frame_idx, val):
+    def rotated_3d(self, image, bboxes, yaw_cls, yaw_ras, frame_idx, val):
         """
         all input arguments are numpy arrays
         :param image: (H, W, 3)
@@ -238,17 +200,27 @@ class VisualLog:
         yaw_bin = yaw_bin[frame_idx]
         yaw = (yaw_bin * 12) + yaw_ras
 
-
         # one_hot_ctgrs = (self.one_hot(yaw_bin, 12) * val).astype(np.uint8)
 
         valid_mask = bbox2d[:, 2] > 0  # (N,) h>0
         bbox2d = bbox2d[valid_mask, :]
         bbox2d = mu.convert_box_format_yxhw_to_tlbr(bbox2d)
-        for i in range(bbox2d.shape[0]):
-            if one_hot_ctgrs[i][0] == 0:
-                y1, x1, y2, x2 = bbox2d[i].astype(np.int32)
-                cv2.rectangle(image, (x1, y1), (x2, y2),
-                              [int(one_hot_ctgrs[i][1]), int(one_hot_ctgrs[i][2]), int(one_hot_ctgrs[i][3])], 2)
+
+    def draw_3D_box(self, img, corners, color=(255, 255, 0)):
+        """
+            draw 3D box in image with OpenCV,
+            the order of the corners should be the same with BBox3dProjector
+        """
+        points = np.array(corners[0:2], dtype=np.int32)  # [2, 8]
+        points = [tuple(points[:, i]) for i in range(8)]
+        for i in range(1, 5):
+            cv2.line(img, points[i], points[(i % 4 + 1)], color, 2)
+            cv2.line(img, points[(i + 4) % 8], points[((i) % 4 + 5) % 8], color, 2)
+        cv2.line(img, points[2], points[7], color)
+        cv2.line(img, points[3], points[6], color)
+        cv2.line(img, points[4], points[5], color)
+        cv2.line(img, points[0], points[1], color)
+        return img
 
     def one_hot(self, grtr_category, category_shape):
         one_hot_data = np.eye(category_shape, dtype=np.float32)[grtr_category[..., 0].astype(np.int32)]
