@@ -37,8 +37,8 @@ class IntegratedLoss:
         if 'yaw_cls' in loss_weights:
             loss_objects['yaw_cls'] = loss.YawClassification()
 
-        if 'yaw_reg' in loss_weights:
-            loss_objects['yaw_reg'] = loss.YawRegression()
+        if 'yaw_rads' in loss_weights:
+            loss_objects['yaw_rads'] = loss.YawRegression()
 
         return loss_objects
 

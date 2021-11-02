@@ -103,8 +103,7 @@ class Model:
 
 
 class Train:
-    CKPT_NAME = "nms_max_num"
-
+    CKPT_NAME = "fix_zh"
     MODE = ["eager", "graph"][0]
     BATCH_SIZE = 2
     TRAINING_PLAN = params.TrainingPlan.A2D2_SIMPLE
@@ -122,7 +121,7 @@ class NMS:
 
 
 class Validation:
-    TP_IOU_THRESH = [0.3, 0.3, 0.3, 0.3]
+    TP_IOU_THRESH = [1., 0.3, 0.3, 0.3]
     DISTANCE_LIMIT = 25
     VAL_EPOCH = "latest"
 

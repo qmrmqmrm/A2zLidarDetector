@@ -51,39 +51,18 @@ class Conv2d(torch.nn.Conv2d):
         return x
 
 
-def remove_padding(batch_input):
-    batch, _, _, _ = batch_input['image'].shape
-    bbox2d_batch = list()
-    category_batch = list()
-    yaw_batch = list()
-    yaw_rads_batch = list()
-    bbox3d_batch = list()
+def remove_padding(grtr):
+    batch, _, _, _ = grtr['image'].shape
+    result_grtr = {'bbox2d': [], 'category': [], 'yaw_cls': [], 'yaw_rads': [], 'bbox3d': [], 'object': []}
     for i in range(batch):
-        bbox2d = batch_input['bbox2d'][i, :]
-        weight = bbox2d[:, 2]
-        x = torch.where(weight > 0)
-        bbox2d = bbox2d[:x[0][-1] + 1, :]
-        bbox2d_batch.append(bbox2d)
-        # print('\nhead bbox2d.shape :', bbox2d.shape)
-        # print('head bbox2d :', bbox2d)
-
-        category = batch_input['category'][i, :]
-        category = category[torch.where(category < 3)]
-        category_batch.append(category)
-
-        valid_yaw = batch_input['yaw_cls'][i, :][torch.where(batch_input['yaw_cls'][i, :] < 13)]
-        yaw_batch.append(valid_yaw)
-
-        valid_yaw_rads = batch_input['yaw_rads'][i, :][torch.where(batch_input['yaw_rads'][i, :] >= 0)]
-        yaw_rads_batch.append(valid_yaw_rads)
-
-        weight_3d = batch_input['bbox3d'][i, :, 2]
-        valid_3d = batch_input['bbox3d'][i, :][torch.where(weight_3d > 0)]
-        bbox3d_batch.append(valid_3d)
-
-    new_batch_input = {'bbox2d': bbox2d_batch, 'category': category_batch, 'yaw': yaw_batch, 'yaw_rads': yaw_rads_batch,
-                       'bbox3d': bbox3d_batch, 'image': batch_input['image']}
-    return new_batch_input
+        bbox2d = grtr['bbox2d'][i, :]
+        padding_mask = np.where(bbox2d[:, 2] > 0)[0][-1] + 1
+        for key in result_grtr:
+            result_grtr[key].append(grtr[key][i, :][:padding_mask, :])
+    # for key in result_grtr:
+    #     result_grtr[key] = np.stack(result_grtr[key], axis=0)
+    # uf.print_structure('result_grtr', result_grtr)
+    return result_grtr
 
 
 def convert_box_format_tlbr_to_yxhw(boxes_tlbr):

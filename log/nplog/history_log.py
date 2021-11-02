@@ -98,6 +98,8 @@ class HistoryLog:
     def make_summary(self):
         mean_result = self.batch_data_table.mean(axis=0).to_dict()
         sum_result = self.batch_data_table.sum(axis=0).to_dict()
+        print('sum_result["trpo"]', sum_result["trpo"])
+        print('sum_result["pred"]', sum_result["pred"])
         sum_result = {"recall": sum_result["trpo"] / (sum_result["grtr"] + 1e-5),
                       "precision": sum_result["trpo"] / (sum_result["pred"] + 1e-5)}
         metric_keys = ["trpo", "grtr", "pred"]
