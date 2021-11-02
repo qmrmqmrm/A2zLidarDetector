@@ -96,8 +96,8 @@ class A2D2Dataset(DatasetBase):
 
             ann['bbox3d'] = [(bbox_ymin + bbox_ymax) / 2., (bbox_xmin + bbox_xmax) / 2.,
                              round(obj['size'][0] / bvres, 3), round(obj['size'][1] / bvres, 3),
-                             ((pts_3d_velo[0][2] + velodyne_h) + obj['size'][2] * 0.5) / 3. * 255,
-                             obj['size'][2] / 3. * 255]  # yxlwzh
+                             obj['size'][2] / 3. * 255,
+                             ((pts_3d_velo[0][2] + velodyne_h) + obj['size'][2] * 0.5) / 3. * 255,]  # yxlwzh
             ann["object"] = [1]
 
             if yaw:

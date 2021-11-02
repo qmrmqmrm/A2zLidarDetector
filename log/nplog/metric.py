@@ -22,31 +22,20 @@ def count_true_positives(grtr, pred, num_ctgr, iou_thresh=cfg.Validation.TP_IOU_
     grtr_valid_fn = splits["grtr_fn"]["bbox2d"][..., 2:3] > 0
     pred_valid_tp = splits["pred_tp"]["bbox2d"][..., 2:3] > 0
     pred_valid_fp = splits["pred_fp"]["bbox2d"][..., 2:3] > 0
-    if per_class:
-        print("grtr_tp")
-        grtr_tp_count = count_per_class(splits["grtr_tp"], grtr_valid_tp, num_ctgr)
-        print("grtr_fn")
-        grtr_fn_count = count_per_class(splits["grtr_fn"], grtr_valid_fn, num_ctgr)
-        print("pred_tp")
-        pred_tp_count = count_per_class(splits["pred_tp"], pred_valid_tp, num_ctgr)
-        print("pred_fp")
-        pred_fp_count = count_per_class(splits["pred_fp"], pred_valid_fp, num_ctgr)
 
-        return {"trpo": pred_tp_count, "grtr": (grtr_tp_count + grtr_fn_count),
-                "pred": (pred_tp_count + pred_fp_count)}
-    else:
-
-        grtr_count = np.sum(grtr_valid_tp + grtr_valid_fn)
-        pred_count = np.sum(pred_valid_tp + pred_valid_fp)
-        print('count_true_positives pred', np.sum(pred_valid_tp), np.sum(pred_valid_fp), pred_count)
-        trpo_count = np.sum(pred_valid_tp)
-        return {"trpo": trpo_count, "grtr": grtr_count, "pred": pred_count}
+    grtr_count = np.sum(grtr_valid_tp + grtr_valid_fn)
+    pred_count = np.sum(pred_valid_tp + pred_valid_fp)
+    trpo_count = np.sum(pred_valid_tp)
+    print('count_true_positives pred', trpo_count, pred_count)
+    return {"trpo": trpo_count, "grtr": grtr_count, "pred": pred_count}
 
 
 def split_true_false(grtr, pred, iou_thresh):
     batch, M, _ = pred["category"].shape
     best_cate = np.argmax(pred["category"], axis=-1)
+    pred_cate_bg_mask =1-(best_cate == 0)
     category = np.expand_dims(best_cate, -1)
+    pred_cate_bg_mask = np.expand_dims(pred_cate_bg_mask, -1)
     valid_mask = grtr["object"]
     # iou = uf.pairwise_batch_iou(grtr["bbox2d"], pred["rpn_bbox2d"])
     # (batch, N, M) N = gt_num M=cate_num*max_cate_num 15 150
@@ -57,24 +46,24 @@ def split_true_false(grtr, pred, iou_thresh):
         iou_thresh = get_iou_thresh_per_class(grtr["category"], iou_thresh)  # (batch, 15,1) iou_tresh len : 3
     iou_match = best_iou > iou_thresh  # (batch, N)
     pred_ctgr_aligned = numpy_gather(category, best_idx, 1)  # (batch, N, 8)
+    gt_cate_bg_mask = 1-(pred_ctgr_aligned == 0)
+    # gt_cate_bg_mask =np.expand_dims(gt_cate_bg_mask, -1)
     ctgr_match = grtr["category"][..., 0] == pred_ctgr_aligned  # (batch, N)
-    grtr_tp_mask = np.expand_dims(iou_match * ctgr_match, axis=-1)  # (batch, N, 1)
-    grtr_fn_mask = ((1 - grtr_tp_mask) * valid_mask).astype(np.float32)  # (batch, N, 1)
+
+    grtr_tp_mask = np.expand_dims(iou_match * ctgr_match * gt_cate_bg_mask, axis=-1)  # (batch, N, 1)
+    gt_cate_bg_mask =np.expand_dims(gt_cate_bg_mask, -1)
+    grtr_fn_mask = ((1 - grtr_tp_mask) * valid_mask * gt_cate_bg_mask).astype(np.float32)  # (batch, N, 1)
     grtr_tp = {key: val * grtr_tp_mask for key, val in grtr.items() if key in pp.LossComb.BIRDNET}
     grtr_fn = {key: val * grtr_fn_mask for key, val in grtr.items() if key in pp.LossComb.BIRDNET}
     grtr_tp["iou"] = best_iou * grtr_tp_mask[..., 0]
     grtr_fn["iou"] = best_iou * grtr_fn_mask[..., 0]
     # last dimension rows where grtr_tp_mask == 0 are all-zero
-    pred_tp_mask = indices_to_binary_mask(best_idx, grtr_tp_mask, M)
-    pred_fp_mask = 1 - pred_tp_mask  # (batch, M, 1)
+    pred_tp_mask = indices_to_binary_mask(best_idx, grtr_tp_mask, M) * pred_cate_bg_mask
+    pred_fp_mask = (1 - pred_tp_mask) * pred_cate_bg_mask # (batch, M, 1) * (1 - pred_cate_bg_mask)
     # pred_loss_comb = ["objectness", "bbox2d", "category", "bbox3d", "yaw", "yaw_rads"]
 
     pred_tp = {key: val * pred_tp_mask for key, val in pred.items() if key in pp.LossComb.BIRDNET}
     pred_fp = {key: val * pred_fp_mask for key, val in pred.items() if key in pp.LossComb.BIRDNET}
-    print('pred_tp_mask, pred_fp_mask', np.sum(pred_tp_mask > 0), np.sum(pred_tp['object'] > 0),
-          np.sum(pred_fp['object'] > 0))
-    print('pred_tp_mask, pred_fp_mask', np.sum(pred_tp_mask > 0), np.sum(pred_tp['object'] > 0),
-          np.sum(pred_fp['object'] > 0))
     return {"pred_tp": pred_tp, "pred_fp": pred_fp, "grtr_tp": grtr_tp, "grtr_fn": grtr_fn}
 
 
