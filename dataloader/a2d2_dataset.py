@@ -75,13 +75,14 @@ class A2D2Dataset(DatasetBase):
 
             if obj_category not in self.categories:
                 continue
+            rot_angle = obj['rot_angle'] * obj['axis'][-1]
 
             location = np.array(obj['center']).reshape((1, 3))
             pts_3d_ref = np.transpose(np.dot(np.linalg.inv(calib["R0"]), np.transpose(location)))
             n = pts_3d_ref.shape[0]
             pts_3d_homo = np.hstack((pts_3d_ref, np.ones((n, 1))))
             pts_3d_velo = np.dot(pts_3d_homo, np.transpose(calib["C2V"]))
-            bbox_xmin, bbox_ymin, bbox_xmax, bbox_ymax = self.obtain_bvbox(obj, image, pts_3d_velo, bvres)
+            bbox_xmin, bbox_ymin, bbox_xmax, bbox_ymax = self.obtain_bvbox(obj,rot_angle, image, pts_3d_velo, bvres)
             if bbox_xmin < 0:
                 continue
 
@@ -101,17 +102,17 @@ class A2D2Dataset(DatasetBase):
             ann["object"] = [1]
 
             if yaw:
-                ann['yaw_cls'] = [rad2bin(obj['rot_angle'], bins)]
-                ann['yaw_rads'] = [obj['rot_angle']]
+                ann['yaw_cls'] = [rad2bin(rot_angle, bins)]
+                ann['yaw_rads'] = [rot_angle]
             annotations.append(ann)
         return annotations
 
-    def obtain_bvbox(self, obj, bv_img, pv, bvres=0.05):
+    def obtain_bvbox(self, obj,rot_angle, bv_img, pv, bvres=0.05):
         bvrows, bvcols, _ = bv_img.shape
         centroid = [round(num, 2) for num in pv[0][:2]]  # Lidar coordinates
         width = obj['size'][1]
         length = obj['size'][0]
-        yaw = obj['rot_angle']
+        yaw = rot_angle
         # print('lwh')
         # print(length, width, yaw)
         # Compute the four vertexes coordinates
