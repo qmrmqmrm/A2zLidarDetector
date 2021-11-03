@@ -4,7 +4,7 @@ import numpy as np
 
 
 class Paths:
-    RESULT_ROOT = "/media/dolphin/intHDD/birdnet_data/bv_a2d2/result"
+    RESULT_ROOT = "/media/falcon/IanBook8T/datasets/bv_a2d2/result"
     TFRECORD = op.join(RESULT_ROOT, "pyloader")
     CHECK_POINT = op.join(RESULT_ROOT, "ckpt")
 
@@ -16,7 +16,7 @@ class Datasets:
 
     class A2D2:
         NAME = "a2d2"
-        PATH = "/media/dolphin/intHDD/birdnet_data/bv_a2d2"
+        PATH = "/media/falcon/IanBook8T/datasets/bv_a2d2"
         CATEGORIES_TO_USE = ["Pedestrian", "Car", "Cyclist"]
         CATEGORY_REMAP = {}
         MAX_NUM = 15
@@ -103,7 +103,7 @@ class Model:
 
 
 class Train:
-    CKPT_NAME = "check_bg_mask"
+    CKPT_NAME = "check_3d"
     MODE = ["eager", "graph"][0]
     BATCH_SIZE = 2
     TRAINING_PLAN = params.TrainingPlan.A2D2_SIMPLE
@@ -115,9 +115,9 @@ class Loss:
 
 
 class NMS:
-    MAX_OUT = [100, 100, 100]
-    IOU_THRESH = [0.2, 0.2, 0.2]
-    SCORE_THRESH = [0.3, 0.3, 0.3]
+    MAX_OUT = [20, 20, 20]
+    IOU_THRESH = [0.5, 0.5, 0.5]
+    SCORE_THRESH = [0.5, 0.5, 0.5]
 
 
 class Validation:

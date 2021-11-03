@@ -19,6 +19,7 @@ class Logger:
         self.visual_logger = VisualLog(ckpt_path, epoch, split) if visual_log else None
         self.aligned_iou_threshold = cfg.Loss.ALIGN_IOU_THRESHOLD
         self.anchor_iou_threshold = cfg.Loss.ANCHOR_IOU_THRESHOLD
+        self.device = cfg.Hardware.DEVICE
         # self.exhuastive_logger = ExhaustiveLogger(cfg.Logging.COLNUMS) if exhuastive_log else None
         self.nms = mu.NonMaximumSuppression()
 
@@ -54,8 +55,29 @@ class Logger:
         :return:
         """
 
-        pred.update(auxi['pred_select'])
 
+        pred_select = self.select_best_ctgr_pred(pred)
+        pred.update(pred_select)
+        pred_bbox2d_valid = pred["bbox2d"][..., 2] > 0
+        print(pred_bbox2d_valid.shape)
+        pred_valid_bbox2d_2d = pred["bbox2d"][pred_bbox2d_valid, :]
+        pred_valid_bbox3d_2d = pred["bbox3d"][pred_bbox2d_valid, :]
+        pred_bbox3d_2d_valid = pred_valid_bbox3d_2d[..., 2] > 0
+        pred_valid_bbox3d_bbox3d_2d = pred_valid_bbox3d_2d[pred_bbox3d_2d_valid, :]
+        print('pred_valid_bbox2d_2d', pred_valid_bbox2d_2d.shape)
+        print('pred_valid_bbox3d_2d', pred_valid_bbox3d_2d.shape)
+        print('pred_valid_bbox3d_2d', pred_valid_bbox3d_2d)
+        print('pred_valid_bbox3d_bbox3d_2d', pred_valid_bbox3d_bbox3d_2d.shape)
+        pred_bbox3d_valid = pred["bbox3d"][..., 2] > 0
+
+        pred_valid_bbox3d_3d = pred["bbox3d"][pred_bbox3d_valid, :]
+        # print('pred_valid_bbox2d_3d', pred_valid_bbox2d_3d.shape)
+        # print('pred_valid_bbox2d_3d', pred_valid_bbox2d_3d)
+        print('pred_valid_bbox3d_3d', pred_valid_bbox3d_3d.shape)
+
+
+
+        uf.print_structure('pred', pred)
         pred_slices_nms = self.nms(pred)
         gt_aligned = auxi['gt_aligned']
         gt_feature = auxi['gt_feature']
@@ -74,20 +96,24 @@ class Logger:
         # if self.exhuastive_logger:
         #     self.exhuastive_logger(step, grtr, gt_aligned, pred_slices, loss_by_type, epoch, cfg.Logging.USE_ANCHOR)
 
-    def select_category(self, aligned, pred):
-        gt_cate = (aligned['category'].to(torch.int64)).unsqueeze(-1)
+    def select_best_ctgr_pred(self, pred):
+        best_ctgr_idx = torch.argmax(pred['category'], dim=-1).unsqueeze(-1).unsqueeze(-1)
+        best_probs = torch.amax(pred['category'], dim=-1)  # (batch, N)
         select_pred = dict()
-        for key in ['bbox3d', 'yaw_cls', 'yaw_rads']:
+        for key in ['bbox3d', 'yaw_cls', 'yaw_rads', 'bbox3d_delta']:
             pred_key = pred[key]
             batch, num, cate, channel = pred_key.shape
             pred_padding = torch.zeros((batch, num, 1, channel), device=self.device)
             pred_key = torch.cat([pred_padding, pred_key], dim=-2)
-            gather_gt = torch.gather(pred_key, dim=2, index=gt_cate.repeat(1, 1, 1, pred_key.shape[-1])).squeeze(-2)
+            best_pred = torch.gather(pred_key, dim=2, index=best_ctgr_idx.repeat(1, 1, 1, pred_key.shape[-1])).squeeze(-2)
             if key == 'yaw_rads':
-                gt_yaw = aligned['yaw_cls'].to(torch.int64)
-                gather_gt = torch.gather(gather_gt, dim=-1, index=gt_yaw)
-            select_pred[key] = gather_gt
-        select_pred['category'] = pred['category'].squeeze(-1)
+                best_yaw_cls_idx = torch.argmax(pred['yaw_cls'], dim=-1)
+                select_pred['yaw_cls_idx'] = best_yaw_cls_idx
+                best_pred = torch.gather(best_pred, dim=-1, index=best_yaw_cls_idx)
+            select_pred[key] = best_pred
+        select_pred['category_idx'] = best_ctgr_idx.squeeze(-1).squeeze(-1)
+        select_pred['category_probs'] = best_probs
+
         return select_pred
 
     def convert_tensor_to_numpy(self, features):

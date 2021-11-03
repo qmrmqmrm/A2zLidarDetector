@@ -78,7 +78,6 @@ class VisualLog:
                 image_grtr = self.draw_boxes(image_grtr, splits["grtr_tp"][key][..., :4], batch_idx, (0, 255, 0))
 
                 image_pred = grtr["image"][batch_idx].copy()
-
                 image_pred = self.draw_boxes(image_pred, splits["pred_fp"][key][..., :4], batch_idx, (0, 0, 255))
                 image_pred = self.draw_boxes(image_pred, splits["pred_tp"][key][..., :4], batch_idx, (0, 255, 0))
 
@@ -157,7 +156,7 @@ class VisualLog:
         :return: box drawn image
         """
         bbox2d = bboxes[frame_idx]  # (N, 4)
-        valid_mask = bbox2d[:, 2] > 0  # (N,) h>0
+        valid_mask = bbox2d[:, 2] > 0  # (N,) l>0
 
         bbox2d = bbox2d[valid_mask, :]
         bbox2d = mu.convert_box_format_yxhw_to_tlbr(bbox2d)

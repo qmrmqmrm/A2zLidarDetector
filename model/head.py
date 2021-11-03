@@ -123,6 +123,7 @@ class FastRCNNHead(nn.Module):
             bbox3d_per_cate = mu.apply_box_deltas_3d(bbox2d, bbox3d_split_cate, category, strides)  # B,NUM,6
             bbox3d.append(bbox3d_per_cate.unsqueeze(-2))
         pred['bbox3d'] = torch.cat(bbox3d, dim=-2)
+
         pred['category'] = pred['category'].squeeze(-1)
         return pred
 

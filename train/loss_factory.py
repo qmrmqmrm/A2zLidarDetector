@@ -136,6 +136,15 @@ class IntegratedLoss:
         }
         """
         batch = grtr['bbox2d'].shape[0]
+        print('')
+        bbox3d = pred['bbox3d'][pred['bbox2d'][..., 2] > 0]
+        bbox2d = pred['bbox2d'][pred['bbox2d'][..., 2] > 0]
+        print('bbox2d',bbox2d.shape)
+        print('bbox3d',bbox3d)
+        print('bbox3d',bbox3d.shape)
+        bbox3d_w = bbox3d[bbox3d[..., 2] > 0]
+        print('bbox3d_w',bbox3d_w.shape)
+
         # anchors = list()
         # for anchor_yxlw in grtr['anc_feat']:  # batch, h, w, a, 4
         #     anchor_yxlw = anchor_yxlw.view(batch, -1, anchor_yxlw.shape[-1])  # b hwa 4

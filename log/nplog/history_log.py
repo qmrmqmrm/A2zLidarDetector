@@ -51,8 +51,6 @@ class HistoryLog:
         pred_cate = torch.softmax(torch.tensor(pred["category"]), dim=-1).to('cpu').detach().numpy()
         batch_data["true_cls"] = self.logtrueclass(gt_aligned, pred_cate)
         batch_data["false_cls"] = self.logfalseclass(gt_aligned, pred_cate)
-        print('ture_class', batch_data["true_cls"])
-        print('false_class', batch_data["false_cls"])
 
         batch_data = self.set_precision(batch_data, 5)
         col_order = list(batch_data.keys())
@@ -103,7 +101,9 @@ class HistoryLog:
         sum_result = {"recall": sum_result["trpo"] / (sum_result["grtr"] + 1e-5),
                       "precision": sum_result["trpo"] / (sum_result["pred"] + 1e-5)}
         metric_keys = ["trpo", "grtr", "pred"]
+
         summary = {key: val for key, val in mean_result.items() if key not in metric_keys}
+        print('trpo : ', summary)
         summary.update(sum_result)
         summary["time_m"] = round((timer() - self.start) / 60., 5)
         self.summary = summary

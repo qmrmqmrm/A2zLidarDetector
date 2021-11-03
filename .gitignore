@@ -6,6 +6,7 @@ configs
 projects
 detectron2
 setup.*
+config.py
 
 *.jpg
 *.png

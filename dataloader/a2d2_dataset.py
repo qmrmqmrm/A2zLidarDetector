@@ -82,7 +82,7 @@ class A2D2Dataset(DatasetBase):
             n = pts_3d_ref.shape[0]
             pts_3d_homo = np.hstack((pts_3d_ref, np.ones((n, 1))))
             pts_3d_velo = np.dot(pts_3d_homo, np.transpose(calib["C2V"]))
-            bbox_xmin, bbox_ymin, bbox_xmax, bbox_ymax = self.obtain_bvbox(obj,rot_angle, image, pts_3d_velo, bvres)
+            bbox_xmin, bbox_ymin, bbox_xmax, bbox_ymax = self.obtain_bvbox(obj, rot_angle, image, pts_3d_velo, bvres)
             if bbox_xmin < 0:
                 continue
 
@@ -97,8 +97,8 @@ class A2D2Dataset(DatasetBase):
 
             ann['bbox3d'] = [(bbox_ymin + bbox_ymax) / 2., (bbox_xmin + bbox_xmax) / 2.,
                              round(obj['size'][0] / bvres, 3), round(obj['size'][1] / bvres, 3),
-                             obj['size'][2] / 3. * 255,
-                             ((pts_3d_velo[0][2] + velodyne_h) + obj['size'][2] * 0.5) / 3. * 255,]  # yxlwzh
+                             ((pts_3d_velo[0][2] + velodyne_h) + obj['size'][2] * 0.5) / 3. * 255,
+                             obj['size'][2] / 3. * 255,]  # yxlwzh
             ann["object"] = [1]
 
             if yaw:
@@ -107,7 +107,7 @@ class A2D2Dataset(DatasetBase):
             annotations.append(ann)
         return annotations
 
-    def obtain_bvbox(self, obj,rot_angle, bv_img, pv, bvres=0.05):
+    def obtain_bvbox(self, obj, rot_angle, bv_img, pv, bvres=0.05):
         bvrows, bvcols, _ = bv_img.shape
         centroid = [round(num, 2) for num in pv[0][:2]]  # Lidar coordinates
         width = obj['size'][1]

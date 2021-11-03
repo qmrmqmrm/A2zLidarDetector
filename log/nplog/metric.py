@@ -25,15 +25,16 @@ def count_true_positives(grtr, pred, num_ctgr, iou_thresh=cfg.Validation.TP_IOU_
 
     grtr_count = np.sum(grtr_valid_tp + grtr_valid_fn)
     pred_count = np.sum(pred_valid_tp + pred_valid_fp)
+    print('pred_valid_fp', splits["pred_fp"]["bbox2d"][0].shape)
+    print('pred_count', pred_count)
     trpo_count = np.sum(pred_valid_tp)
-    print('count_true_positives pred', trpo_count, pred_count)
     return {"trpo": trpo_count, "grtr": grtr_count, "pred": pred_count}
 
 
 def split_true_false(grtr, pred, iou_thresh):
     batch, M, _ = pred["category"].shape
     best_cate = np.argmax(pred["category"], axis=-1)
-    pred_cate_bg_mask =1-(best_cate == 0)
+    pred_cate_bg_mask =(best_cate != 0)
     category = np.expand_dims(best_cate, -1)
     pred_cate_bg_mask = np.expand_dims(pred_cate_bg_mask, -1)
     valid_mask = grtr["object"]

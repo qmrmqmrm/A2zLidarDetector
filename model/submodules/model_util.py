@@ -244,23 +244,23 @@ class NonMaximumSuppression:
         :return: (batch, max_out, 8), 8: bbox, category, objectness, ctgr_prob, score
         """
         boxes = pred['bbox2d']  # (batch, N, 4(tlbr))
-        category = pred["category"]
-        categories = torch.argmax(category, dim=-1)  # (batch, N)
-        best_probs = torch.amax(category, dim=-1)  # (batch, N)
+        categories = pred["category_idx"]
+        best_probs = pred["category_probs"]  # (batch, N)
         objectness = pred["object"][..., 0]  # (batch, N)
         scores = objectness * best_probs  # (batch, N)
-        batch, numbox, numctgr = category.shape
+        batch, numbox = categories.shape
         batch_indices = [[] for i in range(batch)]
-        for ctgr_idx in range(1, numctgr):
+        numctgr = cfg.Model.Structure.NUM_CLASSES
+        for ctgr_idx in range(1, numctgr+1):
             ctgr_mask = (categories == ctgr_idx).to(dtype=torch.int64)  # (batch, N)
             score_mask = (scores >= self.score_thresh[ctgr_idx - 1]).squeeze(-1)
             nms_mask = ctgr_mask * score_mask
             ctgr_boxes = boxes * nms_mask[..., None]  # (batch, N, 4)
             ctgr_scores = scores * nms_mask  # (batch, N)
-            ctgr_scores_numpy = ctgr_scores.to('cpu').detach().numpy()
-            ctgr_scores_quant = np.quantile(ctgr_scores_numpy,
-                                            np.array([0, 0.2, 0.4, 0.6, 0.8, 0.9, 0.95, 0.995, 0.999, 1]))
-            print(f"ctgr_scores quantile {ctgr_idx}:", ctgr_scores_quant)
+            # ctgr_scores_numpy = ctgr_scores.to('cpu').detach().numpy()
+            # ctgr_scores_quant = np.quantile(ctgr_scores_numpy,
+            #                                 np.array([0, 0.2, 0.4, 0.6, 0.8, 0.9, 0.95, 0.995, 0.999, 1]))
+            # print(f"ctgr_scores quantile {ctgr_idx}:", ctgr_scores_quant)
             for frame_idx in range(batch):
                 # NMS
                 ctgr_boxes_tlbr = convert_box_format_yxhw_to_tlbr(ctgr_boxes[frame_idx])
