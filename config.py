@@ -103,7 +103,7 @@ class Model:
 
 
 class Train:
-    CKPT_NAME = "check_nms_7"
+    CKPT_NAME = "guguu"
     MODE = ["eager", "graph"][0]
     BATCH_SIZE = 2
     TRAINING_PLAN = params.TrainingPlan.A2D2_SIMPLE
@@ -115,7 +115,7 @@ class Loss:
 
 
 class NMS:
-    MAX_OUT = [20, 20, 20]
+    MAX_OUT = [10, 10, 10]
     IOU_THRESH = [0.3, 0.3, 0.3]
     SCORE_THRESH = [0.7, 0.7, 0.7]
 

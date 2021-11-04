@@ -52,8 +52,8 @@ def split_true_false(grtr, pred, iou_thresh):
     grtr_tp_mask = np.expand_dims(iou_match * ctgr_match * gt_cate_bg_mask, axis=-1)  # (batch, N, 1)
     gt_cate_bg_mask =np.expand_dims(gt_cate_bg_mask, -1)
     grtr_fn_mask = ((1 - grtr_tp_mask) * valid_mask * gt_cate_bg_mask).astype(np.float32)  # (batch, N, 1)
-    grtr_tp = {key: val * grtr_tp_mask for key, val in grtr.items() if key in pp.LossComb.BIRDNET}
-    grtr_fn = {key: val * grtr_fn_mask for key, val in grtr.items() if key in pp.LossComb.BIRDNET}
+    grtr_tp = {key: val * grtr_tp_mask for key, val in grtr.items() if key in pred.keys()}
+    grtr_fn = {key: val * grtr_fn_mask for key, val in grtr.items() if key in pred.keys()}
     grtr_tp["iou"] = best_iou * grtr_tp_mask[..., 0]
     grtr_fn["iou"] = best_iou * grtr_fn_mask[..., 0]
     # last dimension rows where grtr_tp_mask == 0 are all-zero
@@ -61,8 +61,8 @@ def split_true_false(grtr, pred, iou_thresh):
     pred_fp_mask = (1 - pred_tp_mask) * pred_cate_bg_mask # (batch, M, 1) * (1 - pred_cate_bg_mask)
     # pred_loss_comb = ["objectness", "bbox2d", "category", "bbox3d", "yaw", "yaw_rads"]
 
-    pred_tp = {key: val * pred_tp_mask for key, val in pred.items() if key in pp.LossComb.BIRDNET}
-    pred_fp = {key: val * pred_fp_mask for key, val in pred.items() if key in pp.LossComb.BIRDNET}
+    pred_tp = {key: val * pred_tp_mask for key, val in pred.items()}
+    pred_fp = {key: val * pred_fp_mask for key, val in pred.items()}
     return {"pred_tp": pred_tp, "pred_fp": pred_fp, "grtr_tp": grtr_tp, "grtr_fn": grtr_fn}
 
 

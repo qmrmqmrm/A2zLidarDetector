@@ -28,7 +28,7 @@ class VisualLog:
 
         self.categories = {i: ctgr_name for i, ctgr_name in enumerate(cfg.Datasets.Standard.CATEGORY_NAMES)}
 
-    def __call__(self, step, grtr, gt_feature, pred, pred_nms):
+    def __call__(self, step, grtr, gt_feature,pred, pred_nms):
         """
         :param step: integer step index
         :param grtr:
@@ -112,9 +112,10 @@ class VisualLog:
             pred_obj_imgs = []
             for scale_idx, (gt_scale_object, pred_scale_object) in enumerate(
                     zip(gt_feature['object'], pred['rpn_feat_objectness'])):
+                org_img = grtr["image"][batch_idx].copy()
                 scale = int(640 / cfg.Scales.DEFAULT_FEATURE_SCALES[scale_idx])
-                gt_object_per_image = self.convert_img(gt_scale_object[batch_idx], scale)
-                pred_object_per_image = self.convert_img(pred_scale_object[batch_idx], scale)
+                gt_object_per_image = self.convert_img(gt_scale_object[batch_idx], scale, org_img)
+                pred_object_per_image = self.convert_img(pred_scale_object[batch_idx], scale, org_img)
                 gt_obj_imgs.append(gt_object_per_image)
                 pred_obj_imgs.append(pred_object_per_image)
             gt_obj_img = np.concatenate(gt_obj_imgs, axis=1)
@@ -231,7 +232,7 @@ class VisualLog:
         for corner in corners:
             for corner_idx in range(corner.shape[0]):
                 cv2.line(img, (int(corner[corner_idx][0]), int(corner[corner_idx][1])),
-                         (int(corner[((corner_idx + 1) % 4)][0]), int(corner[((corner_idx + 1) % 4)][1])),color , 2)
+                         (int(corner[((corner_idx + 1) % 4)][0]), int(corner[((corner_idx + 1) % 4)][1])), color, 2)
 
         return img
 
@@ -239,9 +240,10 @@ class VisualLog:
         one_hot_data = np.eye(category_shape, dtype=np.float32)[grtr_category[..., 0].astype(np.int32)]
         return one_hot_data
 
-    def convert_img(self, feature, scale):
+    def convert_img(self, feature, scale, org_img):
+
         feature_imge = feature.reshape((scale, scale, 3)) * 255
-        feature_imge = cv2.resize(feature_imge, (640, 640), interpolation=cv2.INTER_NEAREST)
+        feature_imge = org_img + cv2.resize(feature_imge, (640, 640), interpolation=cv2.INTER_NEAREST)
         feature_imge[-1, :] = [255, 255, 255]
         feature_imge[:, -1] = [255, 255, 255]
         return feature_imge

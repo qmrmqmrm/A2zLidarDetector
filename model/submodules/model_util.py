@@ -246,7 +246,7 @@ class NonMaximumSuppression:
         :return: (batch, max_out, 8), 8: bbox, category, objectness, ctgr_prob, score
         """
         boxes = pred['bbox2d']  # (batch, N, 4(tlbr))
-        categories = pred["category_idx"]
+        categories = pred["category_idx"].squeeze(-1)
         best_probs = pred["category_probs"].squeeze(-1)  # (batch, N)
         objectness = pred["object"][..., 0]  # (batch, N)
         scores = objectness * best_probs  # (batch, N)
@@ -287,11 +287,12 @@ class NonMaximumSuppression:
         batch_indices = torch.maximum(batch_indices, torch.zeros(batch_indices.shape, device=self.device)).to(
             dtype=torch.int64)
 
-        result = {'object': [], 'bbox2d': [], 'bbox3d': [], 'anchor_id': [], 'category': [], 'yaw_cls': [],
-                  'yaw_rads': [], }
+        result = {'object': [], 'bbox2d': [], 'bbox3d': [], 'anchor_id': [], 'category': [], 'yaw_cls': [], 'yaw_res' : [],
+                  'yaw_rads': [],'yaw_cls_idx':[], 'category_idx': [] ,'category_probs': []}
         for i, indices in enumerate(batch_indices.to(dtype=torch.int64)):
             for key in result.keys():
                 result[key].append(pred[key][i, indices])
         for key, val in result.items():
             result[key] = torch.stack(val, dim=0)
+
         return result

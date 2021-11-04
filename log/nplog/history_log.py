@@ -15,7 +15,7 @@ class HistoryLog:
         self.summary = dict()
         self.num_categs = cfg.Model.Structure.NUM_CLASSES
 
-    def __call__(self, step, grtr, gt_aligned, gt_feature, pred, pred_nms, total_loss, loss_by_type):
+    def __call__(self, step, grtr, gt_aligned, gt_feature,pred, pred_nms, total_loss, loss_by_type):
         """
         :param step: integer step index
         :param grtr:
@@ -59,7 +59,7 @@ class HistoryLog:
 
         if step % 20 == 10:
             print("\n--- batch_data:", batch_data)
-            self.check_pred_scales(pred)
+            self.check_pred_scales(pred_nms)
 
     def analyze_box_objectness(self, grtr, pred):
         pos_obj, neg_obj = 0, 0

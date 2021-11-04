@@ -55,8 +55,8 @@ class Logger:
         :return:
         """
         pred_select = self.select_best_ctgr_pred(pred)
-        pred.update(pred_select)
-        pred_slices_nms = self.nms(pred)
+
+        pred_slices_nms = self.nms(pred_select)
         gt_aligned = auxi['gt_aligned']
         gt_feature = auxi['gt_feature']
 
@@ -68,17 +68,18 @@ class Logger:
         gt_aligned = self.convert_tensor_to_numpy(gt_aligned)
         total_loss = total_loss.to('cpu').detach().numpy()
 
-        self.history_logger(step, grtr, gt_aligned, gt_feature, pred, pred_slices_nms, total_loss, loss_by_type)
+        self.history_logger(step, grtr, gt_aligned, gt_feature,pred,  pred_slices_nms, total_loss, loss_by_type)
         if self.visual_logger:
-            self.visual_logger(step, grtr, gt_feature, pred, pred_slices_nms)
+            self.visual_logger(step, grtr, gt_feature,pred,  pred_slices_nms)
         # if self.exhuastive_logger:
         #     self.exhuastive_logger(step, grtr, gt_aligned, pred_slices, loss_by_type, epoch, cfg.Logging.USE_ANCHOR)
 
     def select_best_ctgr_pred(self, pred):
+
         category = torch.softmax(pred['category'], dim=-1)
         best_ctgr_idx = torch.argmax(category, dim=-1).unsqueeze(-1).unsqueeze(-1)
         best_probs = torch.amax(category, dim=-1)  # (batch, N)
-        select_pred = dict()
+        select_pred = pred
         for key in ['bbox3d', 'yaw_cls', 'yaw_res', 'bbox3d_delta']:
             pred_key = pred[key]
             batch, num, cate, channel = pred_key.shape
@@ -92,11 +93,10 @@ class Logger:
         best_yaw_cls_idx = torch.argmax(yaw_softmax, dim=-1)
         select_pred['yaw_cls_idx'] = best_yaw_cls_idx.unsqueeze(-1)
         select_pred['yaw_res'] = torch.gather(select_pred['yaw_res'], dim=-1, index=best_yaw_cls_idx.unsqueeze(-1))
-        select_pred['category_idx'] = best_ctgr_idx.squeeze(-1).squeeze(-1)
+        select_pred['category_idx'] = best_ctgr_idx.squeeze(-1)
         select_pred['category_probs'] = best_probs.unsqueeze(-1)
         select_pred['yaw_rads'] = select_pred['yaw_cls_idx'] * cfg.Model.Structure.VP_BINS + select_pred['yaw_res']
-
-        return select_pred
+        return pred
 
     def convert_tensor_to_numpy(self, features):
         numpy_feature = dict()
