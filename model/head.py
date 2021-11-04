@@ -76,7 +76,7 @@ class FastRCNNHead(nn.Module):
             for i, (scale, feature) in enumerate(zip(self.pooler_scales, features)):
                 # feature (batch, c, h, w), anchor_id (batch, numbox, 1)
                 boxind, ch = torch.where(anchor_id[batch] // 3 == i)
-                stride = torch.ones((1)) * i
+                stride = torch.ones((1), device=self.device) * i
                 stride = stride.repeat(len(boxind))
                 box = bbox2d[batch, boxind]
                 x = roi_align(feature[batch:batch + 1], box, self.pooler_resolution, scale,
@@ -123,7 +123,6 @@ class FastRCNNHead(nn.Module):
             bbox3d_per_cate = mu.apply_box_deltas_3d(bbox2d, bbox3d_split_cate, category, strides)  # B,NUM,6
             bbox3d.append(bbox3d_per_cate.unsqueeze(-2))
         pred['bbox3d'] = torch.cat(bbox3d, dim=-2)
-
         pred['category'] = pred['category'].squeeze(-1)
         return pred
 

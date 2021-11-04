@@ -122,14 +122,14 @@ class YawRegression(LossBase):
     def __init__(self):
         super().__init__()
 
-        bin_edge = np.linspace(-math.pi / 2, math.pi / 2, self.bin_num + 1)
+        bin_edge = np.linspace(-math.pi / 2, math.pi / 2, self.bin_num)
         self.bin_res = (bin_edge[1] - bin_edge[0]) / 2.
         self.bin_edge = torch.tensor(bin_edge - self.bin_res, dtype=torch.float32).to(self.device)
 
     def __call__(self, features, pred, auxi):
         rad_delta = self.get_deltas_yaw(auxi['gt_aligned']['yaw_cls'], auxi['gt_aligned']['yaw_rads'])
         gt_yaw_rads = rad_delta * auxi["gt_aligned"]["object"]
-        pred_yaw_residuals = auxi["pred_select"]["yaw_rads"] * auxi["gt_aligned"]["object"]
+        pred_yaw_residuals = auxi["pred_select"]["yaw_res"] * auxi["gt_aligned"]["object"]
         # yaw residual range: -15deg ~ 15deg = -0.26rad ~ 0.26rad
         pred_yaw_residuals = torch.sigmoid(pred_yaw_residuals) * 0.6 - 0.3
         loss = F.smooth_l1_loss(pred_yaw_residuals, gt_yaw_rads, reduction='sum', beta=0.5)

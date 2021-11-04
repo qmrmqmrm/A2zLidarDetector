@@ -37,8 +37,8 @@ class IntegratedLoss:
         if 'yaw_cls' in loss_weights:
             loss_objects['yaw_cls'] = loss.YawClassification()
 
-        if 'yaw_rads' in loss_weights:
-            loss_objects['yaw_rads'] = loss.YawRegression()
+        if 'yaw_res' in loss_weights:
+            loss_objects['yaw_res'] = loss.YawRegression()
 
         return loss_objects
 
@@ -136,14 +136,6 @@ class IntegratedLoss:
         }
         """
         batch = grtr['bbox2d'].shape[0]
-        print('')
-        bbox3d = pred['bbox3d'][pred['bbox2d'][..., 2] > 0]
-        bbox2d = pred['bbox2d'][pred['bbox2d'][..., 2] > 0]
-        print('bbox2d',bbox2d.shape)
-        print('bbox3d',bbox3d)
-        print('bbox3d',bbox3d.shape)
-        bbox3d_w = bbox3d[bbox3d[..., 2] > 0]
-        print('bbox3d_w',bbox3d_w.shape)
 
         # anchors = list()
         # for anchor_yxlw in grtr['anc_feat']:  # batch, h, w, a, 4
@@ -205,13 +197,13 @@ class IntegratedLoss:
     def select_category(self, aligned, pred):
         gt_cate = (aligned['category'].to(torch.int64)).unsqueeze(-1)
         select_pred = dict()
-        for key in ['bbox3d', 'yaw_cls', 'yaw_rads', 'bbox3d_delta']:
+        for key in ['bbox3d', 'yaw_cls', 'yaw_res', 'bbox3d_delta']:
             pred_key = pred[key]
             batch, num, cate, channel = pred_key.shape
             pred_padding = torch.zeros((batch, num, 1, channel), device=self.device)
-            pred_key = torch.cat([pred_padding, pred_key], dim=-2)
+            pred_key = torch.cat([pred_padding, pred_key], dim=-2) # 512 4 6
             gather_gt = torch.gather(pred_key, dim=2, index=gt_cate.repeat(1, 1, 1, pred_key.shape[-1])).squeeze(-2)
-            if key == 'yaw_rads':
+            if key == 'yaw_res':
                 gt_yaw = aligned['yaw_cls'].to(torch.int64)
                 gather_gt = torch.gather(gather_gt, dim=-1, index=gt_yaw)
             select_pred[key] = gather_gt

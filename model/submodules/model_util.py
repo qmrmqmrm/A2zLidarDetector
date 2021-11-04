@@ -151,15 +151,15 @@ def apply_box_deltas_3d(anchors_yxlw, deltas_yxlw, category, stride):
     anchor_h = torch.tensor([149.6, 130.05, 147.9, 1.0], device=device)  # Mean heights encoded
     anchor_z = anchor_h / 2
     stride = torch.pow(2, stride + 2).view(anchor_yx.shape[0], -1).unsqueeze(-1).to(device=device)
-    delta_yx, delta_lw, delta_z, delta_h = deltas_yxlw[..., :2], deltas_yxlw[..., 2:4], deltas_yxlw[...,
-                                                                                        4:5], deltas_yxlw[..., 5:6]
+    delta_yx, delta_lw, delta_h = deltas_yxlw[..., :2], deltas_yxlw[..., 2:4], deltas_yxlw[..., 4:5]
     delta_lw = torch.clamp(delta_lw, max=_DEFAULT_SCALE_CLAMP)
+    delta_h = torch.clamp(delta_h, max=3)
     bbox_yx = anchor_yx + delta_yx * stride
     bbox_lw = anchor_lw * torch.exp(delta_lw)
-    bbox_z = anchor_z[category] + delta_z * anchor_h[category] / 4
+    # bbox_z = anchor_z[category] + delta_z * anchor_h[category] / 4
     bbox_h = anchor_h[category] * torch.exp(delta_h)
     valid_mask = ~torch.isclose(delta_lw[..., 0:1], torch.tensor(0.), 1e-10, 1e-10)
-    bbox_yxlw = torch.cat([bbox_yx, bbox_lw, bbox_z, bbox_h], dim=-1) * valid_mask
+    bbox_yxlw = torch.cat([bbox_yx, bbox_lw, bbox_h], dim=-1) * valid_mask
     return bbox_yxlw
 
 
@@ -169,18 +169,20 @@ def get_deltas_3d(anchors_yxlw, bboxes_yxlw, category, stride=None):
     anchor_h = torch.tensor([149.6, 130.05, 147.9, 1.0], device=device)  # Mean heights encoded
     anchor_z = anchor_h / 2
     stride = torch.pow(2, stride + 2).view(anchor_yx.shape[0], -1).unsqueeze(-1).to(device=device)
-    bboxes_yx, bboxes_lw, bboxes_z, bboxes_h = bboxes_yxlw[..., :2], bboxes_yxlw[..., 2:4], bboxes_yxlw[...,
-                                                                                            4:5], bboxes_yxlw[..., 5:6]
+    bboxes_yx, bboxes_lw, bboxes_h = bboxes_yxlw[..., :2], bboxes_yxlw[..., 2:4], bboxes_yxlw[..., 4:5]
     anchor_yx = anchor_yx.view(bboxes_yx.shape)
     anchor_lw = anchor_lw.view(bboxes_lw.shape)
 
     delta_yx = (bboxes_yx - anchor_yx) / (stride + 1e-10)
     valid_mask = (bboxes_lw[..., 0:1] > 0)
     delta_lw = torch.log(bboxes_lw / (anchor_lw + 1e-10) + 1e-10)
-    delta_z = (bboxes_z - anchor_z[category]) / ((anchor_h[category] / 4) + 1e-10)
-    delta_h = torch.log(bboxes_h / (anchor_h[category] + 1e-10) + 1e-10)
+    # delta_z = (bboxes_z - anchor_z[category]) / ((anchor_h[category] / 4) + 1e-10)
 
-    delta_bbox = torch.cat([delta_yx, delta_lw, delta_z, delta_h], dim=-1) * valid_mask
+    delta_h = torch.log(bboxes_h / anchor_h[category])
+    delta_h = torch.nan_to_num(delta_h, posinf=0,neginf=0)
+
+    delta_bbox = torch.cat([delta_yx, delta_lw, delta_h], dim=-1) * valid_mask
+
     return delta_bbox
 
 
@@ -245,13 +247,13 @@ class NonMaximumSuppression:
         """
         boxes = pred['bbox2d']  # (batch, N, 4(tlbr))
         categories = pred["category_idx"]
-        best_probs = pred["category_probs"]  # (batch, N)
+        best_probs = pred["category_probs"].squeeze(-1)  # (batch, N)
         objectness = pred["object"][..., 0]  # (batch, N)
         scores = objectness * best_probs  # (batch, N)
         batch, numbox = categories.shape
         batch_indices = [[] for i in range(batch)]
         numctgr = cfg.Model.Structure.NUM_CLASSES
-        for ctgr_idx in range(1, numctgr+1):
+        for ctgr_idx in range(1, numctgr + 1):
             ctgr_mask = (categories == ctgr_idx).to(dtype=torch.int64)  # (batch, N)
             score_mask = (scores >= self.score_thresh[ctgr_idx - 1]).squeeze(-1)
             nms_mask = ctgr_mask * score_mask

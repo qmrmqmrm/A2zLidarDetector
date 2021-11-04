@@ -48,9 +48,9 @@ class HistoryLog:
 
         metric = count_true_positives(grtr, pred_nms, num_ctgr, per_class=False)
         batch_data.update(metric)
-        pred_cate = torch.softmax(torch.tensor(pred["category"]), dim=-1).to('cpu').detach().numpy()
-        batch_data["true_cls"] = self.logtrueclass(gt_aligned, pred_cate)
-        batch_data["false_cls"] = self.logfalseclass(gt_aligned, pred_cate)
+        # pred_cate = torch.softmax(torch.tensor(pred["category"]), dim=-1).to('cpu').detach().numpy()
+        batch_data["true_cls"] = self.logtrueclass(gt_aligned, pred["category_probs"])
+        batch_data["false_cls"] = self.logfalseclass(gt_aligned, pred["category_probs"])
 
         batch_data = self.set_precision(batch_data, 5)
         col_order = list(batch_data.keys())

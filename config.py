@@ -4,7 +4,7 @@ import numpy as np
 
 
 class Paths:
-    RESULT_ROOT = "/media/falcon/IanBook8T/datasets/bv_a2d2/result"
+    RESULT_ROOT = "/media/dolphin/intHDD/birdnet_data/bv_a2d2/result"
     TFRECORD = op.join(RESULT_ROOT, "pyloader")
     CHECK_POINT = op.join(RESULT_ROOT, "ckpt")
 
@@ -16,7 +16,7 @@ class Datasets:
 
     class A2D2:
         NAME = "a2d2"
-        PATH = "/media/falcon/IanBook8T/datasets/bv_a2d2"
+        PATH = "/media/dolphin/intHDD/birdnet_data/bv_a2d2"
         CATEGORIES_TO_USE = ["Pedestrian", "Car", "Cyclist"]
         CATEGORY_REMAP = {}
         MAX_NUM = 15
@@ -96,14 +96,14 @@ class Model:
         PIXEL_MEAN = [0.0, 0.0, 0.0]
         PIXEL_STD = [1.0, 1.0, 1.0]
         NUM_CLASSES = 3
-        BOX_DIM = 6
+        BOX_DIM = 5
         IMAGE_SHAPE = [640, 640]
         STRIDE_SHAPE = Scales.DEFAULT_FEATURE_SCALES
-        LOSS_CHANNEL = {'category': 1, 'bbox3d_delta': BOX_DIM, 'yaw_cls': VP_BINS, 'yaw_rads': VP_BINS}
+        LOSS_CHANNEL = {'category': 1, 'bbox3d_delta': BOX_DIM, 'yaw_cls': VP_BINS, 'yaw_res': VP_BINS}
 
 
 class Train:
-    CKPT_NAME = "check_3d"
+    CKPT_NAME = "check_nms_7"
     MODE = ["eager", "graph"][0]
     BATCH_SIZE = 2
     TRAINING_PLAN = params.TrainingPlan.A2D2_SIMPLE
@@ -116,8 +116,8 @@ class Loss:
 
 class NMS:
     MAX_OUT = [20, 20, 20]
-    IOU_THRESH = [0.5, 0.5, 0.5]
-    SCORE_THRESH = [0.5, 0.5, 0.5]
+    IOU_THRESH = [0.3, 0.3, 0.3]
+    SCORE_THRESH = [0.7, 0.7, 0.7]
 
 
 class Validation:

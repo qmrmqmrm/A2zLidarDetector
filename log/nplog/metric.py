@@ -18,15 +18,13 @@ def count_true_positives(grtr, pred, num_ctgr, iou_thresh=cfg.Validation.TP_IOU_
     """
     splits = split_true_false(grtr, pred, iou_thresh)
     # ========== use split instead grtr, pred
-    grtr_valid_tp = splits["grtr_tp"]["bbox2d"][..., 2:3] > 0
-    grtr_valid_fn = splits["grtr_fn"]["bbox2d"][..., 2:3] > 0
-    pred_valid_tp = splits["pred_tp"]["bbox2d"][..., 2:3] > 0
-    pred_valid_fp = splits["pred_fp"]["bbox2d"][..., 2:3] > 0
+    grtr_valid_tp = splits["grtr_tp"]["bbox3d"][..., 2:3] > 0
+    grtr_valid_fn = splits["grtr_fn"]["bbox3d"][..., 2:3] > 0
+    pred_valid_tp = splits["pred_tp"]["bbox3d"][..., 2:3] > 0
+    pred_valid_fp = splits["pred_fp"]["bbox3d"][..., 2:3] > 0
 
     grtr_count = np.sum(grtr_valid_tp + grtr_valid_fn)
     pred_count = np.sum(pred_valid_tp + pred_valid_fp)
-    print('pred_valid_fp', splits["pred_fp"]["bbox2d"][0].shape)
-    print('pred_count', pred_count)
     trpo_count = np.sum(pred_valid_tp)
     return {"trpo": trpo_count, "grtr": grtr_count, "pred": pred_count}
 

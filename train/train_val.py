@@ -30,6 +30,9 @@ class TrainValBase:
             start = timer()
             file_name = features['image_file']
             prediction, total_loss, loss_by_type, auxi = self.run_step(features)
+            # print('loss_by_type')
+            # for loss, val in loss_by_type.items():
+            #     print(loss , val.to('cpu').detach().numpy())
             logger.log_batch_result(step, features, prediction, total_loss, loss_by_type, auxi)
 
             features['image_file'] = file_name

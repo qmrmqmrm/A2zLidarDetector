@@ -89,6 +89,7 @@ class VisualLog:
                 filename = op.join(self.vlog_path, f"{step * batch + batch_idx:05d}_{key}.jpg")
                 cv2.imwrite(filename, vlog_image)
 
+            # category
             scale_img = grtr["image"][batch_idx].copy()
             # print('pred_tp')
             scale_img = self.draw_ctgr_boxes(scale_img, splits["pred_tp"]['bbox2d'], splits["pred_tp"]['category'],
@@ -106,6 +107,7 @@ class VisualLog:
             filename = op.join(self.scale_path, f"{step * batch + batch_idx:05d}.jpg")
             cv2.imwrite(filename, scale_img)
 
+            # object
             gt_obj_imgs = []
             pred_obj_imgs = []
             for scale_idx, (gt_scale_object, pred_scale_object) in enumerate(
@@ -120,6 +122,8 @@ class VisualLog:
             obj_img = np.concatenate([gt_obj_img, pred_obj_img], axis=0)
             filename = op.join(self.obj_path, f"{step * batch + batch_idx:05d}.jpg")
             cv2.imwrite(filename, obj_img)
+
+            # rot bbox3d
             rot_bbox3ds = dict()
             for key in splits_keys:
                 bbox3d_per_image = splits[key]['bbox3d'][batch_idx]
