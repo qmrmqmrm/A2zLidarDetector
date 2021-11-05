@@ -1,6 +1,7 @@
 import os
 import os.path as op
 import numpy as np
+import math
 import torch
 import pandas as pd
 
@@ -68,9 +69,9 @@ class Logger:
         gt_aligned = self.convert_tensor_to_numpy(gt_aligned)
         total_loss = total_loss.to('cpu').detach().numpy()
 
-        self.history_logger(step, grtr, gt_aligned, gt_feature,pred,  pred_slices_nms, total_loss, loss_by_type)
+        self.history_logger(step, grtr, gt_aligned, gt_feature, pred, pred_slices_nms, total_loss, loss_by_type)
         if self.visual_logger:
-            self.visual_logger(step, grtr, gt_feature,pred,  pred_slices_nms)
+            self.visual_logger(step, grtr, gt_feature, pred, pred_slices_nms)
         # if self.exhuastive_logger:
         #     self.exhuastive_logger(step, grtr, gt_aligned, pred_slices, loss_by_type, epoch, cfg.Logging.USE_ANCHOR)
 
@@ -92,10 +93,13 @@ class Logger:
         yaw_softmax = torch.softmax(select_pred['yaw_cls'], dim=-1)
         best_yaw_cls_idx = torch.argmax(yaw_softmax, dim=-1)
         select_pred['yaw_cls_idx'] = best_yaw_cls_idx.unsqueeze(-1)
-        select_pred['yaw_res'] = torch.gather(select_pred['yaw_res'], dim=-1, index=best_yaw_cls_idx.unsqueeze(-1))
+        pred_yaw_residuals = torch.sigmoid(select_pred['yaw_res']) * 0.6 - 0.3
+        select_pred['yaw_res'] = torch.gather(pred_yaw_residuals, dim=-1, index=best_yaw_cls_idx.unsqueeze(-1))
+
         select_pred['category_idx'] = best_ctgr_idx.squeeze(-1)
         select_pred['category_probs'] = best_probs.unsqueeze(-1)
-        select_pred['yaw_rads'] = select_pred['yaw_cls_idx'] * cfg.Model.Structure.VP_BINS + select_pred['yaw_res']
+        select_pred['yaw_rads'] = (select_pred['yaw_cls_idx'] * (math.pi / cfg.Model.Structure.VP_BINS) + math.pi +
+                                   select_pred['yaw_res']) % math.pi
         return pred
 
     def convert_tensor_to_numpy(self, features):

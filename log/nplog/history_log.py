@@ -15,7 +15,7 @@ class HistoryLog:
         self.summary = dict()
         self.num_categs = cfg.Model.Structure.NUM_CLASSES
 
-    def __call__(self, step, grtr, gt_aligned, gt_feature,pred, pred_nms, total_loss, loss_by_type):
+    def __call__(self, step, grtr, gt_aligned, gt_feature, pred, pred_nms, total_loss, loss_by_type):
         """
         :param step: integer step index
         :param grtr:
@@ -99,7 +99,10 @@ class HistoryLog:
         print('sum_result["trpo"]', sum_result["trpo"])
         print('sum_result["pred"]', sum_result["pred"])
         sum_result = {"recall": sum_result["trpo"] / (sum_result["grtr"] + 1e-5),
-                      "precision": sum_result["trpo"] / (sum_result["pred"] + 1e-5)}
+                      "precision": sum_result["trpo"] / (sum_result["pred"] + 1e-5),
+                      "trpo_num": sum_result["trpo"],
+                      "grtr_num": sum_result["grtr"],
+                      "pred_num": sum_result["pred"]}
         metric_keys = ["trpo", "grtr", "pred"]
 
         summary = {key: val for key, val in mean_result.items() if key not in metric_keys}
