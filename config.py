@@ -1,3 +1,4 @@
+import math
 import os.path as op
 import parameter_pool as params
 import numpy as np
@@ -100,10 +101,12 @@ class Model:
         IMAGE_SHAPE = [640, 640]
         STRIDE_SHAPE = Scales.DEFAULT_FEATURE_SCALES
         LOSS_CHANNEL = {'category': 1, 'bbox3d_delta': BOX_DIM, 'yaw_cls': VP_BINS, 'yaw_res': VP_BINS}
+        BIN_EDGE = [-(7 * math.pi / 12), -(5 * math.pi / 12), -(3 * math.pi / 12), -(1 * math.pi / 12),
+                    (1 * math.pi / 12), (3 * math.pi / 12)]
 
 
 class Train:
-    CKPT_NAME = "yaw_cls"
+    CKPT_NAME = "yaw_cls_v3"
     MODE = ["eager", "graph"][0]
     BATCH_SIZE = 2
     TRAINING_PLAN = params.TrainingPlan.A2D2_SIMPLE

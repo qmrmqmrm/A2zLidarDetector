@@ -242,7 +242,7 @@ def rad2bin(rad, bins):
         rad -= math.pi
 
     for i_bin in range(len(bin_edge) - 1):
-        if bin_edge[i_bin] <= rad and bin_edge[i_bin + 1] >= rad:
+        if bin_edge[i_bin] <= rad and bin_edge[i_bin + 1] > rad:
             return i_bin
     return 0
 

@@ -51,8 +51,9 @@ class FastRCNNHead(nn.Module):
         pred_features = self.box_predictor(box_features['xs'])
 
         batch, numsample, ch = proposals['bbox2d'].shape
-        for key, val in pred_features.items():
-            pred_features[key] = val.view(batch, numsample, -1)
+        # for key, val in pred_features.items():
+        #     pred_features[key] = val.view(batch, numsample, -1)
+        pred_features = pred_features.view(batch, numsample, -1)
         pred_features = self.decode(pred_features, proposals['bbox2d'], box_features['strides'])
         pred_features['strides'] = box_features['strides']
         # decode()
@@ -108,8 +109,14 @@ class FastRCNNHead(nn.Module):
         loss_channel = cfg.Model.Structure.LOSS_CHANNEL
         sliced_features = {}
         last_channel = 0
+        for loss, dims in loss_channel.items():
+            slice_dim = last_channel + num_classes * dims
+            if loss == 'category':
+                slice_dim = slice_dim + 1
+            sliced_features[loss] = pred[..., last_channel:slice_dim]
+            last_channel = slice_dim
 
-        pred = uf.slice_class(pred)  # b, n, 3, 6
+        pred = uf.slice_class(sliced_features)  # b, n, 3, 6
         bbox3d = list()
         for cate_idx in range(self.num_cate):
             bbox3d_split_cate = pred['bbox3d_delta'][:, :, cate_idx, :].squeeze(-2)  # B, NUM, 6
@@ -146,18 +153,21 @@ class FastRCNNFCOutputHead(nn.Module):
         box_dim = cfg.Model.Structure.BOX_DIM
         bins = cfg.Model.Structure.VP_BINS
         out_channels = num_classes * (1 + box_dim + (2 * bins)) + 1
-        self.cls_layer = nn.Linear(input_size, num_classes + 1)
-        self.bbox3d_layer = nn.Linear(input_size, num_classes * box_dim)
-        self.yaw_cls_layer = nn.Linear(input_size, num_classes * bins)
-        self.yaw_res_layer = nn.Linear(input_size, num_classes * bins)
-        nn.init.normal_(self.cls_layer.weight, std=0.01)
-        nn.init.normal_(self.bbox3d_layer.weight, std=0.001)
-        for l in [self.cls_layer, self.bbox3d_layer]:
-            nn.init.constant_(l.bias, 0)
-        nn.init.xavier_normal_(self.yaw_cls_layer.weight)
-        nn.init.constant_(self.yaw_cls_layer.weight, 0)
-        nn.init.xavier_normal_(self.yaw_res_layer.weight)
-        nn.init.constant_(self.yaw_res_layer.weight, 0)
+        self.pred_layer =  nn.Linear(input_size, out_channels)
+        # self.cls_layer = nn.Linear(input_size, num_classes + 1)
+        # self.bbox3d_layer = nn.Linear(input_size, num_classes * box_dim)
+        # self.yaw_cls_layer = nn.Linear(input_size, num_classes * bins)
+        # self.yaw_res_layer = nn.Linear(input_size, num_classes * bins)
+        # nn.init.normal_(self.cls_layer.weight, std=0.01)
+        # nn.init.normal_(self.bbox3d_layer.weight, std=0.001)
+        # for l in [self.cls_layer, self.bbox3d_layer]:
+        #     nn.init.constant_(l.bias, 0)
+        # nn.init.xavier_normal_(self.yaw_cls_layer.weight)
+        # nn.init.constant_(self.yaw_cls_layer.weight, 0)
+        # nn.init.xavier_normal_(self.yaw_res_layer.weight)
+        # nn.init.constant_(self.yaw_res_layer.weight, 0)
+        nn.init.xavier_normal_(self.pred_layer.weight)
+        nn.init.constant_(self.pred_layer.weight, 0)
 
     def forward(self, x):
         if x.dim() > 2:
@@ -165,9 +175,10 @@ class FastRCNNFCOutputHead(nn.Module):
         for layer, bn in zip(self.fcs, self.bns):
             x = F.relu(bn(layer(x)))
 
-        cls_logit = self.cls_layer(x)
-        bbox3d_logit = self.bbox3d_layer(x)
-        yaw_cls_logit = self.yaw_cls_layer(x)
-        yaw_res_logit = self.yaw_res_layer(x)
-        pred = {'category': cls_logit, 'bbox3d_delta': bbox3d_logit, 'yaw_cls': yaw_cls_logit, 'yaw_res': yaw_res_logit}
+        pred = self.pred_layer(x)
+        # cls_logit = self.cls_layer(x)
+        # bbox3d_logit = self.bbox3d_layer(x)
+        # yaw_cls_logit = self.yaw_cls_layer(x)
+        # yaw_res_logit = self.yaw_res_layer(x)
+        # pred = {'category': cls_logit, 'bbox3d_delta': bbox3d_logit, 'yaw_cls': yaw_cls_logit, 'yaw_res': yaw_res_logit}
         return pred

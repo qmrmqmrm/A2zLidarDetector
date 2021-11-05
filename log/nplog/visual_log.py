@@ -246,16 +246,18 @@ class VisualLog:
 
         bbox3d_yx, bbox3d_lw = bboxes_yxlw[:2], bboxes_yxlw[2:4]
         bbox3d_xy = np.array([bbox3d_yx[1], bbox3d_yx[0]])
-        corners = np.array([[bbox3d_yx[1] - bbox3d_lw[1] / 2., bbox3d_yx[0] - bbox3d_lw[0] / 2.],
-                            [bbox3d_yx[1] + bbox3d_lw[1] / 2., bbox3d_yx[0] - bbox3d_lw[0] / 2.],
-                            [bbox3d_yx[1] + bbox3d_lw[1] / 2., bbox3d_yx[0] + bbox3d_lw[0] / 2.],
-                            [bbox3d_yx[1] - bbox3d_lw[1] / 2., bbox3d_yx[0] + bbox3d_lw[0] / 2.]])
+        corners = np.array([[- bbox3d_lw[1] / 2., - bbox3d_lw[0] / 2.],
+                            [+ bbox3d_lw[1] / 2., - bbox3d_lw[0] / 2.],
+                            [+ bbox3d_lw[1] / 2., + bbox3d_lw[0] / 2.],
+                            [- bbox3d_lw[1] / 2., + bbox3d_lw[0] / 2.]])
+        # yaw = -(yaw_rads[0] + (math.pi / 2))
         c, s = np.cos(yaw_rads[0]), np.sin(yaw_rads[0])
-        R = np.array([[c, -s], [s, c]])
-        rotated_corners = np.dot(corners - bbox3d_xy, R) + bbox3d_xy
+        R = np.array([[c, -s],
+                      [-s, -c]])  # image coordinates: flip y
+        rotated_corners = np.dot(corners, R) + bbox3d_xy
         return rotated_corners
 
-    def draw_3D_box(self, img, corners, bin,rad, color=(255, 255, 0)):
+    def draw_3D_box(self, img, corners, bin, rad, color=(255, 255, 0)):
         """
             draw 3D box in image with OpenCV,
             the order of the corners should be the same with BBox3dProjector

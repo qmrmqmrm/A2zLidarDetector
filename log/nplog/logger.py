@@ -98,8 +98,8 @@ class Logger:
 
         select_pred['category_idx'] = best_ctgr_idx.squeeze(-1)
         select_pred['category_probs'] = best_probs.unsqueeze(-1)
-        select_pred['yaw_rads'] = (select_pred['yaw_cls_idx'] * (math.pi / cfg.Model.Structure.VP_BINS) + math.pi +
-                                   select_pred['yaw_res']) % math.pi
+        select_pred['yaw_rads'] = (select_pred['yaw_cls_idx'] * (math.pi / cfg.Model.Structure.VP_BINS) - (math.pi/2) +
+                                   select_pred['yaw_res'])
         return pred
 
     def convert_tensor_to_numpy(self, features):
