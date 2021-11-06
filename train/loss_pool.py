@@ -149,11 +149,12 @@ class CategoryClassification(LossBase):
     def __call__(self, features, pred, auxi):
         gt_classes = (auxi["gt_aligned"]["category"]).type(torch.int64).view(-1)  # (batch*512) torch.Size([4, 512, 1])
         pred_classes = (auxi["pred_select"]["category"]).view(-1, 4)  # (batch*512 , 3) torch.Size([4, 512, 3])
-
         ce_loss = F.cross_entropy(pred_classes, gt_classes, reduction="none")
-        bgd_ce = ce_loss * auxi["gt_aligned"]["object"].view(-1) * (gt_classes == 0) * 0.001
-        tr_ce = ce_loss * auxi["gt_aligned"]["object"].view(-1) * (gt_classes > 0)
+
+        bgd_ce = ce_loss * (gt_classes == 0) * 0.001
+        tr_ce = ce_loss * (gt_classes > 0)
         loss = torch.sum(bgd_ce) + torch.sum(tr_ce)
+
         return loss  # / (num_gt + 0.00001)
 
 

@@ -264,6 +264,9 @@ class VisualLog:
         """
         # color = [(255,255,255),(0,0,255),(0,255,0),(255,0,0)]
         for idx, corner in enumerate(corners):
+            if int(corner[1][0]) - int(corner[0][0]) == 0 and int(corner[1][1]) - int(corner[0][1]) == 0:
+                continue
+
             for corner_idx in range(corner.shape[0]):
                 cv2.line(img, (int(corner[corner_idx][0]), int(corner[corner_idx][1])),
                          (int(corner[((corner_idx + 1) % 4)][0]), int(corner[((corner_idx + 1) % 4)][1])), color, 2)

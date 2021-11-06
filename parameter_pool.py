@@ -26,5 +26,6 @@ class TrainingPlan:
     ]
     A2D2_SIMPLE = [
         ('a2d2', 50, 0.001, LossComb.BIRDNET, True),
+        ('a2d2', 10, 0.001, LossComb.BIRDNET, True),
 
     ]
