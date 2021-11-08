@@ -44,22 +44,20 @@ class FastRCNNHead(nn.Module):
         :return:
         'head_output' : torch.Size([4, 512, 93])
         """
+        batch, numsample, ch = proposals['bbox2d'].shape
         features = [features[f] for f in self.in_features]
         # torch.Size([batch * 512, 256, 7, 7])
-        box_features = self.box_pooler(features, proposals)
+        box_features, strides = self.box_pooler(features, proposals)
         # torch.Size([1024, 93]
-        pred_features = self.box_predictor(box_features['xs'])
-
-        batch, numsample, ch = proposals['bbox2d'].shape
-        # for key, val in pred_features.items():
-        #     pred_features[key] = val.view(batch, numsample, -1)
+        pred_features = self.box_predictor(box_features)
         pred_features = pred_features.view(batch, numsample, -1)
-        pred_features = self.decode(pred_features, proposals['bbox2d'], box_features['strides'])
-        pred_features['strides'] = box_features['strides']
-        # decode()
 
-        # torch.Size([batch, 512, 93]
-
+        pred_features = pred_features * proposals['zeropad']
+        strides = strides.view(batch, numsample, 1) * proposals['zeropad']
+        pred_features = self.decode(pred_features, proposals['bbox2d'], strides)
+        print(torch.sum(pred_features['bbox3d'][..., 2] != 0), torch.sum(proposals['zeropad']) * 3)
+        assert torch.sum(pred_features['bbox3d'][..., 2] != 0) == torch.sum(proposals['zeropad']) * 3
+        assert torch.sum(pred_features['category'][..., 2] != 0) == torch.sum(proposals['zeropad'])
         return pred_features
 
     def box_pooler(self, features, proposals):
@@ -68,7 +66,8 @@ class FastRCNNHead(nn.Module):
         zeros = torch.zeros((box_tlbr.shape[0], box_tlbr.shape[1], 1), device=self.device)
         bbox2d = torch.cat([zeros, box_tlbr], dim=-1)
         anchor_id = proposals['anchor_id']
-        feature_aligned = {'xs': [], 'strides': []}
+        box_features = []
+        strides_batch = []
         for batch in range(features[0].shape[0]):
             xs = list()
             boxinds = list()
@@ -96,13 +95,13 @@ class FastRCNNHead(nn.Module):
             strides = strides[sort_inds]
             box_sort = box_[sort_inds]
             assert torch.all((box_sort - bbox2d[batch]) == 0)
-            feature_aligned['xs'].append(xs)
-            feature_aligned['strides'].append(strides)
+            box_features.append(xs)
+            strides_batch.append(strides)
 
         # [batch * numbox, channel, pooler_resolution, pooler_resolution]
-        for key in feature_aligned.keys():
-            feature_aligned[key] = torch.cat(feature_aligned[key], dim=0)
-        return feature_aligned
+        box_features = torch.cat(box_features, dim=0)
+        strides_batch = torch.cat(strides_batch, dim=0)
+        return box_features, strides_batch
 
     def decode(self, pred, bbox2d, strides):
         num_classes = cfg.Model.Structure.NUM_CLASSES
@@ -124,7 +123,9 @@ class FastRCNNHead(nn.Module):
             category = torch.ones((batch, box_num, 1), device=self.device, dtype=torch.int64) * cate_idx
             bbox3d_per_cate = mu.apply_box_deltas_3d(bbox2d, bbox3d_split_cate, category, strides)  # B,NUM,6
             bbox3d.append(bbox3d_per_cate.unsqueeze(-2))
+
         pred['bbox3d'] = torch.cat(bbox3d, dim=-2)
+        pred['strides'] = strides
         pred['category'] = pred['category'].squeeze(-1)
         return pred
 
@@ -153,7 +154,7 @@ class FastRCNNFCOutputHead(nn.Module):
         box_dim = cfg.Model.Structure.BOX_DIM
         bins = cfg.Model.Structure.VP_BINS
         out_channels = num_classes * (1 + box_dim + (2 * bins)) + 1
-        self.pred_layer =  nn.Linear(input_size, out_channels)
+        self.pred_layer = nn.Linear(input_size, out_channels)
         # self.cls_layer = nn.Linear(input_size, num_classes + 1)
         # self.bbox3d_layer = nn.Linear(input_size, num_classes * box_dim)
         # self.yaw_cls_layer = nn.Linear(input_size, num_classes * bins)

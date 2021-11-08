@@ -129,7 +129,7 @@ class RPN(nn.Module):
         'anchor_id' :list(torch.Size([4, height/stride* width/stride* anchor, 1]))
         }
         """
-        proposals = {'bbox2d': [], 'objectness': [], 'anchor_id': [],  'object_logits': [],
+        proposals = {'bbox2d': [], 'objectness': [], 'anchor_id': [], 'object_logits': [],
                      'bbox2d_delta': []}
         for logit_feature, anchors_yxlw in zip(logit_features, anchors):
             bbox2d_logit, object_logits, anchor_id = logit_feature[..., :4], logit_feature[..., 4:5], logit_feature[...,
@@ -235,7 +235,7 @@ class RPN(nn.Module):
 
         for key in selected_proposals:
             selected_proposals[key] = torch.stack(selected_proposals[key], dim=0)
-
+        selected_proposals['zeropad'] = (selected_proposals['bbox2d'][..., 2] != 0).unsqueeze(-1)
         return selected_proposals
 
     def sample_proposals(self, proposals, grtr):
@@ -256,11 +256,12 @@ class RPN(nn.Module):
         }
         """
         proposal_gt = dict()
+        grtr['zeropad'] = (grtr['bbox2d'][...,2] != 0).unsqueeze(-1)
         for key in proposals.keys():
             proposal_gt[key] = torch.cat([proposals[key], grtr[key]], dim=1)
 
         batch, num, channel = proposal_gt['bbox2d'].shape
-        proposals_sample = {'bbox2d': [], 'object': [], 'anchor_id': []}
+        proposals_sample = {'bbox2d': [], 'object': [], 'anchor_id': [], 'zeropad': []}
         for batch_index in range(batch):
             # (fix_num, num_proposals + fix_num)
             iou_matrix = uf.pairwise_iou(grtr['bbox2d'][batch_index], proposal_gt['bbox2d'][batch_index])
@@ -268,20 +269,18 @@ class RPN(nn.Module):
             positive = torch.nonzero(match_ious > self.match_thresh[1])
             negative = torch.nonzero(match_ious < self.match_thresh[0])
 
-            num_pos = int(self.num_sample * 0.25)
-
-            num_pos = min(positive.numel(), num_pos)
+            num_pos = positive.numel()
             num_neg = self.num_sample - num_pos
             num_neg = min(negative.shape[0], num_neg)
-            perm1 = torch.randperm(positive.numel(), device=positive.device)[:num_pos]
             perm2 = torch.randperm(negative.numel(), device=negative.device)[:num_neg]
-            positive = positive[perm1].squeeze(1)
             negative = negative[perm2].squeeze(1)
-            sampling = torch.cat([positive, negative])
+            sampling = torch.cat([positive.squeeze(1), negative])
             # append to proposals
             for key in proposal_gt.keys():
                 proposals_sample[key].append(proposal_gt[key][batch_index, sampling])
         # stack on batch dimension
         for key, value in proposals_sample.items():
             proposals_sample[key] = torch.stack(value, dim=0)
+
+        assert torch.sum(proposals_sample['bbox2d'][..., 2] != 0) == torch.sum(proposals_sample['zeropad'])
         return proposals_sample

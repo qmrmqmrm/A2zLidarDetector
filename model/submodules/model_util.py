@@ -120,7 +120,7 @@ def apply_box_deltas_2d(anchors_yxlw, deltas_yxlw, stride=None):
     anchor_lw = anchor_lw.view(delta_lw.shape)
     # bbox_yx = anchor_yx + torch.sigmoid(delta_yx) * stride * 1.4 - stride * 0.2
     bbox_yx = anchor_yx + delta_yx * stride
-    delta_lw = torch.clamp(delta_lw, max=_DEFAULT_SCALE_CLAMP)
+    delta_lw = torch.clamp(delta_lw, max=_DEFAULT_SCALE_CLAMP, min=-_DEFAULT_SCALE_CLAMP)
     bbox_lw = anchor_lw * torch.exp(delta_lw)
     valid_mask = ~torch.isclose(delta_lw[..., 0:1], torch.tensor(0.), 1e-10, 1e-10)
     bbox_yxlw = torch.cat([bbox_yx, bbox_lw], dim=-1) * valid_mask
@@ -149,11 +149,10 @@ def apply_box_deltas_3d(anchors_yxlw, deltas_yxlw, category, stride):
     """
     anchor_yx, anchor_lw = anchors_yxlw[..., :2], anchors_yxlw[..., 2:4]
     anchor_h = torch.tensor([149.6, 130.05, 147.9, 1.0], device=device)  # Mean heights encoded
-    anchor_z = anchor_h / 2
     stride = torch.pow(2, stride + 2).view(anchor_yx.shape[0], -1).unsqueeze(-1).to(device=device)
     delta_yx, delta_lw, delta_h = deltas_yxlw[..., :2], deltas_yxlw[..., 2:4], deltas_yxlw[..., 4:5]
-    delta_lw = torch.clamp(delta_lw, max=_DEFAULT_SCALE_CLAMP)
-    delta_h = torch.clamp(delta_h, max=3)
+    delta_lw = torch.clamp(delta_lw, max=_DEFAULT_SCALE_CLAMP, min=-_DEFAULT_SCALE_CLAMP)
+    delta_h = torch.clamp(delta_h, max=_DEFAULT_SCALE_CLAMP, min=-_DEFAULT_SCALE_CLAMP)
     bbox_yx = anchor_yx + delta_yx * stride
     bbox_lw = anchor_lw * torch.exp(delta_lw)
     # bbox_z = anchor_z[category] + delta_z * anchor_h[category] / 4

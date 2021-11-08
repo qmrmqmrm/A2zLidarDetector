@@ -136,18 +136,10 @@ class IntegratedLoss:
         }
         """
         batch = grtr['bbox2d'].shape[0]
-
-        # anchors = list()
-        # for anchor_yxlw in grtr['anc_feat']:  # batch, h, w, a, 4
-        #     anchor_yxlw = anchor_yxlw.view(batch, -1, anchor_yxlw.shape[-1])  # b hwa 4
-        #     anchors.append(anchor_yxlw)
-        # anchors_cat = torch.cat(anchors, dim=1)
-        anchors_yxlw = [scale_anchor_yxlw.view(batch, -1, scale_anchor_yxlw.shape[-1]) for scale_anchor_yxlw in
-                        grtr['anc_feat']]
+        anchors_yxlw = [scale_anchor_yxlw.view(batch, -1, scale_anchor_yxlw.shape[-1]) for scale_anchor_yxlw in grtr['anc_feat']]
         anchors_yxlw_cat = torch.cat(anchors_yxlw, dim=1)
         auxiliary = dict()
         auxiliary["gt_aligned"] = self.matched_gt(grtr, pred['bbox2d'], self.align_iou_threshold)
-
         auxiliary["gt_feature"] = self.matched_gt(grtr, anchors_yxlw_cat[..., :4], self.anchor_iou_threshold)
         auxiliary["gt_feature"] = self.split_feature(anchors_yxlw, auxiliary["gt_feature"])
         auxiliary["pred_select"] = self.select_category(auxiliary['gt_aligned'], pred)
@@ -195,18 +187,18 @@ class IntegratedLoss:
         return slice_features
 
     def select_category(self, aligned, pred):
-        gt_cate = (aligned['category'].to(torch.int64)).unsqueeze(-1)
+        gt_cate = (aligned['category'].to(torch.int64)).unsqueeze(-1) # 0 1 2 3
         select_pred = dict()
         for key in ['bbox3d', 'yaw_cls', 'yaw_res', 'bbox3d_delta']:
-            pred_key = pred[key]
+            pred_key = pred[key] # 0 1 2 3
             batch, num, cate, channel = pred_key.shape
             pred_padding = torch.zeros((batch, num, 1, channel), device=self.device)
             pred_key = torch.cat([pred_padding, pred_key], dim=-2) # 512 4 6
-            gather_gt = torch.gather(pred_key, dim=2, index=gt_cate.repeat(1, 1, 1, pred_key.shape[-1])).squeeze(-2)
+            gather_pred = torch.gather(pred_key, dim=2, index=gt_cate.repeat(1, 1, 1, pred_key.shape[-1])).squeeze(-2)
             if key == 'yaw_res':
                 gt_yaw = aligned['yaw_cls'].to(torch.int64)
-                gather_gt = torch.gather(gather_gt, dim=-1, index=gt_yaw)
-            select_pred[key] = gather_gt
+                gather_pred = torch.gather(gather_pred, dim=-1, index=gt_yaw)
+            select_pred[key] = gather_pred
         select_pred['category'] = pred['category'].squeeze(-1)
         return select_pred
 

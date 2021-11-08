@@ -106,7 +106,7 @@ class Model:
 
 
 class Train:
-    CKPT_NAME = "yaw_cls_v3"
+    CKPT_NAME = "zeropad"
     MODE = ["eager", "graph"][0]
     BATCH_SIZE = 2
     TRAINING_PLAN = params.TrainingPlan.A2D2_SIMPLE
