@@ -178,7 +178,7 @@ def get_deltas_3d(anchors_yxlw, bboxes_yxlw, category, stride=None):
     # delta_z = (bboxes_z - anchor_z[category]) / ((anchor_h[category] / 4) + 1e-10)
 
     delta_h = torch.log(bboxes_h / anchor_h[category])
-    delta_h = torch.nan_to_num(delta_h, posinf=0,neginf=0)
+    delta_h = torch.nan_to_num(delta_h, posinf=0, neginf=0)
 
     delta_bbox = torch.cat([delta_yx, delta_lw, delta_h], dim=-1) * valid_mask
 
@@ -245,8 +245,8 @@ class NonMaximumSuppression:
         :return: (batch, max_out, 8), 8: bbox, category, objectness, ctgr_prob, score
         """
         boxes = pred['bbox2d']  # (batch, N, 4(tlbr))
-        categories = pred["category_idx"].squeeze(-1)
-        best_probs = pred["category_probs"].squeeze(-1)  # (batch, N)
+        categories = torch.argmax(pred['ctgr_probs'], dim=-1)
+        best_probs = torch.amax(pred['ctgr_probs'], dim=-1)
         objectness = pred["object"][..., 0]  # (batch, N)
         scores = objectness * best_probs  # (batch, N)
         batch, numbox = categories.shape
@@ -267,27 +267,21 @@ class NonMaximumSuppression:
                 ctgr_boxes_tlbr = convert_box_format_yxhw_to_tlbr(ctgr_boxes[frame_idx])
                 selected_indices = box_ops.batched_nms(ctgr_boxes_tlbr, ctgr_scores[frame_idx],
                                                        categories[frame_idx], self.iou_thresh[ctgr_idx - 1])
-                selected_indices = selected_indices[:self.max_out[frame_idx]]
-                max_num = self.max_out[frame_idx]
+                selected_indices = selected_indices[:self.max_out[ctgr_idx - 1]]
+                max_num = self.max_out[ctgr_idx - 1]
 
                 if selected_indices.numel() <= max_num:
                     zero = torch.ones((max_num - selected_indices.shape[0]), device=self.device) * -1
                 selected_indices = torch.cat([selected_indices, zero], dim=0).to(dtype=torch.int64)
                 batch_indices[frame_idx].append(selected_indices)
-                # print('pred', ctgr_boxes[frame_idx, selected_indices])
-                # iou = uf.pairwise_iou(ctgr_boxes[frame_idx, selected_indices], ctgr_boxes[frame_idx, selected_indices])  # (batch, N, M)
-                # print('selected_indices iou', iou.shape)
-                # iou_where = iou[torch.where((iou > 0) * (iou < 0.1))]
-                # iou_where_not = iou[torch.where((iou > 0.1) * (iou <= 1))]
-                # print('iou O', iou_where)
-                # print('iou X', iou_where_not)
+
         batch_indices = [torch.cat(ctgr_indices, dim=-1) for ctgr_indices in batch_indices]
         batch_indices = torch.stack(batch_indices, dim=0)  # (batch, K*max_output)
         batch_indices = torch.maximum(batch_indices, torch.zeros(batch_indices.shape, device=self.device)).to(
             dtype=torch.int64)
 
-        result = {'object': [], 'bbox2d': [], 'bbox3d': [], 'anchor_id': [], 'category': [], 'yaw_cls': [], 'yaw_res' : [],
-                  'yaw_rads': [],'yaw_cls_idx':[], 'category_idx': [] ,'category_probs': []}
+        result = {'object': [], 'bbox2d': [], 'bbox3d': [], 'anchor_id': [], 'ctgr_probs': [], 'ctgr_logit': [], 'yaw_cls_logit': [],
+                  'yaw_res': [], 'yaw_rads': [], 'yaw_cls_probs': [],}
         for i, indices in enumerate(batch_indices.to(dtype=torch.int64)):
             for key in result.keys():
                 result[key].append(pred[key][i, indices])

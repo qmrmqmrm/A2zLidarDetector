@@ -18,10 +18,10 @@ def count_true_positives(grtr, pred, num_ctgr, iou_thresh=cfg.Validation.TP_IOU_
     """
     splits = split_true_false(grtr, pred, iou_thresh)
     # ========== use split instead grtr, pred
-    grtr_valid_tp = splits["grtr_tp"]["bbox3d"][..., 2:3] > 0
-    grtr_valid_fn = splits["grtr_fn"]["bbox3d"][..., 2:3] > 0
-    pred_valid_tp = splits["pred_tp"]["bbox3d"][..., 2:3] > 0
-    pred_valid_fp = splits["pred_fp"]["bbox3d"][..., 2:3] > 0
+    grtr_valid_tp = splits["grtr_tp"]["bbox2d"][..., 2:3] > 0
+    grtr_valid_fn = splits["grtr_fn"]["bbox2d"][..., 2:3] > 0
+    pred_valid_tp = splits["pred_tp"]["bbox2d"][..., 2:3] > 0
+    pred_valid_fp = splits["pred_fp"]["bbox2d"][..., 2:3] > 0
 
     grtr_count = np.sum(grtr_valid_tp + grtr_valid_fn)
     pred_count = np.sum(pred_valid_tp + pred_valid_fp)
@@ -30,8 +30,8 @@ def count_true_positives(grtr, pred, num_ctgr, iou_thresh=cfg.Validation.TP_IOU_
 
 
 def split_true_false(grtr, pred, iou_thresh):
-    batch, M, _ = pred["category"].shape
-    best_cate = np.argmax(pred["category"], axis=-1)
+    batch, M, _ = pred["ctgr_probs"].shape
+    best_cate = np.argmax(pred["ctgr_probs"], axis=-1)
     pred_cate_bg_mask =(best_cate != 0)
     category = np.expand_dims(best_cate, -1)
     pred_cate_bg_mask = np.expand_dims(pred_cate_bg_mask, -1)
@@ -52,8 +52,10 @@ def split_true_false(grtr, pred, iou_thresh):
     grtr_tp_mask = np.expand_dims(iou_match * ctgr_match * gt_cate_bg_mask, axis=-1)  # (batch, N, 1)
     gt_cate_bg_mask =np.expand_dims(gt_cate_bg_mask, -1)
     grtr_fn_mask = ((1 - grtr_tp_mask) * valid_mask * gt_cate_bg_mask).astype(np.float32)  # (batch, N, 1)
-    grtr_tp = {key: val * grtr_tp_mask for key, val in grtr.items() if key in pred.keys()}
-    grtr_fn = {key: val * grtr_fn_mask for key, val in grtr.items() if key in pred.keys()}
+
+    gt_keys = ['category', 'yaw_cls', 'bbox2d','bbox3d','object','yaw_rads','anchor_id',]
+    grtr_tp = {key: val * grtr_tp_mask for key, val in grtr.items() if key in gt_keys}
+    grtr_fn = {key: val * grtr_fn_mask for key, val in grtr.items() if key in gt_keys}
     grtr_tp["iou"] = best_iou * grtr_tp_mask[..., 0]
     grtr_fn["iou"] = best_iou * grtr_fn_mask[..., 0]
     # last dimension rows where grtr_tp_mask == 0 are all-zero

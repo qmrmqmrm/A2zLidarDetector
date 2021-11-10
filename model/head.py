@@ -57,7 +57,7 @@ class FastRCNNHead(nn.Module):
         pred_features = self.decode(pred_features, proposals['bbox2d'], strides)
         print(torch.sum(pred_features['bbox3d'][..., 2] != 0), torch.sum(proposals['zeropad']) * 3)
         assert torch.sum(pred_features['bbox3d'][..., 2] != 0) == torch.sum(proposals['zeropad']) * 3
-        assert torch.sum(pred_features['category'][..., 2] != 0) == torch.sum(proposals['zeropad'])
+        # assert torch.sum(pred_features['category'][..., 2] != 0) == torch.sum(proposals['zeropad'])
         return pred_features
 
     def box_pooler(self, features, proposals):
@@ -126,7 +126,12 @@ class FastRCNNHead(nn.Module):
 
         pred['bbox3d'] = torch.cat(bbox3d, dim=-2)
         pred['strides'] = strides
-        pred['category'] = pred['category'].squeeze(-1)
+        pred['ctgr_logit'] = pred['category'].squeeze(-1)
+        pred['ctgr_probs'] = torch.softmax(pred['ctgr_logit'], dim=-1)
+        pred['yaw_cls_logit'] = pred['yaw_cls']
+        pred['yaw_cls_probs'] = torch.softmax(pred['yaw_cls'], dim=-1)
+        pred['yaw_res'] = torch.sigmoid(pred['yaw_res']) * 0.6 - 0.3
+        del pred['category']
         return pred
 
 

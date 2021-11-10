@@ -106,9 +106,9 @@ class Model:
 
 
 class Train:
-    CKPT_NAME = "zeropad"
+    CKPT_NAME = "batch_4_full"
     MODE = ["eager", "graph"][0]
-    BATCH_SIZE = 2
+    BATCH_SIZE = 4
     TRAINING_PLAN = params.TrainingPlan.A2D2_SIMPLE
 
 
@@ -119,12 +119,12 @@ class Loss:
 
 class NMS:
     MAX_OUT = [10, 10, 10]
-    IOU_THRESH = [0.3, 0.3, 0.3]
-    SCORE_THRESH = [0.5, 0.5, 0.5]
+    IOU_THRESH = [0.1, 0.1, 0.1]
+    SCORE_THRESH = [0.9, 0.9, 0.5]
 
 
 class Validation:
-    TP_IOU_THRESH = [0.3, 0.3, 0.3, 0.3]
+    TP_IOU_THRESH = [1.0, 0.5, 0.5, 0.5]
     DISTANCE_LIMIT = 25
     VAL_EPOCH = "latest"
 

@@ -44,13 +44,13 @@ class HistoryLog:
         box_objectness = self.analyze_box_objectness(gt_feature, pred)
         batch_data.update(box_objectness)
 
-        num_ctgr = pred_nms["category"].shape[-1] - 1
+        num_ctgr = pred_nms["ctgr_probs"].shape[-1] - 1
 
         metric = count_true_positives(grtr, pred_nms, num_ctgr, per_class=False)
         batch_data.update(metric)
         # pred_cate = torch.softmax(torch.tensor(pred["category"]), dim=-1).to('cpu').detach().numpy()
-        batch_data["true_cls"] = self.logtrueclass(gt_aligned, pred["category_probs"])
-        batch_data["false_cls"] = self.logfalseclass(gt_aligned, pred["category_probs"])
+        batch_data["true_cls"] = self.logtrueclass(gt_aligned, pred["ctgr_probs"])
+        batch_data["false_cls"] = self.logfalseclass(gt_aligned, pred["ctgr_probs"])
 
         batch_data = self.set_precision(batch_data, 5)
         col_order = list(batch_data.keys())
@@ -116,17 +116,17 @@ class HistoryLog:
 
     def logtrueclass(self, grtr, pred_cate):
         grtr_ctgr_mask = self.one_hot(grtr["category"], self.num_categs + 1)
-        grtr_target_mask = grtr["object"] * (grtr["category"] > 0)
+        grtr_target_mask = grtr["object"]
         category_prob = grtr_target_mask * grtr_ctgr_mask * pred_cate
         true_class = np.sum(category_prob) / (np.sum(grtr_target_mask) + 0.00001)
         return true_class
 
     def logfalseclass(self, grtr, pred_cate):
         grtr_ctgr_mask = self.one_hot(grtr["category"], self.num_categs + 1)
-        false_ctgr_mask = grtr["object"] * (grtr["category"] > 0)
-        category_prob = false_ctgr_mask * pred_cate * (1. - grtr_ctgr_mask)
+        grtr_target_mask = grtr["object"]
+        category_prob = grtr_target_mask * pred_cate * (1. - grtr_ctgr_mask)
         false_prob = np.max(category_prob, axis=-1)
-        false_class = np.sum(false_prob) / (np.sum(false_ctgr_mask) + 0.00001)
+        false_class = np.sum(false_prob) / (np.sum(grtr_target_mask) + 0.00001)
         return false_class
 
     def one_hot(self, grtr_category, category_shape):

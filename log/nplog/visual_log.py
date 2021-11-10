@@ -73,7 +73,7 @@ class VisualLog:
             image_org = cv2.imread(image_org_file_name)
             image_org = cv2.resize(image_org, (1280, 640))
 
-            for key in ['bbox2d']:
+            for key in ['bbox2d', 'bbox3d']:
                 image_grtr = grtr["image"][batch_idx].copy()
                 image_grtr = self.draw_boxes(image_grtr, splits["grtr_fn"][key][..., :4], batch_idx, (0, 0, 255))
                 image_grtr = self.draw_boxes(image_grtr, splits["grtr_tp"][key][..., :4], batch_idx, (0, 255, 0))
@@ -87,16 +87,16 @@ class VisualLog:
                 if step % 50 == 10:
                     cv2.imshow("detection_result", vlog_image)
                     cv2.waitKey(10)
-                filename = op.join(self.vlog_path, f"{step * batch + batch_idx:05d}_{key}.jpg")
+                filename = op.join(self.vlog_path, f"{step:04d}_{step * batch + batch_idx:05d}_{key}.jpg")
                 cv2.imwrite(filename, vlog_image)
 
             # category
             scale_img = grtr["image"][batch_idx].copy()
             # print('pred_tp')
-            scale_img = self.draw_ctgr_boxes(scale_img, splits["pred_tp"]['bbox2d'], splits["pred_tp"]['category'],
+            scale_img = self.draw_ctgr_boxes(scale_img, splits["pred_tp"]['bbox2d'], splits["pred_tp"]['ctgr_probs'],
                                              batch_idx, 120)
             # print('pred_fp')
-            scale_img = self.draw_ctgr_boxes(scale_img, splits["pred_fp"]['bbox2d'], splits["pred_fp"]['category'],
+            scale_img = self.draw_ctgr_boxes(scale_img, splits["pred_fp"]['bbox2d'], splits["pred_fp"]['ctgr_probs'],
                                              batch_idx, 120)
             # print('grtr_tp')
             scale_img = self.draw_ctgr_boxes(scale_img, splits["grtr_tp"]['bbox2d'], splits["grtr_tp"]['category'],
@@ -125,25 +125,6 @@ class VisualLog:
             filename = op.join(self.obj_path, f"{step * batch + batch_idx:05d}.jpg")
             cv2.imwrite(filename, obj_img)
 
-            # rot bbox3d
-
-            # print(f"{step * batch + batch_idx:05d}_rot.jpg")
-            # print('pred_tp')
-            # print(splits['pred_tp']['yaw_cls'][batch_idx])
-            # print('bin',splits['pred_tp']['yaw_cls_idx'][batch_idx])
-            # print('res',splits['pred_tp']['yaw_res'][batch_idx])
-            # print('rad',splits['pred_tp']['yaw_rads'][batch_idx])
-            # rad = splits['pred_tp']['yaw_rads'][batch_idx]
-            # rad = rad % math.pi
-            # print('rad % math.pi', rad)
-            # print('pred_fp')
-            # print(splits['pred_fp']['yaw_cls'][batch_idx])
-            # print('bin',splits['pred_fp']['yaw_cls_idx'][batch_idx])
-            # print('res',splits['pred_fp']['yaw_res'][batch_idx])
-            # print('rad',splits['pred_fp']['yaw_rads'][batch_idx])
-            # rad = splits['pred_fp']['yaw_rads'][batch_idx]
-            # rad = rad % math.pi
-            # print('rad % math.pi', rad)
             rot_bbox3ds = dict()
             for key in splits_keys:
                 bbox3d_per_image = splits[key]['bbox3d'][batch_idx]
@@ -159,20 +140,24 @@ class VisualLog:
             image_grtr = self.draw_3D_box(image_grtr, rot_bbox3ds["grtr_fn"],
                                           splits["grtr_fn"]['yaw_cls'][batch_idx],
                                           splits["grtr_fn"]['yaw_rads'][batch_idx],
-                                          (0, 0, 255))
+                                          color=(0, 0, 255))
             image_grtr = self.draw_3D_box(image_grtr, rot_bbox3ds["grtr_tp"],
                                           splits["grtr_tp"]['yaw_cls'][batch_idx],
                                           splits["grtr_tp"]['yaw_rads'][batch_idx],
-                                          (0, 255, 0))
+                                          color=(0, 255, 0))
 
             image_pred = grtr["image"][batch_idx].copy()
             image_pred = self.draw_3D_box(image_pred, rot_bbox3ds["pred_fp"],
-                                          splits["pred_fp"]['yaw_cls_idx'][batch_idx],
+                                          splits["pred_fp"]['yaw_cls_probs'][batch_idx],
                                           splits["pred_fp"]['yaw_rads'][batch_idx],
+                                          splits["pred_fp"]['ctgr_probs'][batch_idx],
+                                          splits["pred_fp"]['object'][batch_idx],
                                           (0, 0, 255))
             image_pred = self.draw_3D_box(image_pred, rot_bbox3ds["pred_tp"],
-                                          splits["pred_tp"]['yaw_cls_idx'][batch_idx],
+                                          splits["pred_tp"]['yaw_cls_probs'][batch_idx],
                                           splits["pred_tp"]['yaw_rads'][batch_idx],
+                                          splits["pred_fp"]['ctgr_probs'][batch_idx],
+                                          splits["pred_fp"]['object'][batch_idx],
                                           (0, 255, 0))
 
             vlog_image = np.concatenate([image_pred, image_grtr], axis=1)
@@ -180,7 +165,7 @@ class VisualLog:
             if step % 50 == 10:
                 cv2.imshow("detection_result", vlog_image)
                 cv2.waitKey(10)
-            filename = op.join(self.vlog_path, f"{step * batch + batch_idx:05d}_rot.jpg")
+            filename = op.join(self.vlog_path, f"{step:04d}_{step * batch + batch_idx:05d}_rot.jpg")
             cv2.imwrite(filename, vlog_image)
 
     def draw_boxes(self, image, bboxes, frame_idx, color):
@@ -257,21 +242,31 @@ class VisualLog:
         rotated_corners = np.dot(corners, R) + bbox3d_xy
         return rotated_corners
 
-    def draw_3D_box(self, img, corners, bin, rad, color=(255, 255, 0)):
+    def draw_3D_box(self, img, corners, bin, rad, cate_probs=None, obj_prob=None, color=(255, 255, 0)):
         """
             draw 3D box in image with OpenCV,
             the order of the corners should be the same with BBox3dProjector
         """
         # color = [(255,255,255),(0,0,255),(0,255,0),(255,0,0)]
         for idx, corner in enumerate(corners):
+            box_color = color
+            ann_color = color
             if int(corner[1][0]) - int(corner[0][0]) == 0 and int(corner[1][1]) - int(corner[0][1]) == 0:
                 continue
 
             for corner_idx in range(corner.shape[0]):
                 cv2.line(img, (int(corner[corner_idx][0]), int(corner[corner_idx][1])),
-                         (int(corner[((corner_idx + 1) % 4)][0]), int(corner[((corner_idx + 1) % 4)][1])), color, 2)
-            ann = f'{bin[idx]}, {rad[idx]}'
-            cv2.putText(img, ann, (int(corner[0][0]), int(corner[0][1])), cv2.FONT_HERSHEY_PLAIN, 1.0, color, 2)
+                         (int(corner[((corner_idx + 1) % 4)][0]), int(corner[((corner_idx + 1) % 4)][1])), box_color, 2)
+            ann = f'{bin[idx, 0]},{rad[idx, 0]:1.3f}'
+            cv2.putText(img, ann, (int(corner[0][0]), int(corner[0][1])), cv2.FONT_HERSHEY_PLAIN, 1.0, ann_color, 2)
+            if cate_probs is not None:
+                print(cate_probs.shape)
+                ctgr_idx = np.argmax(cate_probs, axis=-1)
+                ctgr_prob = np.amax(cate_probs, axis=-1)
+                cate_ann = f'{ctgr_prob[idx]:3.3f}, {obj_prob[idx, 0]:3.3f}, {int(ctgr_idx[idx])} '
+                cv2.putText(img, cate_ann, (int(corner[2][0]), int(corner[2][1])), cv2.FONT_HERSHEY_PLAIN, 1.0,
+                            ann_color, 2)
+
         return img
 
     def one_hot(self, grtr_category, category_shape):

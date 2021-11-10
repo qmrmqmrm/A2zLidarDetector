@@ -115,6 +115,24 @@ def slice_class(features):
     return sliced_features
 
 
+def select_category(pred, ctgr_inds, key_to_select):
+    ctgr_inds = ctgr_inds.to(torch.int64).unsqueeze(-1)
+    select_pred = dict()
+    for key in key_to_select:
+        pred_key = pred[key] # 0 1 2 3
+        batch, num, cate, channel = pred_key.shape
+        pred_padding = torch.zeros((batch, num, 1, channel), device=cfg.Hardware.DEVICE)
+        pred_key = torch.cat([pred_padding, pred_key], dim=-2) # 512 4 6
+        gather_pred = torch.gather(pred_key, dim=2, index=ctgr_inds.repeat(1, 1, 1, pred_key.shape[-1])).squeeze(-2)
+        select_pred[key] = gather_pred
+
+    for key in pred:
+        if key in key_to_select:
+            continue
+        select_pred[key] = pred[key]
+    return select_pred
+
+
 def compute_iou_general(grtr_yxhw, pred_yxhw, grtr_tlbr=None, pred_tlbr=None):
     """
     :param grtr_yxhw: GT bounding boxes in yxhw format (batch, N1, D1(>4))
