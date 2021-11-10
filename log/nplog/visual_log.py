@@ -124,7 +124,6 @@ class VisualLog:
             obj_img = np.concatenate([gt_obj_img, pred_obj_img], axis=0)
             filename = op.join(self.obj_path, f"{step * batch + batch_idx:05d}.jpg")
             cv2.imwrite(filename, obj_img)
-
             rot_bbox3ds = dict()
             for key in splits_keys:
                 bbox3d_per_image = splits[key]['bbox3d'][batch_idx]
@@ -145,7 +144,6 @@ class VisualLog:
                                           splits["grtr_tp"]['yaw_cls'][batch_idx],
                                           splits["grtr_tp"]['yaw_rads'][batch_idx],
                                           color=(0, 255, 0))
-
             image_pred = grtr["image"][batch_idx].copy()
             image_pred = self.draw_3D_box(image_pred, rot_bbox3ds["pred_fp"],
                                           splits["pred_fp"]['yaw_cls_probs'][batch_idx],
@@ -156,8 +154,8 @@ class VisualLog:
             image_pred = self.draw_3D_box(image_pred, rot_bbox3ds["pred_tp"],
                                           splits["pred_tp"]['yaw_cls_probs'][batch_idx],
                                           splits["pred_tp"]['yaw_rads'][batch_idx],
-                                          splits["pred_fp"]['ctgr_probs'][batch_idx],
-                                          splits["pred_fp"]['object'][batch_idx],
+                                          splits["pred_tp"]['ctgr_probs'][batch_idx],
+                                          splits["pred_tp"]['object'][batch_idx],
                                           (0, 255, 0))
 
             vlog_image = np.concatenate([image_pred, image_grtr], axis=1)
@@ -248,24 +246,24 @@ class VisualLog:
             the order of the corners should be the same with BBox3dProjector
         """
         # color = [(255,255,255),(0,0,255),(0,255,0),(255,0,0)]
+        bin = np.argmax(bin, axis=-1)
+        box_color = color
         for idx, corner in enumerate(corners):
-            box_color = color
-            ann_color = color
+
             if int(corner[1][0]) - int(corner[0][0]) == 0 and int(corner[1][1]) - int(corner[0][1]) == 0:
                 continue
 
             for corner_idx in range(corner.shape[0]):
                 cv2.line(img, (int(corner[corner_idx][0]), int(corner[corner_idx][1])),
                          (int(corner[((corner_idx + 1) % 4)][0]), int(corner[((corner_idx + 1) % 4)][1])), box_color, 2)
-            ann = f'{bin[idx, 0]},{rad[idx, 0]:1.3f}'
-            cv2.putText(img, ann, (int(corner[0][0]), int(corner[0][1])), cv2.FONT_HERSHEY_PLAIN, 1.0, ann_color, 2)
+            ann = f'{bin[idx]},{rad[idx, 0]:1.3f}'
+            cv2.putText(img, ann, (int(corner[0][0]), int(corner[0][1])), cv2.FONT_HERSHEY_PLAIN, 1.0, box_color, 2)
             if cate_probs is not None:
-                print(cate_probs.shape)
                 ctgr_idx = np.argmax(cate_probs, axis=-1)
                 ctgr_prob = np.amax(cate_probs, axis=-1)
                 cate_ann = f'{ctgr_prob[idx]:3.3f}, {obj_prob[idx, 0]:3.3f}, {int(ctgr_idx[idx])} '
                 cv2.putText(img, cate_ann, (int(corner[2][0]), int(corner[2][1])), cv2.FONT_HERSHEY_PLAIN, 1.0,
-                            ann_color, 2)
+                            box_color, 2)
 
         return img
 

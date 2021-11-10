@@ -56,7 +56,7 @@ class FastRCNNHead(nn.Module):
         strides = strides.view(batch, numsample, 1) * proposals['zeropad']
         pred_features = self.decode(pred_features, proposals['bbox2d'], strides)
         print(torch.sum(pred_features['bbox3d'][..., 2] != 0), torch.sum(proposals['zeropad']) * 3)
-        assert torch.sum(pred_features['bbox3d'][..., 2] != 0) == torch.sum(proposals['zeropad']) * 3
+        # assert torch.sum(pred_features['bbox3d'][..., 2] != 0) == torch.sum(proposals['zeropad']) * 3
         # assert torch.sum(pred_features['category'][..., 2] != 0) == torch.sum(proposals['zeropad'])
         return pred_features
 
@@ -160,18 +160,6 @@ class FastRCNNFCOutputHead(nn.Module):
         bins = cfg.Model.Structure.VP_BINS
         out_channels = num_classes * (1 + box_dim + (2 * bins)) + 1
         self.pred_layer = nn.Linear(input_size, out_channels)
-        # self.cls_layer = nn.Linear(input_size, num_classes + 1)
-        # self.bbox3d_layer = nn.Linear(input_size, num_classes * box_dim)
-        # self.yaw_cls_layer = nn.Linear(input_size, num_classes * bins)
-        # self.yaw_res_layer = nn.Linear(input_size, num_classes * bins)
-        # nn.init.normal_(self.cls_layer.weight, std=0.01)
-        # nn.init.normal_(self.bbox3d_layer.weight, std=0.001)
-        # for l in [self.cls_layer, self.bbox3d_layer]:
-        #     nn.init.constant_(l.bias, 0)
-        # nn.init.xavier_normal_(self.yaw_cls_layer.weight)
-        # nn.init.constant_(self.yaw_cls_layer.weight, 0)
-        # nn.init.xavier_normal_(self.yaw_res_layer.weight)
-        # nn.init.constant_(self.yaw_res_layer.weight, 0)
         nn.init.xavier_normal_(self.pred_layer.weight)
         nn.init.constant_(self.pred_layer.weight, 0)
 
@@ -182,9 +170,4 @@ class FastRCNNFCOutputHead(nn.Module):
             x = F.relu(bn(layer(x)))
 
         pred = self.pred_layer(x)
-        # cls_logit = self.cls_layer(x)
-        # bbox3d_logit = self.bbox3d_layer(x)
-        # yaw_cls_logit = self.yaw_cls_layer(x)
-        # yaw_res_logit = self.yaw_res_layer(x)
-        # pred = {'category': cls_logit, 'bbox3d_delta': bbox3d_logit, 'yaw_cls': yaw_cls_logit, 'yaw_res': yaw_res_logit}
         return pred

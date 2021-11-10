@@ -74,48 +74,8 @@ class Logger:
         # if self.exhuastive_logger:
         #     self.exhuastive_logger(step, grtr, gt_aligned, pred_slices, loss_by_type, epoch, cfg.Logging.USE_ANCHOR)
 
-    # def select_best_ctgr_pred(self, pred):
-    #
-    #     category = torch.softmax(pred['category'], dim=-1)
-    #     best_ctgr_idx = torch.argmax(category, dim=-1).unsqueeze(-1).unsqueeze(-1)
-    #     best_probs = torch.amax(category, dim=-1)  # (batch, N)
-    #     select_pred = pred
-    #     for key in ['bbox3d', 'yaw_cls_logit', 'yaw_res', 'bbox3d_delta']:
-    #         pred_key = pred[key]
-    #         batch, num, cate, channel = pred_key.shape
-    #         pred_padding = torch.zeros((batch, num, 1, channel), device=self.device)
-    #         pred_key = torch.cat([pred_padding, pred_key], dim=-2)
-    #         best_pred = torch.gather(pred_key, dim=2, index=best_ctgr_idx.repeat(1, 1, 1, pred_key.shape[-1])).squeeze(
-    #             -2)
-    #         select_pred[key] = best_pred
-    #
-    #     yaw_softmax = torch.softmax(select_pred['yaw_cls'], dim=-1)
-    #     best_yaw_cls_idx = torch.argmax(yaw_softmax, dim=-1)
-    #     select_pred['yaw_cls_idx'] = best_yaw_cls_idx.unsqueeze(-1)
-    #     pred_yaw_residuals = torch.sigmoid(select_pred['yaw_res']) * 0.6 - 0.3
-    #     select_pred['yaw_res'] = torch.gather(pred_yaw_residuals, dim=-1, index=best_yaw_cls_idx.unsqueeze(-1))
-    #
-    #     select_pred['category_idx'] = best_ctgr_idx.squeeze(-1)
-    #     select_pred['category_probs'] = best_probs.unsqueeze(-1)
-    #     select_pred['yaw_rads'] = (select_pred['yaw_cls_idx'] * (math.pi / cfg.Model.Structure.VP_BINS) - (math.pi/2) +
-    #                                select_pred['yaw_res'])
-    #
-    # key_to_select = ['bbox3d', 'yaw_cls', 'yaw_res', 'bbox3d_delta']
-    # yaw_keys = ['yaw_cls', 'yaw_res']
-    # for key in key_to_select:
-    #     select
-    #
-    # for key in pred:
-    #     if key in key_to_select:
-    #         continue
-    #     output[key] = pred[key]
-
     def select_best_ctgr_pred(self, pred):
-        print(pred['ctgr_probs'].shape)
         best_ctgr = torch.argmax(pred['ctgr_probs'], dim=-1).unsqueeze(-1)
-
-        # ctgr_inds = max()
-        # yaw_inds = max(())
         need_key = ['bbox3d', 'yaw_cls_probs','yaw_cls_logit', 'yaw_res', 'bbox3d_delta']
         select_pred = uf.select_category(pred, best_ctgr, need_key)
         best_yaw_cls_idx = torch.argmax(select_pred['yaw_cls_probs'], dim=-1).unsqueeze(-1)
@@ -124,16 +84,6 @@ class Logger:
         select_pred['yaw_rads'] = (best_yaw_cls_idx * (math.pi / cfg.Model.Structure.VP_BINS) - (math.pi / 2) +
                                    select_pred['yaw_res'])
         return select_pred
-        #
-        # key_to_select = ['bbox3d', 'yaw_cls', 'yaw_res', 'bbox3d_delta']
-        # yaw_keys = ['yaw_cls', 'yaw_res']
-        # for key in key_to_select:
-        #     select
-        #
-        # for key in pred:
-        #     if key in key_to_select:
-        #         continue
-        #     output[key] = pred[key]
 
     def convert_tensor_to_numpy(self, features):
         numpy_feature = dict()

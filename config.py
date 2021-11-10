@@ -110,6 +110,7 @@ class Train:
     MODE = ["eager", "graph"][0]
     BATCH_SIZE = 4
     TRAINING_PLAN = params.TrainingPlan.A2D2_SIMPLE
+    TESTING_PLAN = params.ValPlan.A2D2_SIMPLE
 
 
 class Loss:
@@ -118,13 +119,13 @@ class Loss:
 
 
 class NMS:
-    MAX_OUT = [10, 10, 10]
-    IOU_THRESH = [0.1, 0.1, 0.1]
-    SCORE_THRESH = [0.9, 0.9, 0.5]
+    MAX_OUT = [8, 8, 8]
+    IOU_THRESH = [0.3, 0.3, 0.3]
+    SCORE_THRESH = [0.7, 0.7, 0.7]
 
 
 class Validation:
-    TP_IOU_THRESH = [1.0, 0.5, 0.5, 0.5]
+    TP_IOU_THRESH = [0.3, 0.3, 0.3, 0.3]
     DISTANCE_LIMIT = 25
     VAL_EPOCH = "latest"
 

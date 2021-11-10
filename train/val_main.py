@@ -16,7 +16,7 @@ import utils.util_function as uf
 
 def val_main():
     end_epoch = 0
-    for dataset_name, epochs, learning_rate, loss_weights, model_save in cfg.Train.TRAINING_PLAN:
+    for dataset_name, epochs, learning_rate, loss_weights, model_save in cfg.Train.TESTING_PLAN:
         end_epoch += epochs
         val_by_plan(dataset_name, end_epoch, loss_weights)
 
@@ -44,12 +44,12 @@ def val_by_plan(dataset_name, end_epoch, loss_weights):
     loss_object = IntegratedLoss(batch_size, loss_weights, valid_category)
     validator = ModelValidater(model, loss_object, start_epoch)
     log_file = LogFile(ckpt_path)
-    for epoch in range(start_epoch, end_epoch):
-        print(f"========== Start dataset : {dataset_name} epoch: {epoch + 1}/{end_epoch} ==========")
+    # for epoch in range(start_epoch, end_epoch):
+    #     print(f"========== Start dataset : {dataset_name} epoch: {epoch + 1}/{end_epoch} ==========")
 
-        val_result = validator.run_epoch(True, epoch, test_data_loader)
+    val_result = validator.run_epoch(True, 0, test_data_loader)
 
-        log_file.save_val_log(val_result)
+    log_file.save_val_log(val_result)
 
 
 def read_previous_epoch(ckpt_path):

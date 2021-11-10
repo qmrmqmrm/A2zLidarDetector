@@ -252,6 +252,7 @@ class NonMaximumSuppression:
         batch, numbox = categories.shape
         batch_indices = [[] for i in range(batch)]
         numctgr = cfg.Model.Structure.NUM_CLASSES
+
         for ctgr_idx in range(1, numctgr + 1):
             ctgr_mask = (categories == ctgr_idx).to(dtype=torch.int64)  # (batch, N)
             score_mask = (scores >= self.score_thresh[ctgr_idx - 1]).squeeze(-1)
@@ -264,9 +265,11 @@ class NonMaximumSuppression:
             # print(f"ctgr_scores quantile {ctgr_idx}:", ctgr_scores_quant)
             for frame_idx in range(batch):
                 # NMS
+                nonzero_inds = torch.nonzero(ctgr_scores[frame_idx]).squeeze(-1)
+
                 ctgr_boxes_tlbr = convert_box_format_yxhw_to_tlbr(ctgr_boxes[frame_idx])
-                selected_indices = box_ops.batched_nms(ctgr_boxes_tlbr, ctgr_scores[frame_idx],
-                                                       categories[frame_idx], self.iou_thresh[ctgr_idx - 1])
+                selected_indices = box_ops.batched_nms(ctgr_boxes_tlbr[nonzero_inds], ctgr_scores[frame_idx][nonzero_inds],
+                                                       categories[frame_idx][nonzero_inds], self.iou_thresh[ctgr_idx - 1])
                 selected_indices = selected_indices[:self.max_out[ctgr_idx - 1]]
                 max_num = self.max_out[ctgr_idx - 1]
 
@@ -274,18 +277,17 @@ class NonMaximumSuppression:
                     zero = torch.ones((max_num - selected_indices.shape[0]), device=self.device) * -1
                 selected_indices = torch.cat([selected_indices, zero], dim=0).to(dtype=torch.int64)
                 batch_indices[frame_idx].append(selected_indices)
-
         batch_indices = [torch.cat(ctgr_indices, dim=-1) for ctgr_indices in batch_indices]
         batch_indices = torch.stack(batch_indices, dim=0)  # (batch, K*max_output)
+        vaild_mask = (batch_indices >= 0).to(dtype=torch.int64).unsqueeze(-1)
         batch_indices = torch.maximum(batch_indices, torch.zeros(batch_indices.shape, device=self.device)).to(
             dtype=torch.int64)
-
-        result = {'object': [], 'bbox2d': [], 'bbox3d': [], 'anchor_id': [], 'ctgr_probs': [], 'ctgr_logit': [], 'yaw_cls_logit': [],
-                  'yaw_res': [], 'yaw_rads': [], 'yaw_cls_probs': [],}
-        for i, indices in enumerate(batch_indices.to(dtype=torch.int64)):
+        result = {'object': [], 'bbox2d': [], 'bbox3d': [], 'anchor_id': [], 'ctgr_probs': [], 'ctgr_logit': [],
+                  'yaw_cls_logit': [], 'yaw_res': [], 'yaw_rads': [], 'yaw_cls_probs': [], }
+        for i, indices in enumerate(batch_indices):
+            indices = indices.to(dtype=torch.int64)
             for key in result.keys():
                 result[key].append(pred[key][i, indices])
         for key, val in result.items():
-            result[key] = torch.stack(val, dim=0)
-
+            result[key] = torch.stack(val, dim=0) * vaild_mask
         return result
