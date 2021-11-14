@@ -74,39 +74,24 @@ class VisualLog:
             image_org = cv2.resize(image_org, (1280, 640))
 
             for key in ['bbox2d', 'bbox3d']:
-                image_grtr = grtr["image"][batch_idx].copy()
-                image_grtr = self.draw_boxes(image_grtr, splits["grtr_fn"][key][..., :4], batch_idx, (0, 0, 255))
-                image_grtr = self.draw_boxes(image_grtr, splits["grtr_tp"][key][..., :4], batch_idx, (0, 255, 0))
-
-                image_pred = grtr["image"][batch_idx].copy()
-                image_pred = self.draw_boxes(image_pred, splits["pred_fp"][key][..., :4], batch_idx, (0, 0, 255))
-                image_pred = self.draw_boxes(image_pred, splits["pred_tp"][key][..., :4], batch_idx, (0, 255, 0))
-
-                vlog_image = np.concatenate([image_pred, image_grtr], axis=1)
+                scale_img_pred = grtr["image"][batch_idx].copy()
+                scale_img_pred = self.draw_ctgr_boxes(scale_img_pred, splits["pred_fp"][key],
+                                                      splits["pred_fp"]['ctgr_probs'],
+                                                      batch_idx, 2)
+                scale_img_pred = self.draw_ctgr_boxes(scale_img_pred, splits["pred_tp"][key],
+                                                      splits["pred_tp"]['ctgr_probs'],
+                                                      batch_idx, 1)
+                scale_img_grtr = grtr["image"][batch_idx].copy()
+                scale_img_grtr = self.draw_ctgr_boxes(scale_img_grtr, splits["grtr_fn"][key],
+                                                      splits["grtr_fn"]['category'],
+                                                      batch_idx, 2)
+                scale_img_grtr = self.draw_ctgr_boxes(scale_img_grtr, splits["grtr_tp"][key],
+                                                      splits["grtr_tp"]['category'],
+                                                      batch_idx, 1)
+                vlog_image = np.concatenate([scale_img_pred, scale_img_grtr], axis=1)
                 vlog_image = np.concatenate([image_org, vlog_image], axis=0)
-                if step % 50 == 10:
-                    cv2.imshow("detection_result", vlog_image)
-                    cv2.waitKey(10)
                 filename = op.join(self.vlog_path, f"{step:04d}_{step * batch + batch_idx:05d}_{key}.jpg")
                 cv2.imwrite(filename, vlog_image)
-
-            # category
-            scale_img = grtr["image"][batch_idx].copy()
-            # print('pred_tp')
-            scale_img = self.draw_ctgr_boxes(scale_img, splits["pred_tp"]['bbox2d'], splits["pred_tp"]['ctgr_probs'],
-                                             batch_idx, 120)
-            # print('pred_fp')
-            scale_img = self.draw_ctgr_boxes(scale_img, splits["pred_fp"]['bbox2d'], splits["pred_fp"]['ctgr_probs'],
-                                             batch_idx, 120)
-            # print('grtr_tp')
-            scale_img = self.draw_ctgr_boxes(scale_img, splits["grtr_tp"]['bbox2d'], splits["grtr_tp"]['category'],
-                                             batch_idx, 255)
-            # print('grtr_fn')
-            scale_img = self.draw_ctgr_boxes(scale_img, splits["grtr_fn"]['bbox2d'], splits["grtr_fn"]['category'],
-                                             batch_idx, 255)
-
-            filename = op.join(self.scale_path, f"{step * batch + batch_idx:05d}.jpg")
-            cv2.imwrite(filename, scale_img)
 
             # object
             gt_obj_imgs = []
@@ -124,6 +109,8 @@ class VisualLog:
             obj_img = np.concatenate([gt_obj_img, pred_obj_img], axis=0)
             filename = op.join(self.obj_path, f"{step * batch + batch_idx:05d}.jpg")
             cv2.imwrite(filename, obj_img)
+
+            # rotation
             rot_bbox3ds = dict()
             for key in splits_keys:
                 bbox3d_per_image = splits[key]['bbox3d'][batch_idx]
@@ -160,9 +147,6 @@ class VisualLog:
 
             vlog_image = np.concatenate([image_pred, image_grtr], axis=1)
             vlog_image = np.concatenate([image_org, vlog_image], axis=0)
-            if step % 50 == 10:
-                cv2.imshow("detection_result", vlog_image)
-                cv2.waitKey(10)
             filename = op.join(self.vlog_path, f"{step:04d}_{step * batch + batch_idx:05d}_rot.jpg")
             cv2.imwrite(filename, vlog_image)
 
@@ -199,22 +183,16 @@ class VisualLog:
         if shape[-1] > 1:
             best_cate = np.argmax(category, axis=-1)
             category = np.expand_dims(best_cate, -1)
-        bbox2d = bboxes[frame_idx]  # (N, 4)
+        bbox2d = bboxes[frame_idx][...,:4]  # (N, 4)
         category = category[frame_idx]
-        one_hot_ctgrs = (self.one_hot(category, 4) * val).astype(np.uint8)
-
+        color = np.array([(125, 125, 125), (255, 125, 0), (0, 255, 0), (0, 0, 255)]) / val
         valid_mask = bbox2d[:, 2] > 0  # (N,) h>0
         bbox2d = bbox2d[valid_mask, :]
+        category = category[valid_mask, :]
         bbox2d = mu.convert_box_format_yxhw_to_tlbr(bbox2d)
         for i in range(bbox2d.shape[0]):
-            if one_hot_ctgrs[i][0] == 0:
-                y1, x1, y2, x2 = bbox2d[i].astype(np.int32)
-                cv2.rectangle(image, (x1, y1), (x2, y2),
-                              [int(one_hot_ctgrs[i][1]), int(one_hot_ctgrs[i][2]), int(one_hot_ctgrs[i][3])], 2)
-
-            # annotation = "dontcare" if category[i] < 0 else f"{self.categories[category[i]]}"
-            #
-            # cv2.putText(image, annotation, (x1, y1), cv2.FONT_HERSHEY_PLAIN, 1.0, color, 2)
+            y1, x1, y2, x2 = bbox2d[i].astype(np.int32)
+            cv2.rectangle(image, (x1, y1), (x2, y2), color[int(category[i])], 2)
         return image
 
     def rotated_3d(self, bboxes_yxlw, yaw_rads, frame_idx):

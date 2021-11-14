@@ -33,9 +33,6 @@ def val_by_plan(dataset_name, end_epoch, loss_weights):
     ckpt_path = op.join(cfg.Paths.CHECK_POINT, cfg.Train.CKPT_NAME)
     valid_category = cfg.get_valid_category_mask(dataset_name)
     start_epoch = read_previous_epoch(ckpt_path)
-    if end_epoch <= start_epoch:
-        print(f"!! end_epoch {end_epoch} <= start_epoch {start_epoch}, no need to train")
-        return
 
     test_data_loader = get_dataset(dataset_name, 'test', batch_size, False)
     model_factory = ModelFactory(dataset_name)
@@ -47,7 +44,7 @@ def val_by_plan(dataset_name, end_epoch, loss_weights):
     # for epoch in range(start_epoch, end_epoch):
     #     print(f"========== Start dataset : {dataset_name} epoch: {epoch + 1}/{end_epoch} ==========")
 
-    val_result = validator.run_epoch(True, 0, test_data_loader)
+    val_result = validator.run_epoch(True, start_epoch+1, test_data_loader)
 
     log_file.save_val_log(val_result)
 

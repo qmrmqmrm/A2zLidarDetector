@@ -23,10 +23,19 @@ def count_true_positives(grtr, pred, num_ctgr, iou_thresh=cfg.Validation.TP_IOU_
     pred_valid_tp = splits["pred_tp"]["bbox2d"][..., 2:3] > 0
     pred_valid_fp = splits["pred_fp"]["bbox2d"][..., 2:3] > 0
 
-    grtr_count = np.sum(grtr_valid_tp + grtr_valid_fn)
-    pred_count = np.sum(pred_valid_tp + pred_valid_fp)
-    trpo_count = np.sum(pred_valid_tp)
-    return {"trpo": trpo_count, "grtr": grtr_count, "pred": pred_count}
+    if per_class:
+        grtr_tp_count = count_per_class(splits["grtr_tp"], grtr_valid_tp, num_ctgr)
+        grtr_fn_count = count_per_class(splits["grtr_fn"], grtr_valid_fn, num_ctgr)
+        pred_tp_count = count_per_class_pred(splits["pred_tp"], pred_valid_tp, num_ctgr)
+        pred_fp_count = count_per_class_pred(splits["pred_fp"], pred_valid_fp, num_ctgr)
+        return {"trpo": pred_tp_count, "grtr": (grtr_tp_count + grtr_fn_count),
+                "pred": (pred_tp_count + pred_fp_count)}
+    else:
+        grtr_count = np.sum(grtr_valid_tp + grtr_valid_fn)
+        pred_count = np.sum(pred_valid_tp + pred_valid_fp)
+        trpo_count = np.sum(pred_valid_tp)
+        return {"trpo": trpo_count, "grtr": grtr_count, "pred": pred_count}
+
 
 
 def split_true_false(grtr, pred, iou_thresh):
@@ -93,12 +102,25 @@ def count_per_class(boxes, mask, num_ctgr):
     # boxes_onehot = tf.one_hot(boxes_ctgr, depth=num_ctgr) * mask  # (batch, N', K)
     # boxes_count = tf.reduce_sum(boxes_onehot, axis=[0, 1])
     boxes_ctgr = boxes["category"][..., 0].astype(np.int32)  # (batch, N')
-    print('boxes_ctgr', boxes_ctgr.shape)
-    print('mask', mask.shape)
-    boxes_onehot = one_hot(boxes_ctgr, num_ctgr) * mask
+    boxes_onehot = one_hot(boxes_ctgr, num_ctgr+1) * mask
     boxes_count = np.sum(boxes_onehot, axis=(0, 1))
     return boxes_count
 
+def count_per_class_pred(boxes, mask, num_ctgr):
+    # TODO check numpy test
+    """
+    :param boxes: slices of object info {'yxhw': (batch, N, 4), 'category': (batch, N), ...}
+    :param mask: binary validity mask (batch, N')
+    :param num_ctgr: number of categories
+    :return: per-class object counts
+    """
+    # boxes_ctgr = tf.cast(boxes["category"][..., 0], dtype=tf.int32)  # (batch, N')
+    # boxes_onehot = tf.one_hot(boxes_ctgr, depth=num_ctgr) * mask  # (batch, N', K)
+    # boxes_count = tf.reduce_sum(boxes_onehot, axis=[0, 1])
+    best_inds = np.argmax(boxes["ctgr_probs"], axis=-1)  # (batch, N')
+    boxes_onehot = one_hot(best_inds, num_ctgr+1) * mask
+    boxes_count = np.sum(boxes_onehot, axis=(0, 1))
+    return boxes_count
 
 def one_hot(grtr_category, category_shape):
     one_hot_data = np.eye(category_shape)[grtr_category.astype(np.int32)]

@@ -136,9 +136,9 @@ class RPN(nn.Module):
                                                                                                       5:6]
 
             bbox2d_yxlw = mu.apply_box_deltas_2d(anchors_yxlw, bbox2d_logit)
-            object_logits_numpy = object_logits.to('cpu').detach().numpy()
-            object_quant = np.quantile(object_logits_numpy, np.arange(0, 1.1, 0.1))
-            print("object logits quantile:", object_quant)
+            # object_logits_numpy = object_logits.to('cpu').detach().numpy()
+            # object_quant = np.quantile(object_logits_numpy, np.arange(0, 1.1, 0.1))
+            # print("object logits quantile:", object_quant)
             objectness = torch.sigmoid(object_logits)
             proposals['bbox2d'].append(bbox2d_yxlw)
             proposals['bbox2d_delta'].append(bbox2d_logit)

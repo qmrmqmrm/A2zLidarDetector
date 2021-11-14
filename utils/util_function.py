@@ -79,7 +79,7 @@ def print_structure(title, data, key=""):
     elif type(data) == np.ndarray:
         print(title, key, data.shape, type(data))
     else:
-        print(title, key, data.shape, data.device)
+        print(title, key, data.shape)
 
 
 def merge_and_slice_features(features):

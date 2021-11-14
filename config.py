@@ -106,9 +106,9 @@ class Model:
 
 
 class Train:
-    CKPT_NAME = "batch_4_full"
+    CKPT_NAME = "batch_4_full_v2"
     MODE = ["eager", "graph"][0]
-    BATCH_SIZE = 4
+    BATCH_SIZE = 2
     TRAINING_PLAN = params.TrainingPlan.A2D2_SIMPLE
     TESTING_PLAN = params.ValPlan.A2D2_SIMPLE
 
@@ -119,15 +119,22 @@ class Loss:
 
 
 class NMS:
-    MAX_OUT = [8, 8, 8]
-    IOU_THRESH = [0.3, 0.3, 0.3]
-    SCORE_THRESH = [0.7, 0.7, 0.7]
+    MAX_OUT = [5, 5, 5]
+    IOU_THRESH = [0.2, 0.2, 0.2]
+    SCORE_THRESH = [0.95, 0.9, 0.95]
+    # IOU_CANDIDATES = np.array([0.1, 0.2, 0.3, 0.4, 0.5])
+    SCORE_CANDIDATES = np.arange(0.8, 1.1, 0.01)
+    # MAX_OUT_CANDIDATES = np.array([5, 6 ,7, 8])
+    IOU_CANDIDATES = np.arange(0.02, 0.52, 0.02)
+    # SCORE_CANDIDATES = np.array([0.91, 0.93, 0.95, 0.97])
+    MAX_OUT_CANDIDATES = np.arange(1, 8, 1)
 
 
 class Validation:
     TP_IOU_THRESH = [0.3, 0.3, 0.3, 0.3]
     DISTANCE_LIMIT = 25
     VAL_EPOCH = "latest"
+    MAP_TP_IOU_THRESH = [0.5]
 
 
 class Logging:

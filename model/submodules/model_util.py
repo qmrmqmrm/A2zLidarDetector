@@ -252,42 +252,49 @@ class NonMaximumSuppression:
         batch, numbox = categories.shape
         batch_indices = [[] for i in range(batch)]
         numctgr = cfg.Model.Structure.NUM_CLASSES
-
         for ctgr_idx in range(1, numctgr + 1):
             ctgr_mask = (categories == ctgr_idx).to(dtype=torch.int64)  # (batch, N)
             score_mask = (scores >= self.score_thresh[ctgr_idx - 1]).squeeze(-1)
             nms_mask = ctgr_mask * score_mask
             ctgr_boxes = boxes * nms_mask[..., None]  # (batch, N, 4)
             ctgr_scores = scores * nms_mask  # (batch, N)
-            # ctgr_scores_numpy = ctgr_scores.to('cpu').detach().numpy()
-            # ctgr_scores_quant = np.quantile(ctgr_scores_numpy,
-            #                                 np.array([0, 0.2, 0.4, 0.6, 0.8, 0.9, 0.95, 0.995, 0.999, 1]))
-            # print(f"ctgr_scores quantile {ctgr_idx}:", ctgr_scores_quant)
+            max_num = self.max_out[ctgr_idx - 1]
             for frame_idx in range(batch):
                 # NMS
                 nonzero_inds = torch.nonzero(ctgr_scores[frame_idx]).squeeze(-1)
-
                 ctgr_boxes_tlbr = convert_box_format_yxhw_to_tlbr(ctgr_boxes[frame_idx])
                 selected_indices = box_ops.batched_nms(ctgr_boxes_tlbr[nonzero_inds], ctgr_scores[frame_idx][nonzero_inds],
                                                        categories[frame_idx][nonzero_inds], self.iou_thresh[ctgr_idx - 1])
-                selected_indices = selected_indices[:self.max_out[ctgr_idx - 1]]
-                max_num = self.max_out[ctgr_idx - 1]
+                selected_indices = selected_indices[:max_num]
+                box_indices = nonzero_inds[selected_indices]
+                batch_indices[frame_idx].append(box_indices)
 
-                if selected_indices.numel() <= max_num:
-                    zero = torch.ones((max_num - selected_indices.shape[0]), device=self.device) * -1
-                selected_indices = torch.cat([selected_indices, zero], dim=0).to(dtype=torch.int64)
-                batch_indices[frame_idx].append(selected_indices)
-        batch_indices = [torch.cat(ctgr_indices, dim=-1) for ctgr_indices in batch_indices]
+        # zero pad indices
+        total_max_num = sum(self.max_out)
+        for frame_idx in range(batch):
+            frame_indices = batch_indices[frame_idx]
+            frame_indices = torch.cat(frame_indices, dim=-1)
+            if frame_indices.numel() < total_max_num:
+                minus_pad = torch.ones((total_max_num - frame_indices.shape[0]), device=self.device) * (-1)
+                frame_indices = torch.cat([frame_indices, minus_pad], dim=0).to(dtype=torch.int64)
+            batch_indices[frame_idx] = frame_indices
+
         batch_indices = torch.stack(batch_indices, dim=0)  # (batch, K*max_output)
         vaild_mask = (batch_indices >= 0).to(dtype=torch.int64).unsqueeze(-1)
         batch_indices = torch.maximum(batch_indices, torch.zeros(batch_indices.shape, device=self.device)).to(
             dtype=torch.int64)
-        result = {'object': [], 'bbox2d': [], 'bbox3d': [], 'anchor_id': [], 'ctgr_probs': [], 'ctgr_logit': [],
-                  'yaw_cls_logit': [], 'yaw_res': [], 'yaw_rads': [], 'yaw_cls_probs': [], }
+        result = {key: [] for key in pred if (not key.startswith("rpn")) and (key != "yaw_cls")}
+
         for i, indices in enumerate(batch_indices):
             indices = indices.to(dtype=torch.int64)
-            for key in result.keys():
+            for key in result:
                 result[key].append(pred[key][i, indices])
         for key, val in result.items():
-            result[key] = torch.stack(val, dim=0) * vaild_mask
+            val_stack = torch.stack(val, dim=0)
+            result[key] = val_stack * vaild_mask
+        # for bbox2d_batch in result['bbox2d']:
+        #     bbox2d_nonzero = bbox2d_batch[..., 0] > 0
+        #     print('bbox2d', bbox2d_batch[bbox2d_nonzero])
+        #     iou = uf.pairwise_iou(bbox2d_batch[bbox2d_nonzero], bbox2d_batch[bbox2d_nonzero])
+        #     print('iou',iou)
         return result
