@@ -37,49 +37,75 @@ def count_true_positives(grtr, pred, num_ctgr, iou_thresh=cfg.Validation.TP_IOU_
         return {"trpo": trpo_count, "grtr": grtr_count, "pred": pred_count}
 
 
-
 def split_true_false(grtr, pred, iou_thresh):
-    batch, M, _ = pred["ctgr_probs"].shape
-    best_cate = np.argmax(pred["ctgr_probs"], axis=-1)
-    pred_cate_bg_mask =(best_cate != 0)
-    category = np.expand_dims(best_cate, -1)
-    pred_cate_bg_mask = np.expand_dims(pred_cate_bg_mask, -1)
-    valid_mask = grtr["object"]
-    # iou = uf.pairwise_batch_iou(grtr["bbox2d"], pred["rpn_bbox2d"])
-    # (batch, N, M) N = gt_num M=cate_num*max_cate_num 15 150
-    iou = uf.compute_iou_general(grtr["bbox2d"], pred["bbox2d"])  # (batch, N, M)
-    best_iou = np.max(iou, axis=-1)  # (batch, N)
-    best_idx = np.argmax(iou, axis=-1)  # (batch, N)
-    if len(iou_thresh) > 1:
-        iou_thresh = get_iou_thresh_per_class(grtr["category"], iou_thresh)  # (batch, 15,1) iou_tresh len : 3
-    iou_match = best_iou > iou_thresh  # (batch, N)
-    pred_ctgr_aligned = numpy_gather(category, best_idx, 1)  # (batch, N, 8)
-    gt_cate_bg_mask = 1-(pred_ctgr_aligned == 0)
-    # gt_cate_bg_mask =np.expand_dims(gt_cate_bg_mask, -1)
-    ctgr_match = grtr["category"][..., 0] == pred_ctgr_aligned  # (batch, N)
+    batch, M, num_ctgr = pred["ctgr_probs"].shape
+    pred_ctgr = np.argmax(pred["ctgr_probs"], axis=-1)
+    pred_ctgr = np.expand_dims(pred_ctgr, -1)
+    pred_object_mask = (pred_ctgr > 0)
+    grtr_object_mask = grtr["object"]
+    grtr_ctgr = grtr["category"]
 
-    grtr_tp_mask = np.expand_dims(iou_match * ctgr_match * gt_cate_bg_mask, axis=-1)  # (batch, N, 1)
-    gt_cate_bg_mask =np.expand_dims(gt_cate_bg_mask, -1)
-    grtr_fn_mask = ((1 - grtr_tp_mask) * valid_mask * gt_cate_bg_mask).astype(np.float32)  # (batch, N, 1)
+    tpfn_masks = {"pred_tp": 0, "pred_fp": 0, "grtr_tp": 0, "grtr_fn": 0}
+    grtr_ious = {"grtr_tp": 0, "grtr_fn": 0}
+    for ctgr in range(1, num_ctgr):
+        pred_mask = pred_object_mask * (pred_ctgr == ctgr)
+        grtr_mask = grtr_object_mask * (grtr_ctgr == ctgr)
+        tpfn_masks_ctgr, grtr_iou = split_per_category(grtr, grtr_mask, pred, pred_mask, iou_thresh)
+        for mask_key in tpfn_masks:
+            tpfn_masks[mask_key] += tpfn_masks_ctgr[mask_key]
+        for iou_key in grtr_ious:
+            grtr_ious[iou_key] += grtr_iou[iou_key]
 
-    gt_keys = ['category', 'yaw_cls', 'bbox2d','bbox3d','object','yaw_rads','anchor_id',]
-    grtr_tp = {key: val * grtr_tp_mask for key, val in grtr.items() if key in gt_keys}
-    grtr_fn = {key: val * grtr_fn_mask for key, val in grtr.items() if key in gt_keys}
-    grtr_tp["iou"] = best_iou * grtr_tp_mask[..., 0]
-    grtr_fn["iou"] = best_iou * grtr_fn_mask[..., 0]
-    # last dimension rows where grtr_tp_mask == 0 are all-zero
-    pred_tp_mask = indices_to_binary_mask(best_idx, grtr_tp_mask, M) * pred_cate_bg_mask
-    pred_fp_mask = (1 - pred_tp_mask) * pred_cate_bg_mask # (batch, M, 1) * (1 - pred_cate_bg_mask)
-    # pred_loss_comb = ["objectness", "bbox2d", "category", "bbox3d", "yaw", "yaw_rads"]
+    # mask_counts = {key: np.sum(mask) for key, mask in tpfn_masks.items()}
+    # mask_counts["grtr"] = mask_counts["grtr_tp"] + mask_counts["grtr_fn"]
+    # mask_counts["pred"] = mask_counts["pred_tp"] + mask_counts["pred_fp"]
+    # mask_counts = {key: int(val) for key, val in mask_counts.items()}
+    # print("mask counts:", mask_counts)
 
-    pred_tp = {key: val * pred_tp_mask for key, val in pred.items()}
-    pred_fp = {key: val * pred_fp_mask for key, val in pred.items()}
+    gt_keys = ['category', 'yaw_cls', 'bbox2d', 'bbox3d', 'object', 'yaw_rads', 'anchor_id', ]
+    grtr_tp = {key: val * tpfn_masks["grtr_tp"] for key, val in grtr.items() if key in gt_keys}
+    grtr_fn = {key: val * tpfn_masks["grtr_fn"] for key, val in grtr.items() if key in gt_keys}
+    grtr_tp["iou"] = grtr_ious['grtr_tp']
+    grtr_fn["iou"] = grtr_ious['grtr_fn']
+
+    pred_tp = {key: val * tpfn_masks["pred_tp"] for key, val in pred.items()}
+    pred_fp = {key: val * tpfn_masks["pred_fp"] for key, val in pred.items()}
     return {"pred_tp": pred_tp, "pred_fp": pred_fp, "grtr_tp": grtr_tp, "grtr_fn": grtr_fn}
 
 
-def indices_to_binary_mask(best_idx, valid_mask, depth):
-    best_idx_onehot = one_hot(best_idx, depth) * valid_mask
-    binary_mask = np.expand_dims(np.max(best_idx_onehot, axis=1), axis=-1)  # (batch, M, 1)
+def split_per_category(grtr, grtr_mask, pred, pred_mask, iou_thresh):
+    grtr_bbox = grtr["bbox2d"] * grtr_mask
+    pred_bbox = pred["bbox2d"] * pred_mask
+    pred_ctgr = np.argmax(pred["ctgr_probs"], axis=-1)
+    pred_ctgr = np.expand_dims(pred_ctgr, -1) * pred_mask
+    iou = uf.compute_iou_general(grtr_bbox, pred_bbox)  # (batch, N, M)
+    best_iou = np.max(iou, axis=-1)     # (batch, N)
+    best_idx = np.argmax(iou, axis=-1)  # (batch, N)
+    if len(iou_thresh) > 1:
+        iou_thresh = get_iou_thresh_per_class(grtr["category"], iou_thresh)  # (batch, 15,1) iou_tresh len : 3
+    iou_match = np.expand_dims(best_iou >= iou_thresh, -1)
+    grtr_tp_mask = iou_match * grtr_mask
+    grtr_fn_mask = (1 - iou_match) * grtr_mask
+
+    pred_tp_mask = indices_to_binary_mask(best_idx, iou_match, pred_ctgr.shape[1])
+    pred_tp_mask = pred_tp_mask * pred_mask
+    pred_fp_mask = (1 - pred_tp_mask) * pred_mask
+
+    best_iou = np.expand_dims(best_iou, -1)
+    masks = {"grtr_tp": grtr_tp_mask, "grtr_fn": grtr_fn_mask, "pred_tp": pred_tp_mask, "pred_fp": pred_fp_mask}
+    ious = {"grtr_tp": best_iou * grtr_tp_mask, "grtr_fn": best_iou * grtr_fn_mask}
+    return masks, ious
+
+
+def indices_to_binary_mask(indices, mask, max_ind):
+    """
+    indices: (batch, M)
+    mask: (batch, M, 1)
+    depth: max of indices + 1
+    """
+    sel_one_hot = one_hot(indices, max_ind) * mask      # (batch, M, D)
+    sel_mask = np.max(sel_one_hot, axis=1)              # (batch, D)
+    binary_mask = np.expand_dims(sel_mask, axis=-1)     # (batch, D, 1)
     return binary_mask.astype(np.float32)
 
 
@@ -102,9 +128,10 @@ def count_per_class(boxes, mask, num_ctgr):
     # boxes_onehot = tf.one_hot(boxes_ctgr, depth=num_ctgr) * mask  # (batch, N', K)
     # boxes_count = tf.reduce_sum(boxes_onehot, axis=[0, 1])
     boxes_ctgr = boxes["category"][..., 0].astype(np.int32)  # (batch, N')
-    boxes_onehot = one_hot(boxes_ctgr, num_ctgr+1) * mask
+    boxes_onehot = one_hot(boxes_ctgr, num_ctgr + 1) * mask
     boxes_count = np.sum(boxes_onehot, axis=(0, 1))
     return boxes_count
+
 
 def count_per_class_pred(boxes, mask, num_ctgr):
     # TODO check numpy test
@@ -118,9 +145,10 @@ def count_per_class_pred(boxes, mask, num_ctgr):
     # boxes_onehot = tf.one_hot(boxes_ctgr, depth=num_ctgr) * mask  # (batch, N', K)
     # boxes_count = tf.reduce_sum(boxes_onehot, axis=[0, 1])
     best_inds = np.argmax(boxes["ctgr_probs"], axis=-1)  # (batch, N')
-    boxes_onehot = one_hot(best_inds, num_ctgr+1) * mask
+    boxes_onehot = one_hot(best_inds, num_ctgr + 1) * mask
     boxes_count = np.sum(boxes_onehot, axis=(0, 1))
     return boxes_count
+
 
 def one_hot(grtr_category, category_shape):
     one_hot_data = np.eye(category_shape)[grtr_category.astype(np.int32)]
@@ -139,3 +167,17 @@ def numpy_gather(params, index, dim=0):
     else:
         gathar_param = np.take(params, index)
     return gathar_param
+
+
+def test_indices_to_binary_mask():
+    indices = np.array([[1, 3, 5], [0, 2, 4]])
+    valid = np.expand_dims(np.array([[1, 1, 0], [0, 1, 1]]), axis=-1)
+    depth = 6
+    mask = indices_to_binary_mask(indices, valid, depth)
+    print(mask[..., 0])
+    answer = np.array([[0, 1, 0, 1, 0, 0],  [0, 0, 1, 0, 1, 0]])
+    assert mask[..., 0] == answer
+
+
+if __name__ == "__main__":
+    test_indices_to_binary_mask()

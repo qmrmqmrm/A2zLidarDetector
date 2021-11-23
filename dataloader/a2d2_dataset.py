@@ -19,6 +19,7 @@ class A2D2Dataset(DatasetBase):
         self.max_box = max_box
         self.calib_dict = get_calibration(root_path)
         self.categories = cfg.Datasets.A2D2.CATEGORIES_TO_USE
+        self.ctgr_remap = cfg.Datasets.A2D2.CATEGORY_REMAP
         self.device = cfg.Hardware.DEVICE
 
         image_shape = torch.tensor(cfg.Model.Structure.IMAGE_SHAPE)
@@ -33,7 +34,7 @@ class A2D2Dataset(DatasetBase):
 
     def list_frames(self, root_dir, split):
         img_files = sorted(glob.glob(os.path.join(root_dir, split, '*/image', '*.png')))
-
+        img_files = [file for file in img_files if "wrong_label" not in file]
         return img_files
 
     def __getitem__(self, index):
@@ -72,11 +73,12 @@ class A2D2Dataset(DatasetBase):
 
         for boxes, obj in label.items():
             obj_category = obj['class']
-
+            if obj_category in self.ctgr_remap:
+                obj_category = self.ctgr_remap[obj_category]
             if obj_category not in self.categories:
                 continue
-            rot_angle = obj['rot_angle'] * obj['axis'][-1]
 
+            rot_angle = obj['rot_angle'] * obj['axis'][-1]
             location = np.array(obj['center']).reshape((1, 3))
             pts_3d_ref = np.transpose(np.dot(np.linalg.inv(calib["R0"]), np.transpose(location)))
             n = pts_3d_ref.shape[0]

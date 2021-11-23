@@ -176,9 +176,9 @@ class RPN(nn.Module):
         score = cat_proposal['objectness']
         anchor_id = cat_proposal['anchor_id']
 
-        score_numpy = score.to('cpu').detach().numpy()
-        score_quant = np.quantile(score_numpy, np.array([0, 0.2, 0.4, 0.6, 0.8, 0.9, 0.95, 0.995, 0.999, 1]))
-        print("\nscore quantile:", score_quant)
+        # score_numpy = score.to('cpu').detach().numpy()
+        # score_quant = np.quantile(score_numpy, np.array([0, 0.2, 0.4, 0.6, 0.8, 0.9, 0.95, 0.995, 0.999, 1]))
+        # print("\nscore quantile:", score_quant)
 
         score_sort, sort_idx = torch.sort(score, dim=1, descending=True)
         # score_mask = score_sort > 0.3

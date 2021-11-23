@@ -19,7 +19,7 @@ class Datasets:
         NAME = "a2d2"
         PATH = "/media/dolphin/intHDD/birdnet_data/bv_a2d2"
         CATEGORIES_TO_USE = ["Pedestrian", "Car", "Cyclist"]
-        CATEGORY_REMAP = {}
+        CATEGORY_REMAP = {"VanSUV": "Car"}
         MAX_NUM = 15
         INPUT_RESOLUTION = (640, 640)
 
@@ -106,9 +106,9 @@ class Model:
 
 
 class Train:
-    CKPT_NAME = "batch_4_full_v2"
+    CKPT_NAME = "full_v3_e30"
     MODE = ["eager", "graph"][0]
-    BATCH_SIZE = 2
+    BATCH_SIZE = 1
     TRAINING_PLAN = params.TrainingPlan.A2D2_SIMPLE
     TESTING_PLAN = params.ValPlan.A2D2_SIMPLE
 
@@ -119,19 +119,26 @@ class Loss:
 
 
 class NMS:
-    MAX_OUT = [5, 5, 5]
-    IOU_THRESH = [0.2, 0.2, 0.2]
-    SCORE_THRESH = [0.95, 0.9, 0.95]
-    # IOU_CANDIDATES = np.array([0.1, 0.2, 0.3, 0.4, 0.5])
-    SCORE_CANDIDATES = np.arange(0.8, 1.1, 0.01)
-    # MAX_OUT_CANDIDATES = np.array([5, 6 ,7, 8])
-    IOU_CANDIDATES = np.arange(0.02, 0.52, 0.02)
-    # SCORE_CANDIDATES = np.array([0.91, 0.93, 0.95, 0.97])
-    MAX_OUT_CANDIDATES = np.arange(1, 8, 1)
+    MAX_OUT = [3, 4, 3]
+    IOU_THRESH = [0.02, 0.02, 0.02]
+    # SCORE_THRESH = [0.88, 0.96, 0.44]
+    SCORE_THRESH = [0.844, 0.862, 0.9]
+
+    # SCORE_CANDIDATES = np.concatenate(
+    #     [np.arange(0.1, 0.8, 0.1), np.arange(0.8, 1.0, 0.02)])  # 10
+
+    SCORE_CANDIDATES = np.concatenate(
+        [np.arange(0.1, 0.8, 0.1), np.arange(0.8, 0.85, 0.02), np.arange(0.83, 0.87, 0.002),
+         np.arange(0.87, 1.0, 0.02) ])  # 10
+
+    # IOU_CANDIDATES = np.array([0.02, 0.04, 0.06, 0.08, 0.1])
+    IOU_CANDIDATES = np.array([0.02])
+    # MAX_OUT_CANDIDATES = np.arange(3, 7, 1)
+    MAX_OUT_CANDIDATES = np.array([3, 4])
 
 
 class Validation:
-    TP_IOU_THRESH = [0.3, 0.3, 0.3, 0.3]
+    TP_IOU_THRESH = [0.4, 0.4, 0.4, 0.4]
     DISTANCE_LIMIT = 25
     VAL_EPOCH = "latest"
     MAP_TP_IOU_THRESH = [0.5]

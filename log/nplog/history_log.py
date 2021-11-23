@@ -45,8 +45,10 @@ class HistoryLog:
         batch_data.update(box_objectness)
 
         num_ctgr = pred_nms["ctgr_probs"].shape[-1] - 1
-        print(num_ctgr)
+        print()
+        print('img', grtr['image_file'])
         metric = count_true_positives(grtr, pred_nms, num_ctgr, per_class=True)
+
         batch_data.update(metric)
         # pred_cate = torch.softmax(torch.tensor(pred["category"]), dim=-1).to('cpu').detach().numpy()
         batch_data["true_cls"] = self.logtrueclass(gt_aligned, pred["ctgr_probs"])
@@ -96,8 +98,6 @@ class HistoryLog:
     def make_summary(self):
         mean_result = self.batch_data_table.mean(axis=0).to_dict()
         sum_result = self.batch_data_table.sum(axis=0).to_dict()
-        print('sum_result["trpo"]', sum_result["trpo"])
-        print('sum_result["pred"]', sum_result["pred"])
         sum_result = {"recall": sum_result["trpo"] / (sum_result["grtr"] + 1e-5),
                       "precision": sum_result["trpo"] / (sum_result["pred"] + 1e-5),
                       "trpo_num": sum_result["trpo"],
@@ -106,7 +106,6 @@ class HistoryLog:
         metric_keys = ["trpo", "grtr", "pred"]
 
         summary = {key: val for key, val in mean_result.items() if key not in metric_keys}
-        print('trpo : ', summary)
         summary.update(sum_result)
         summary["time_m"] = round((timer() - self.start) / 60., 5)
         self.summary = summary

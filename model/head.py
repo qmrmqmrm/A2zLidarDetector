@@ -55,7 +55,7 @@ class FastRCNNHead(nn.Module):
         pred_features = pred_features * proposals['zeropad']
         strides = strides.view(batch, numsample, 1) * proposals['zeropad']
         pred_features = self.decode(pred_features, proposals['bbox2d'], strides)
-        print(torch.sum(pred_features['bbox3d'][..., 2] != 0), torch.sum(proposals['zeropad']) * 3)
+        # print(torch.sum(pred_features['bbox3d'][..., 2] != 0), torch.sum(proposals['zeropad']) * 3)
         # assert torch.sum(pred_features['bbox3d'][..., 2] != 0) == torch.sum(proposals['zeropad']) * 3
         # assert torch.sum(pred_features['category'][..., 2] != 0) == torch.sum(proposals['zeropad'])
         return pred_features

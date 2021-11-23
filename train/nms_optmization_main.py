@@ -21,6 +21,7 @@ def optimize_nms_params():
     valid_category = cfg.get_valid_category_mask(dataset_name)
     ckpt_path = op.join(cfg.Paths.CHECK_POINT, cfg.Train.CKPT_NAME)
     test_data_loader, model = load_dataset_model(dataset_name, ckpt_path)
+    model.set_gt_use(False)
     print('optimize_nms_params')
     perf_data = collect_recall_precision(test_data_loader, model, valid_category)
     save_results(perf_data, ckpt_path)
@@ -28,29 +29,13 @@ def optimize_nms_params():
 
 def load_dataset_model(dataset_name, ckpt_path):
     batch_size, train_mode = cfg.Train.BATCH_SIZE, cfg.Train.MODE
-    tfrd_path = cfg.Paths.TFRECORD
-    valid_category = cfg.get_valid_category_mask(dataset_name)
-
     test_data_loader = get_dataset(dataset_name, 'test', batch_size, False)
     model_factory = ModelFactory(dataset_name)
     model = model_factory.make_model()
+    # model.eval()
     model = try_load_weights(ckpt_path, model)
+
     return test_data_loader, model
-
-
-# def get_dataset(tfrd_path, dataset_name, shuffle, batch_size, split):
-#     tfrpath = op.join(tfrd_path, f"{dataset_name}_{split}")
-#     reader = TfrecordReader(tfrpath, shuffle, batch_size, 1)
-#     dataset = reader.get_dataset()
-#     frames = reader.get_total_frames()
-#     tfr_cfg = reader.get_tfr_config()
-#     image_shape = tfr_cfg["image"]["shape"]
-#     # anchor sizes per scale in pixel
-#     anchors_per_scale = {key: np.array(val) / np.array([image_shape[:2]]) for key, val in tfr_cfg.items() if key.startswith("anchor")}
-#     anchors_per_scale = {key: val.astype(np.float32) for key, val in anchors_per_scale.items()}
-#     print(f"[get_dataset] dataset={dataset_name}, image shape={image_shape}, "
-#           f"frames={frames},\n\tanchors={anchors_per_scale}")
-#     return dataset, frames // batch_size, image_shape, anchors_per_scale
 
 
 def try_load_weights(ckpt_path, model, weights_suffix='latest'):
@@ -102,17 +87,20 @@ def collect_recall_precision(dataset, model, valid_category):
             count_per_class = count_true_positives(grtr_slices, pred_bboxes,
                                                    num_categories, iou_thresh=cfg.Validation.MAP_TP_IOU_THRESH,
                                                    per_class=True)
+
             for key in accum_keys:
                 results[key][i] += count_per_class[key][1:]
         uf.print_progress(f"=== step: {step}/{steps}, took {timer() - start:1.2f}s")
-        # if step > 50:
+        # if step > 5:
         #     break
+
     results["recall"] = np.divide(results["trpo"], results["grtr"], out=np.zeros_like(results["trpo"]),
                                   where=(results["grtr"] != 0))
     results["precision"] = np.divide(results["trpo"], results["pred"], out=np.zeros_like(results["trpo"]),
                                      where=(results["pred"] != 0))
     results["min_perf"] = np.minimum(results["recall"], results["precision"])
     results["avg_perf"] = (results["recall"] + results["precision"]) / 2.
+
     for key, val in results.items():
         print(f"results: {key}\n{val[:10]}")
     return results
@@ -150,7 +138,8 @@ def save_results(perf_data, ckpt_path):
     os.makedirs(param_path, exist_ok=True)
     intkeys = ["trpo", "grtr", "pred"]
     # summary = summarize_data(perf_data)
-    specific_summary, param_summary, ap_summary, mean_ap_summary = specific_data(perf_data)
+    specific_summary, param_summary, ap_summary, mean_ap_summary, wt_ap_summary = specific_data(
+        perf_data)
     for key, data in perf_data.items():
         filename = op.join(param_path, key + ".txt")
         if key in intkeys:
@@ -162,6 +151,7 @@ def save_results(perf_data, ckpt_path):
     param_summary.to_csv(op.join(param_path, "nms_param_best.csv"), index=False, float_format="%1.4f")
     ap_summary.to_csv(op.join(param_path, "ap_summary.csv"), index=False, float_format="%1.4f")
     mean_ap_summary.to_csv(op.join(param_path, "mean_ap_summary.csv"), index=False, float_format="%1.4f")
+    wt_ap_summary.to_csv(op.join(param_path, "wt_ap_summary.csv"), index=False, float_format="%1.4f")
 
 
 def specific_data(data):
@@ -175,9 +165,9 @@ def specific_data(data):
     specific_values = np.stack(specific_summary.values(), axis=0).transpose()
     specific_summary = pd.DataFrame(specific_values, columns=columns)
     param_summary = param_summarize(specific_summary, num_categories)
-    ap_summary, mean_ap_summary = ap_data(data, num_categories)
+    ap_summary, mean_ap_summary, wt_ap_summary = ap_data(data, num_categories)
 
-    return specific_summary, param_summary, ap_summary, mean_ap_summary
+    return specific_summary, param_summary, ap_summary, mean_ap_summary, wt_ap_summary
 
 
 def param_summarize(data, num_categories):
@@ -192,23 +182,25 @@ def param_summarize(data, num_categories):
 
 
 def ap_data(data, num_categories):
-
-    class_ap, mean_ap, iou_thresh, max_box = compute_mAP(data)
+    class_ap, mean_ap, iou_thresh, max_box, wt_ap = compute_mAP(data)
     # class ap : iou * max * cls, mean_ap : iou * max
     # [0 1 2 0 1 2 0 1 2].num == max.num
     ap_suammry = {"max_box": np.repeat(max_box, num_categories),
                   "iou_thresh": np.repeat(iou_thresh, num_categories),
-                  "class": np.tile(np.arange(0, num_categories, 1), class_ap.shape[0]//num_categories),
+                  "class": np.tile(np.arange(0, num_categories, 1), class_ap.shape[0] // num_categories),
                   "class_ap": class_ap}
 
-    # mean_ap_summary = extract_need_keys(data, ["max_box", "iou_thresh"], num_categories, True)
-    # ap_summary = extract_need_keys(data, ["max_box", "iou_thresh"], num_categories)
     mean_ap_summary = {"max_box": max_box, "iou_thresh": iou_thresh, "mean_ap": mean_ap}
+    wt_ap_suammry = {"max_box": max_box, "iou_thresh": iou_thresh, "mean_ap": wt_ap}
 
+    print('ap_df')
     ap_df = make_df(ap_suammry)
+    print('mean_ap_summary')
     mean_ap_df = make_df(mean_ap_summary)
+    print('wt_ap_suammry')
+    wt_ap_df = make_df(wt_ap_suammry)
 
-    return ap_df, mean_ap_df
+    return ap_df, mean_ap_df, wt_ap_df
 
 
 def extract_need_keys(data, need_key, num_categories, adjust_number=False):
@@ -231,6 +223,8 @@ def extract_need_keys(data, need_key, num_categories, adjust_number=False):
 def make_df(summary):
     columns = summary.keys()
     # max_out 220
+    for key, val in summary.items():
+        print(key,val.shape)
     values = np.stack(summary.values(), axis=0).transpose()
     summary_df = pd.DataFrame(values, columns=columns)
     return summary_df
@@ -239,7 +233,8 @@ def make_df(summary):
 def change_data_form(data, num_categories):
     dim_one_data = dict()
     dim_two_data = dict()
-    need_key = ["max_box", "iou_thresh", "score_thresh", "recall", "precision", "average_prec", "mean_ap", "min_perf"]
+    need_key = ["max_box", "iou_thresh", "score_thresh", "recall", "precision", "average_prec", "mean_ap", "min_perf",
+                "trpo", "grtr", "pred"]
     for key, data in data.items():
         if data.ndim == 1:
             if key in need_key:
@@ -270,29 +265,33 @@ def compute_mAP(result):
     precisions = result["precision"]  # list(num_box * iou * score)
     max_out = result['max_box']
     iou_thresh = result['iou_thresh']
+    grtr = result['grtr']
+    pred = result['pred']
     num_score = len(cfg.NMS.SCORE_CANDIDATES)
     start_idx = 0
     end_idx = num_score
     total_length = recalls.shape[0] // num_score
-    temp_data = {'temp_ap': [], 'temp_map': [], 'temp_max': [], 'temp_iou': []}
+    temp_data = {'temp_ap': [], 'temp_map': [], 'temp_max': [], 'temp_iou': [], 'wt_ap': [], 'wt_mean_ap': []}
     for i in range(total_length):
         ap = 0.
         recall = recalls[start_idx:end_idx, :]
-
         precision = precisions[start_idx: end_idx, :]
         max_pre = precision.copy()
         max_rec = recall.copy()
 
         max_param = max_out[start_idx]
         iou_param = iou_thresh[start_idx]
-
+        grtr_param = grtr[start_idx: end_idx, :]
+        pred_param = pred[start_idx: end_idx, :]
+        grtr_num = np.sum(grtr_param, axis=0)
+        pred_num = np.sum(pred_param, axis=0)
         for score in range(num_score - 2, -1, -1):
             max_pre[score] = np.maximum(max_pre[score], max_pre[score + 1])
-            print("test", max_pre[score])
         for score in range(1, num_score):
             ap += ((max_rec[score] - max_rec[score - 1]) * max_pre[score])
         mean_ap = np.mean(ap, axis=0)
-        # draw_ap_curve(recall, max_pre, True)
+        # draw_ap_curve(recall, precision, max_pre)
+        wt_ap = np.sum(ap * grtr_num) / np.sum(grtr_num)
 
         start_idx += len(cfg.NMS.SCORE_CANDIDATES)
         end_idx += len(cfg.NMS.SCORE_CANDIDATES)
@@ -300,23 +299,86 @@ def compute_mAP(result):
         temp_data['temp_map'].append(mean_ap)
         temp_data['temp_iou'].append(iou_param)
         temp_data['temp_max'].append(max_param)
+        temp_data['wt_ap'].append(wt_ap)
     class_ap = np.asarray(temp_data['temp_ap'], dtype=np.float32).flatten()
     mean_ap = np.asarray(temp_data['temp_map'], dtype=np.float32)
     iou_ = np.asarray(temp_data['temp_iou'], dtype=np.float32)
     box_ = np.asarray(temp_data['temp_max'], dtype=np.float32)
-    return class_ap, mean_ap, iou_, box_
+    wt_ap = np.asarray(temp_data['wt_ap'], dtype=np.float32)
+    return class_ap, mean_ap, iou_, box_, wt_ap
 
 
-def draw_ap_curve(recall, max_pre, draw=False):
-    if draw:
-        plt.plot(recall[:, 1], max_pre[:, 1], '-o')
-        plt.xlabel("Recall")
-        plt.ylabel("Precision")
-        plt.title("PR Curve")
-        plt.show()
-        plt.cla()
+def compute_ap_all_class():
+    filename = '/media/dolphin/intHDD/birdnet_data/bv_a2d2/result/ckpt/full_v3_e30/nms_param/specific_summary.csv'
+    result = pd.read_csv(filename)
+    max_out_vals = result["max_box"].unique()
+    iou_vals = result["iou_thresh"].unique()
+    outputs = []
+    for max_out in max_out_vals:
+        for iou in iou_vals:
+            for cate in range(3):
+                out = {"max_box": max_out, "iou_thresh": iou, "class": cate}
+                out["ap"] = compute_ap(result, max_out, iou, cate)
+                outputs.append(out)
+
+    outputs = pd.DataFrame(outputs)
+    outputs.to_csv('/media/dolphin/intHDD/birdnet_data/bv_a2d2/result/ckpt/full_v3_e30/nms_param/ap.csv', index=False)
+
+
+def compute_ap(data, max_out, iou, category):
+    mask = (data['iou_thresh'] == iou) & (data['max_box'] == max_out) & (data['class'] == category)
+    data = data.loc[mask, :]
+    data = data.reset_index()
+    apdata = data.loc[:, ["recall", "precision"]]
+    apdata = apdata.sort_values(by="recall")
+    apdata = apdata.reset_index()
+    length = apdata.shape[0]
+    max_pre = apdata["precision"].copy()
+    for score in range(length - 2, -1, -1):
+        max_pre[score] = np.maximum(max_pre[score], max_pre[score + 1])
+    for score in range(length - 2, -1, -1):
+        max_pre[score] = np.maximum(max_pre[score], max_pre[score + 1])
+
+    ap = 0
+    recall = apdata["recall"]
+    precision = max_pre
+    for i in range(apdata.shape[0] - 1):
+        ap += (recall[i+1] - recall[i]) * precision[i+1]
+    return ap
+
+
+def draw_best_ap_curve(best_iou, best_max_out, category):
+    filename = '/media/dolphin/intHDD/birdnet_data/bv_a2d2/result/ckpt/full_v3_e30/nms_050/nms_param_v2/specific_summary.csv'
+    result = pd.read_csv(filename)
+    mask = (result['iou_thresh'] == best_iou) & (result['max_box'] == best_max_out) & (result['class'] == category)
+    result = result.loc[mask, :]
+    result = result.reset_index()
+    result = result.loc[:, ["recall", "precision"]]
+    result = result.sort_values(by="recall")
+    result = result.reset_index()
+    length = result.shape[0]
+    max_pre = result["precision"].copy()
+    for score in range(length - 2, -1, -1):
+        max_pre[score] = np.maximum(max_pre[score], max_pre[score + 1])
+    result["max_pre"] = max_pre
+    draw_ap_curve(result["recall"], result["precision"], result["max_pre"])
+
+
+def draw_ap_curve(recall, precision, max_pre):
+    # plt.plot(recall, precision, 'r-o')
+    plt.plot(recall, max_pre, 'b-o')
+    plt.xlabel("Recall")
+    plt.ylabel("Precision")
+    plt.title("PR Curve")
+    plt.show()
+    plt.cla()
 
 
 if __name__ == "__main__":
     np.set_printoptions(precision=4, suppress=True, linewidth=100)
-    optimize_nms_params()
+    # optimize_nms_params()
+    # compute_ap_all_class()
+    draw_best_ap_curve(0.02, 3, 0)
+    draw_best_ap_curve(0.02, 3, 1)
+    draw_best_ap_curve(0.02, 3, 2)
+
