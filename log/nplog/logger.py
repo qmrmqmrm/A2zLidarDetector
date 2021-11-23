@@ -67,7 +67,10 @@ class Logger:
         gt_feature = self.convert_tensor_to_numpy(gt_feature)
         gt_aligned = self.convert_tensor_to_numpy(gt_aligned)
         total_loss = total_loss.to('cpu').detach().numpy()
-
+        # batch = grtr['image'].shape[0]
+        # for frame in range(batch):
+        #     rotated_iou = uf.rotated_iou_per_frame(grtr, pred_slices_nms, frame)
+        #     print('rotated_iou', rotated_iou)
         self.history_logger(step, grtr, gt_aligned, gt_feature, pred, pred_slices_nms, total_loss, loss_by_type)
         if self.visual_logger:
             self.visual_logger(step, grtr, gt_feature, pred, pred_slices_nms)

@@ -6,7 +6,7 @@ import numpy as np
 import cv2
 
 import config as cfg
-from log.nplog.metric import split_true_false
+from log.nplog.metric import split_true_false, split_rotated_true_false
 import utils.util_function as uf
 import model.submodules.model_util as mu
 
@@ -62,6 +62,7 @@ class VisualLog:
         """
         print('VisualLog')
         splits = split_true_false(grtr, pred_nms, cfg.Validation.TP_IOU_THRESH)
+        splits_rot = split_rotated_true_false(grtr, pred_nms, cfg.Validation.TP_IOU_THRESH)
         batch = splits["grtr_tp"]["bbox2d"].shape[0]
 
         for batch_idx in range(batch):
@@ -105,7 +106,10 @@ class VisualLog:
             filename = op.join(self.vlog_path, f"{step:04d}_{step * batch + batch_idx:05d}_rot.jpg")
             cv2.imwrite(filename, rotated_img)
             # vlog_image_show = cv2.resize(vlog_image, (920,920))
-
+            rotated_img = self.draw_rotated(bev_img,splits_rot, batch_idx)
+            rotated_img = np.concatenate([image_org, rotated_img], axis=0)
+            filename = op.join(self.vlog_path, f"{step:04d}_{step * batch + batch_idx:05d}_rot_iou.jpg")
+            cv2.imwrite(filename, rotated_img)
             cv2.imshow("detection_result", rotated_img)
             cv2.waitKey(1)
 

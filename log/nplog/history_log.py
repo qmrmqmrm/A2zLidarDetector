@@ -3,7 +3,7 @@ import torch
 import pandas as pd
 from timeit import default_timer as timer
 
-from log.nplog.metric import count_true_positives
+from log.nplog.metric import count_true_positives, count_true_positives_rotated
 import utils.util_function as uf
 import config as cfg
 
@@ -48,8 +48,10 @@ class HistoryLog:
         print()
         print('img', grtr['image_file'])
         metric = count_true_positives(grtr, pred_nms, num_ctgr, per_class=True)
+        metric_rot = count_true_positives_rotated(grtr, pred_nms, num_ctgr, per_class=True)
 
         batch_data.update(metric)
+        batch_data.update(metric_rot)
         # pred_cate = torch.softmax(torch.tensor(pred["category"]), dim=-1).to('cpu').detach().numpy()
         batch_data["true_cls"] = self.logtrueclass(gt_aligned, pred["ctgr_probs"])
         batch_data["false_cls"] = self.logfalseclass(gt_aligned, pred["ctgr_probs"])
@@ -58,6 +60,7 @@ class HistoryLog:
         col_order = list(batch_data.keys())
         self.batch_data_table = self.batch_data_table.append(batch_data, ignore_index=True)
         self.batch_data_table = self.batch_data_table.loc[:, col_order]
+
 
         if step % 20 == 10:
             print("\n--- batch_data:", batch_data)
@@ -102,8 +105,14 @@ class HistoryLog:
                       "precision": sum_result["trpo"] / (sum_result["pred"] + 1e-5),
                       "trpo_num": sum_result["trpo"],
                       "grtr_num": sum_result["grtr"],
-                      "pred_num": sum_result["pred"]}
-        metric_keys = ["trpo", "grtr", "pred"]
+                      "pred_num": sum_result["pred"],
+                      "recall_rot": sum_result["trpo_rot"] / (sum_result["grtr_rot"] + 1e-5),
+                      "precision_rot": sum_result["trpo_rot"] / (sum_result["pred_rot"] + 1e-5),
+                      "trpo_rot_num": sum_result["trpo_rot"],
+                      "grtr_rot_num": sum_result["grtr_rot"],
+                      "pred_rot_num": sum_result["pred_rot"]
+                      }
+        metric_keys = ["trpo", "grtr", "pred","trpo_rot", "grtr_rot", "pred_rot"]
 
         summary = {key: val for key, val in mean_result.items() if key not in metric_keys}
         summary.update(sum_result)
@@ -131,3 +140,4 @@ class HistoryLog:
     def one_hot(self, grtr_category, category_shape):
         one_hot_data = np.eye(category_shape, dtype=np.float32)[grtr_category[..., 0].astype(np.int32)]
         return one_hot_data
+
