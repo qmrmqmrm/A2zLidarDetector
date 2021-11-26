@@ -16,7 +16,7 @@ class RPN(nn.Module):
         self.input_shapes = [cfg.get_img_shape("HW", dataset_name, scale) for scale in cfg.Model.Neck.OUT_SCALES]
         self.input_channels = cfg.Model.Neck.OUTPUT_CHANNELS
         self.num_anchor = len(cfg.Model.RPN.ANCHOR_RATIOS)
-        self.num_proposals = (cfg.Model.RPN.NUM_PROPOSALS[0] if self.training else cfg.Model.RPN.NUM_PROPOSALS[1])
+        self.num_proposals = cfg.Model.RPN.NUM_PROPOSALS
         self.match_thresh = cfg.Model.RPN.MATCH_THRESHOLD
         self.indices = self.init_indices(cfg.Train.BATCH_SIZE)
         self.iou_threshold = cfg.Model.RPN.NMS_IOU_THRESH
@@ -42,7 +42,7 @@ class RPN(nn.Module):
         indices = [torch.ones(self.num_proposals, dtype=torch.int64) * b for b in range(batch_size)]
         return indices
 
-    def forward(self, features, anchors, grtr=None):
+    def forward(self, features, anchors, grtr=None, use_gt=True):
         """
 
         :param features: list of [batch, self.input_channels, height/scale, width/scale]
@@ -76,7 +76,7 @@ class RPN(nn.Module):
         proposals_aux = self.decode_features(logit_features, anchors)
         with torch.no_grad():
             proposal = self.sort_proposals(proposals_aux)
-            proposals = self.select_proposals(proposal)
+            proposals = self.select_proposals(proposal, use_gt)
             if grtr:
                 proposals = self.sample_proposals(proposals, grtr)
         return proposals, proposals_aux
@@ -129,24 +129,19 @@ class RPN(nn.Module):
         'anchor_id' :list(torch.Size([4, height/stride* width/stride* anchor, 1]))
         }
         """
-        proposals = {'bbox2d': [], 'objectness': [], 'anchor_id': [], 'bbox2d_yxhw': [], 'object_logits': [],
-                     'anchors': [], 'bbox2d_logit':[]}
-        for logit_feature, anchors in zip(logit_features, anchors):
+        proposals = {'bbox2d': [], 'objectness': [], 'anchor_id': [], 'object_logits': [],
+                     'bbox2d_delta': []}
+        for logit_feature, anchors_yxlw in zip(logit_features, anchors):
             bbox2d_logit, object_logits, anchor_id = logit_feature[..., :4], logit_feature[..., 4:5], logit_feature[...,
                                                                                                       5:6]
 
-            bbox2d_yxhw = mu.apply_box_deltas_2d(anchors, bbox2d_logit) # b,h,w,a,c
-            bbox2d_tlbr = mu.convert_box_format_yxhw_to_tlbr(bbox2d_yxhw)  # tlbr
+            bbox2d_yxlw = mu.apply_box_deltas_2d(anchors_yxlw, bbox2d_logit)
             # object_logits_numpy = object_logits.to('cpu').detach().numpy()
             # object_quant = np.quantile(object_logits_numpy, np.arange(0, 1.1, 0.1))
             # print("object logits quantile:", object_quant)
-            b, h, w, a, c = anchors[..., :-2].shape
-            anchors = anchors[..., :-2].view(b, h * w * a, c)
             objectness = torch.sigmoid(object_logits)
-            proposals['bbox2d'].append(bbox2d_tlbr)
-            proposals['bbox2d_logit'].append(bbox2d_logit)
-            proposals['anchors'].append(anchors)
-            proposals['bbox2d_yxhw'].append(bbox2d_yxhw)
+            proposals['bbox2d'].append(bbox2d_yxlw)
+            proposals['bbox2d_delta'].append(bbox2d_logit)
             proposals['objectness'].append(objectness)
             proposals['anchor_id'].append(anchor_id)
             proposals['object_logits'].append(object_logits)
@@ -179,31 +174,27 @@ class RPN(nn.Module):
         # sort by score -> select top 3000 indices -> slice boxes, score, index
         bbox2d = cat_proposal['bbox2d']
         score = cat_proposal['objectness']
-        anchors = cat_proposal['anchors']
         anchor_id = cat_proposal['anchor_id']
 
-        score_numpy = score.to('cpu').detach().numpy()
-        score_quant = np.quantile(score_numpy, np.array([0, 0.2, 0.4, 0.6, 0.8, 0.9, 0.95, 0.995, 0.999, 1]))
-        print("score quantile:", score_quant)
+        # score_numpy = score.to('cpu').detach().numpy()
+        # score_quant = np.quantile(score_numpy, np.array([0, 0.2, 0.4, 0.6, 0.8, 0.9, 0.95, 0.995, 0.999, 1]))
+        # print("\nscore quantile:", score_quant)
 
         score_sort, sort_idx = torch.sort(score, dim=1, descending=True)
         # score_mask = score_sort > 0.3
-        sort = {'bbox2d': [], 'anchor_id': [], 'anchors': []}
+        sort = {'bbox2d': [], 'anchor_id': []}
         for i in range(bbox2d.shape[0]):
             sort['bbox2d'].append(bbox2d[i, sort_idx[i].squeeze(1), :])
             sort['anchor_id'].append(anchor_id[i, sort_idx[i].squeeze(1)])  # * score_mask[i, :]
-            sort['anchors'].append(anchors[i, sort_idx[i].squeeze(1)])  # * score_mask[i, :]
         bbox2d_sort = torch.stack(sort['bbox2d'])
         achor_id_sort = torch.stack(sort['anchor_id'])
-        anchors_sort = torch.stack(sort['anchors'])
         sorted_proposals = {'bbox2d': bbox2d_sort,
                             'object': score_sort,
-                            'anchors': anchors_sort,
                             'anchor_id': achor_id_sort}
 
         return sorted_proposals
 
-    def select_proposals(self, proposals):
+    def select_proposals(self, proposals, use_gt):
         """
 
         :param proposals:
@@ -211,33 +202,31 @@ class RPN(nn.Module):
         'bbox2d' : (torch.Size([4, sum(height/stride* width/stride* anchor), 4(tlbr)]))
         'object' :(torch.Size([4, sum(height/stride* width/stride* anchor), 1]))
         'anchor_id' :(torch.Size([4, sum(height/stride* width/stride* anchor), 1]))
-        'anchor' :(torch.Size([4, sum(height/stride* width/stride* anchor), 4(tlbr)]))
         }
         :return: selected_proposals :
         {
         'bbox2d' : list(torch.Size([4, num_proposals, 4(tlbr)]))
         'object' :list(torch.Size([4, num_proposals, 1]))
         'anchor_id' :list(torch.Size([4, num_proposals, 1]))
-        'anchor' :list(torch.Size([4, num_proposals,  4(tlbr)]))
         }
         """
         batch, hwa, channel = proposals['bbox2d'].shape
-        selected_proposals = {'bbox2d': [], 'object': [], 'anchor_id': [], 'anchors': []}
-        uf.print_structure('proposals', proposals)
+        selected_proposals = {'bbox2d': [], 'object': [], 'anchor_id': []}
         for batch_idx in range(batch):
             proposal_dict = dict()
             score_mask = (proposals['object'][batch_idx] >= self.score_threshold).squeeze(-1)
             for key in proposals.keys():
                 proposal_dict[key] = proposals[key][batch_idx, score_mask]
-            keep = box_ops.nms(proposal_dict['bbox2d'], proposal_dict['object'].view(-1), self.iou_threshold)
-            keep = keep[:self.num_proposals]
+            bbox2d_tlbr = mu.convert_box_format_yxhw_to_tlbr(proposal_dict['bbox2d'])
+            keep = box_ops.nms(bbox2d_tlbr, proposal_dict['object'].view(-1), self.iou_threshold)
+            keep = keep[:self.num_proposals[use_gt]]
             for key in proposal_dict.keys():
                 proposal_dict[key] = proposal_dict[key][keep]
             obj_num = proposal_dict['object'].numel()
-            if obj_num < self.num_proposals:
+            if obj_num < self.num_proposals[use_gt]:
 
                 for key in proposal_dict.keys():
-                    padding = torch.zeros(self.num_proposals - obj_num, device=self.device).view(-1, 1)
+                    padding = torch.zeros(self.num_proposals[use_gt] - obj_num, device=self.device).view(-1, 1)
                     if key == 'bbox2d' or key == 'anchors':
                         padding = torch.cat([padding] * 4, dim=-1)
                     proposal_dict[key] = torch.cat([proposal_dict[key], padding])
@@ -246,7 +235,7 @@ class RPN(nn.Module):
 
         for key in selected_proposals:
             selected_proposals[key] = torch.stack(selected_proposals[key], dim=0)
-
+        selected_proposals['zeropad'] = (selected_proposals['bbox2d'][..., 2] != 0).unsqueeze(-1)
         return selected_proposals
 
     def sample_proposals(self, proposals, grtr):
@@ -267,11 +256,12 @@ class RPN(nn.Module):
         }
         """
         proposal_gt = dict()
+        grtr['zeropad'] = (grtr['bbox2d'][...,2] != 0).unsqueeze(-1)
         for key in proposals.keys():
             proposal_gt[key] = torch.cat([proposals[key], grtr[key]], dim=1)
 
         batch, num, channel = proposal_gt['bbox2d'].shape
-        proposals_sample = {'bbox2d': [], 'object': [], 'anchor_id': [], 'anchors': []}
+        proposals_sample = {'bbox2d': [], 'object': [], 'anchor_id': [], 'zeropad': []}
         for batch_index in range(batch):
             # (fix_num, num_proposals + fix_num)
             iou_matrix = uf.pairwise_iou(grtr['bbox2d'][batch_index], proposal_gt['bbox2d'][batch_index])
@@ -279,20 +269,18 @@ class RPN(nn.Module):
             positive = torch.nonzero(match_ious > self.match_thresh[1])
             negative = torch.nonzero(match_ious < self.match_thresh[0])
 
-            num_pos = int(self.num_sample * 0.25)
-
-            num_pos = min(positive.numel(), num_pos)
+            num_pos = positive.numel()
             num_neg = self.num_sample - num_pos
             num_neg = min(negative.shape[0], num_neg)
-            perm1 = torch.randperm(positive.numel(), device=positive.device)[:num_pos]
             perm2 = torch.randperm(negative.numel(), device=negative.device)[:num_neg]
-            positive = positive[perm1].squeeze(1)
             negative = negative[perm2].squeeze(1)
-            sampling = torch.cat([positive, negative])
+            sampling = torch.cat([positive.squeeze(1), negative])
             # append to proposals
             for key in proposal_gt.keys():
                 proposals_sample[key].append(proposal_gt[key][batch_index, sampling])
         # stack on batch dimension
         for key, value in proposals_sample.items():
             proposals_sample[key] = torch.stack(value, dim=0)
+
+        assert torch.sum(proposals_sample['bbox2d'][..., 2] != 0) == torch.sum(proposals_sample['zeropad'])
         return proposals_sample

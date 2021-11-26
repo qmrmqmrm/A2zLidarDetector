@@ -19,6 +19,7 @@ class A2D2Dataset(DatasetBase):
         self.max_box = max_box
         self.calib_dict = get_calibration(root_path)
         self.categories = cfg.Datasets.A2D2.CATEGORIES_TO_USE
+        self.ctgr_remap = cfg.Datasets.A2D2.CATEGORY_REMAP
         self.device = cfg.Hardware.DEVICE
 
         image_shape = torch.tensor(cfg.Model.Structure.IMAGE_SHAPE)
@@ -33,8 +34,8 @@ class A2D2Dataset(DatasetBase):
 
     def list_frames(self, root_dir, split):
         img_files = sorted(glob.glob(os.path.join(root_dir, split, '*/image', '*.png')))
-
-        return img_files[:400]
+        img_files = [file for file in img_files if "wrong_label" not in file]
+        return img_files
 
     def __getitem__(self, index):
         """
@@ -51,7 +52,7 @@ class A2D2Dataset(DatasetBase):
         with open(label_file, 'r') as f:
             label = json.load(f)
 
-        anns = self.convert_bev(label, image, self.calib_dict, bins=12, yaw=True)
+        anns = self.convert_bev(label, image, self.calib_dict, bins=cfg.Model.Structure.VP_BINS, yaw=True)
 
         if anns:
             anns = self.gather_and_zeropad(anns)
@@ -61,16 +62,10 @@ class A2D2Dataset(DatasetBase):
         features['anc_feat'] = self.anchors
         features.update(anns)
         features['image_file'] = image_file
-        features['anchors'], features['anchor_id'], features['anchor_stride'] = self.matched_anchor(
-            features['anc_feat'], features['bbox2d'])
-        features['delta2d'] = mu.get_deltas_2d(features['anchors'], features['bbox2d'], features['anchor_stride'])
-        # bbox2d = mu.apply_box_deltas_2d(features['anchors'],features['delta2d'], features['anchor_stride'])
-        # print('bbox2d',bbox2d)
-        # print('bbox2d_gt',features['bbox2d'])
-        features['delta3d'] = mu.get_deltas_3d(features['anchors'], features['bbox3d'], features['category'],
-                                               features['anchor_stride'])
+        gt_anchors, features['anchor_id'], gt_anchors_stride = self.matched_anchor(features['anc_feat'],
+                                                                                   features['bbox2d'])
 
-
+        features['bbox2d_delta'] = mu.get_deltas_2d(gt_anchors, features['bbox2d'], gt_anchors_stride)
         return features
 
     def convert_bev(self, label, image, calib, bins, bvres=0.05, yaw=False):
@@ -78,43 +73,49 @@ class A2D2Dataset(DatasetBase):
 
         for boxes, obj in label.items():
             obj_category = obj['class']
+            if obj_category in self.ctgr_remap:
+                obj_category = self.ctgr_remap[obj_category]
             if obj_category not in self.categories:
                 continue
 
+            rot_angle = obj['rot_angle'] * obj['axis'][-1]
             location = np.array(obj['center']).reshape((1, 3))
             pts_3d_ref = np.transpose(np.dot(np.linalg.inv(calib["R0"]), np.transpose(location)))
             n = pts_3d_ref.shape[0]
             pts_3d_homo = np.hstack((pts_3d_ref, np.ones((n, 1))))
             pts_3d_velo = np.dot(pts_3d_homo, np.transpose(calib["C2V"]))
-            bbox_xmin, bbox_ymin, bbox_xmax, bbox_ymax = self.obtain_bvbox(obj, image, pts_3d_velo, bvres)
+            bbox_xmin, bbox_ymin, bbox_xmax, bbox_ymax = self.obtain_bvbox(obj, rot_angle, image, pts_3d_velo, bvres)
             if bbox_xmin < 0:
                 continue
 
             label = self.categories.index(obj_category)
             ann = dict()
             ann['category'] = [label + 1]
-            ann['bbox2d'] = [bbox_ymin, bbox_xmin, bbox_ymax, bbox_xmax]  # tlbr
+            ann['bbox2d'] = [(bbox_ymin + bbox_ymax) / 2., (bbox_xmin + bbox_xmax) / 2.,
+                             (bbox_ymax - bbox_ymin), (bbox_xmax - bbox_xmin)]  # yxlw
 
             # ONLY VALID FOR FRONTAL CAMERA (ONLY_FRONT PARAM)
             velodyne_h = 1.12
 
             ann['bbox3d'] = [(bbox_ymin + bbox_ymax) / 2., (bbox_xmin + bbox_xmax) / 2.,
                              round(obj['size'][0] / bvres, 3), round(obj['size'][1] / bvres, 3),
-                             obj['size'][2] / 3. * 255,
-                             ((pts_3d_velo[0][2] + velodyne_h) + obj['size'][2] * 0.5) / 3. * 255]  # yxlwzh
+                             # (pts_3d_velo[0][2] + velodyne_h) / 3. * 255,
+                             obj['size'][2] / 3. * 255]
+                             # ((pts_3d_velo[0][2] + velodyne_h) + obj['size'][2] * 0.5) / 3. * 255,]  # yxlwzh
             ann["object"] = [1]
+
             if yaw:
-                ann['yaw'] = [rad2bin(obj['rot_angle'], bins)]
-                ann['yaw_rads'] = [obj['rot_angle']]
+                ann['yaw_cls'] = [rad2bin(rot_angle, bins)]
+                ann['yaw_rads'] = [rot_angle]
             annotations.append(ann)
         return annotations
 
-    def obtain_bvbox(self, obj, bv_img, pv, bvres=0.05):
+    def obtain_bvbox(self, obj, rot_angle, bv_img, pv, bvres=0.05):
         bvrows, bvcols, _ = bv_img.shape
         centroid = [round(num, 2) for num in pv[0][:2]]  # Lidar coordinates
         width = obj['size'][1]
         length = obj['size'][0]
-        yaw = obj['rot_angle']
+        yaw = rot_angle
         # print('lwh')
         # print(length, width, yaw)
         # Compute the four vertexes coordinates
@@ -126,7 +127,6 @@ class A2D2Dataset(DatasetBase):
         c, s = np.cos(yaw), np.sin(yaw)
         R = np.array([[c, -s], [s, c]])
         rotated_corners = np.dot(corners - centroid, R) + centroid
-
         x1 = bvcols / 2 + min(rotated_corners[:, 0]) / bvres
         x2 = bvcols / 2 + max(rotated_corners[:, 0]) / bvres
         y1 = bvrows - max(rotated_corners[:, 1]) / bvres
@@ -168,7 +168,7 @@ class A2D2Dataset(DatasetBase):
             if self.max_box - numbox > 0:
                 if key == 'category':
                     pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
-                elif key == 'yaw':
+                elif key == 'yaw_cls':
                     pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
                 elif key == 'yaw_rads':
                     pad = torch.zeros((self.max_box - numbox, channel), dtype=torch.float32)
@@ -186,23 +186,19 @@ class A2D2Dataset(DatasetBase):
         gathered_anns = {key: torch.zeros(val.shape, dtype=torch.float32) for key, val in self.last_sample.items()}
         return gathered_anns
 
-    def matched_anchor(self, anchors, bbox2d):
+    def matched_anchor(self, anchors, bbox2d_yxlw):
         """
         :param anchors: (height,width,anchor,5(yxhw+anchor_id))
         :param bbox2d: (fixed_num(15), 4(tlbr))
         :return: (fixed_num(15), 1)
         """
-        feature_anchor = list()
-        for anchor in anchors:
-            anchor = anchor.view(-1, anchor.shape[-1])
-            anchor = mu.convert_box_format_yxhw_to_tlbr(anchor)
-            feature_anchor.append(anchor)
-        feature_anchor = torch.cat(feature_anchor)
-        iou = uf.pairwise_iou(bbox2d, feature_anchor[..., :-2])
+        anchors_yxlw = [scale_anchor_yxlw.view(-1, scale_anchor_yxlw.shape[-1]) for scale_anchor_yxlw in anchors]
+        anchors_yxlw = torch.cat(anchors_yxlw, dim=0)
+        iou = uf.pairwise_iou(bbox2d_yxlw, anchors_yxlw[..., :4])  # (h * w*  a ,4)
         max_iou, max_idx = iou.max(dim=1)
-        gt_anchors = feature_anchor[max_idx, :-2]
-        gt_anchors_id = feature_anchor[max_idx, -2:-1]
-        gt_anchors_stride = feature_anchor[max_idx, -1:]
+        gt_anchors = anchors_yxlw[max_idx, :4]
+        gt_anchors_id = anchors_yxlw[max_idx, 4:5]
+        gt_anchors_stride = anchors_yxlw[max_idx, 5:6]
         return gt_anchors, gt_anchors_id, gt_anchors_stride
 
     def gather_featmaps(self, bbox2d, objectness):
@@ -238,14 +234,19 @@ class A2D2Dataset(DatasetBase):
 
 
 def rad2bin(rad, bins):
-    bin_dist = np.linspace(-math.pi, math.pi, bins + 1)  # for each class (bins*n_classes)
-    bin_res = (bin_dist[1] - bin_dist[0]) / 2.
-    bin_dist = [bin - bin_res for bin in
-                bin_dist]  # Substracting half of the resolution to each bin it obtains one bin for each direction (N,W,S,E)
-    for i_bin in range(len(bin_dist) - 1):
-        if bin_dist[i_bin] <= rad and bin_dist[i_bin + 1] >= rad:
+    bin_edge = np.linspace(-math.pi / 2, math.pi / 2, bins + 1)  # for each class (bins*n_classes)
+    bin_res = (bin_edge[1] - bin_edge[0]) / 2.
+    # Substracting half of the resolution to each bin it obtains one bin for each direction (N,W,S,E)
+    bin_edge = [bin - bin_res for bin in bin_edge]
+    if rad < bin_edge[0]:
+        rad += math.pi
+    elif rad > bin_edge[-1]:
+        rad -= math.pi
+
+    for i_bin in range(len(bin_edge) - 1):
+        if bin_edge[i_bin] <= rad and bin_edge[i_bin + 1] > rad:
             return i_bin
-    return 0  # If the angle is above max angle, it won't match so it corresponds to initial bin, initial bin must be from (-pi+bin_res) to (pi-bin_res)
+    return 0
 
 
 def drow_box(img, bbox):

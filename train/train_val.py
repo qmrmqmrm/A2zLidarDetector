@@ -1,5 +1,7 @@
 from timeit import default_timer as timer
 import os.path as op
+
+import numpy as np
 import torch
 
 import utils.util_function as uf
@@ -21,15 +23,21 @@ class TrainValBase:
         logger = Logger(logger,logger, op.join(cfg.Paths.CHECK_POINT, cfg.Train.CKPT_NAME), epoch, self.split)
         train_loader_iter = iter(data_loader)
         steps = len(train_loader_iter)
-
+        time_list = list()
         for step in range(steps):
             # if step > 10:
             #     break
+
             features = next(train_loader_iter)
             features = self.to_device(features)
             start = timer()
             file_name = features['image_file']
             prediction, total_loss, loss_by_type, auxi = self.run_step(features)
+            end = timer()
+            time_list.append(end - start)
+            # print('loss_by_type')
+            # for loss, val in loss_by_type.items():
+            #     print(loss , val.to('cpu').detach().numpy())
             logger.log_batch_result(step, features, prediction, total_loss, loss_by_type, auxi)
 
             features['image_file'] = file_name
@@ -37,7 +45,9 @@ class TrainValBase:
             uf.print_progress(f"({self.split}) {step}/{steps} steps in {epoch} epoch, "
                               f"time={timer() - start:.3f}, "
                               f"loss={total_loss:.3f}, ")
-
+        mean_time = np.mean(time_list)
+        print('time_list', time_list)
+        print('mean_time', mean_time)
         logger.finalize()
         return logger
 
@@ -90,7 +100,6 @@ class ModelTrainer(TrainValBase):
     def run_step(self, features):
         prediction = self.model(features)
         total_loss, loss_by_type, auxi = self.loss_object(features, prediction, True)
-        print(loss_by_type)
         self.optimizer.zero_grad()
         total_loss.backward()
         self.optimizer.step()

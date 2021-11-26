@@ -3,7 +3,7 @@ import torch
 import pandas as pd
 from timeit import default_timer as timer
 
-from log.nplog.metric import count_true_positives
+from log.nplog.metric import count_true_positives, count_true_positives_rotated
 import utils.util_function as uf
 import config as cfg
 
@@ -44,25 +44,27 @@ class HistoryLog:
         box_objectness = self.analyze_box_objectness(gt_feature, pred)
         batch_data.update(box_objectness)
 
-        num_ctgr = pred["category"].shape[-1] - 1
+        num_ctgr = pred_nms["ctgr_probs"].shape[-1] - 1
+        print()
+        print('img', grtr['image_file'])
+        metric = count_true_positives(grtr, pred_nms, num_ctgr, per_class=True)
+        metric_rot = count_true_positives_rotated(grtr, pred_nms, num_ctgr, per_class=True)
 
-        metric = count_true_positives(grtr, pred, num_ctgr, per_class=False)
-        print(metric)
         batch_data.update(metric)
-        pred_cate = torch.softmax(torch.tensor(pred["category"]), dim=-1).to('cpu').detach().numpy()
-        batch_data["true_cls"] = self.logtrueclass(gt_aligned, pred_cate)
-        batch_data["false_cls"] = self.logfalseclass(gt_aligned, pred_cate)
-        print('ture_class', batch_data["true_cls"])
-        print('false_class', batch_data["false_cls"])
+        batch_data.update(metric_rot)
+        # pred_cate = torch.softmax(torch.tensor(pred["category"]), dim=-1).to('cpu').detach().numpy()
+        batch_data["true_cls"] = self.logtrueclass(gt_aligned, pred["ctgr_probs"])
+        batch_data["false_cls"] = self.logfalseclass(gt_aligned, pred["ctgr_probs"])
 
         batch_data = self.set_precision(batch_data, 5)
         col_order = list(batch_data.keys())
         self.batch_data_table = self.batch_data_table.append(batch_data, ignore_index=True)
         self.batch_data_table = self.batch_data_table.loc[:, col_order]
 
+
         if step % 20 == 10:
             print("\n--- batch_data:", batch_data)
-            self.check_pred_scales(pred)
+            self.check_pred_scales(pred_nms)
 
     def analyze_box_objectness(self, grtr, pred):
         pos_obj, neg_obj = 0, 0
@@ -100,8 +102,18 @@ class HistoryLog:
         mean_result = self.batch_data_table.mean(axis=0).to_dict()
         sum_result = self.batch_data_table.sum(axis=0).to_dict()
         sum_result = {"recall": sum_result["trpo"] / (sum_result["grtr"] + 1e-5),
-                      "precision": sum_result["trpo"] / (sum_result["pred"] + 1e-5)}
+                      "precision": sum_result["trpo"] / (sum_result["pred"] + 1e-5),
+                      "trpo_num": sum_result["trpo"],
+                      "grtr_num": sum_result["grtr"],
+                      "pred_num": sum_result["pred"],
+                      # "recall_rot": sum_result["trpo_rot"] / (sum_result["grtr_rot"] + 1e-5),
+                      # "precision_rot": sum_result["trpo_rot"] / (sum_result["pred_rot"] + 1e-5),
+                      # "trpo_rot_num": sum_result["trpo_rot"],
+                      # "grtr_rot_num": sum_result["grtr_rot"],
+                      # "pred_rot_num": sum_result["pred_rot"]
+                      }
         metric_keys = ["trpo", "grtr", "pred"]
+
         summary = {key: val for key, val in mean_result.items() if key not in metric_keys}
         summary.update(sum_result)
         summary["time_m"] = round((timer() - self.start) / 60., 5)
@@ -112,19 +124,20 @@ class HistoryLog:
 
     def logtrueclass(self, grtr, pred_cate):
         grtr_ctgr_mask = self.one_hot(grtr["category"], self.num_categs + 1)
-        grtr_target_mask = grtr["object"] * (grtr["category"] > 0)
+        grtr_target_mask = grtr["object"]
         category_prob = grtr_target_mask * grtr_ctgr_mask * pred_cate
         true_class = np.sum(category_prob) / (np.sum(grtr_target_mask) + 0.00001)
         return true_class
 
     def logfalseclass(self, grtr, pred_cate):
         grtr_ctgr_mask = self.one_hot(grtr["category"], self.num_categs + 1)
-        false_ctgr_mask = grtr["object"] * (grtr["category"] > 0)
-        category_prob = false_ctgr_mask * pred_cate * (1. - grtr_ctgr_mask)
+        grtr_target_mask = grtr["object"]
+        category_prob = grtr_target_mask * pred_cate * (1. - grtr_ctgr_mask)
         false_prob = np.max(category_prob, axis=-1)
-        false_class = np.sum(false_prob) / (np.sum(false_ctgr_mask) + 0.00001)
+        false_class = np.sum(false_prob) / (np.sum(grtr_target_mask) + 0.00001)
         return false_class
 
     def one_hot(self, grtr_category, category_shape):
         one_hot_data = np.eye(category_shape, dtype=np.float32)[grtr_category[..., 0].astype(np.int32)]
         return one_hot_data
+

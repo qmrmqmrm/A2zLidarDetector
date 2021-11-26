@@ -1,10 +1,11 @@
+import math
 import os.path as op
 import parameter_pool as params
 import numpy as np
 
 
 class Paths:
-    RESULT_ROOT = "/media/falcon/IanBook8T/datasets/bv_a2d2/result"
+    RESULT_ROOT = "/media/dolphin/intHDD/birdnet_data/bv_a2d2/result"
     TFRECORD = op.join(RESULT_ROOT, "pyloader")
     CHECK_POINT = op.join(RESULT_ROOT, "ckpt")
 
@@ -16,9 +17,9 @@ class Datasets:
 
     class A2D2:
         NAME = "a2d2"
-        PATH = "/media/falcon/IanBook8T/datasets/bv_a2d2"
+        PATH = "/media/dolphin/intHDD/birdnet_data/bv_a2d2"
         CATEGORIES_TO_USE = ["Pedestrian", "Car", "Cyclist"]
-        CATEGORY_REMAP = {}
+        CATEGORY_REMAP = {"VanSUV": "Car"}
         MAX_NUM = 15
         INPUT_RESOLUTION = (640, 640)
 
@@ -92,22 +93,24 @@ class Model:
         MINOR_CTGR = False
 
     class Structure:
-        VP_BINS = 12
+        VP_BINS = 6
         PIXEL_MEAN = [0.0, 0.0, 0.0]
         PIXEL_STD = [1.0, 1.0, 1.0]
         NUM_CLASSES = 3
-        BOX_DIM = 6
+        BOX_DIM = 5
         IMAGE_SHAPE = [640, 640]
         STRIDE_SHAPE = Scales.DEFAULT_FEATURE_SCALES
-        LOSS_CHANNEL = {'category': 1, 'bbox3d': BOX_DIM, 'yaw': VP_BINS, 'yaw_rads': VP_BINS}
+        LOSS_CHANNEL = {'category': 1, 'bbox3d_delta': BOX_DIM, 'yaw_cls': VP_BINS, 'yaw_res': VP_BINS}
+        BIN_EDGE = [-(7 * math.pi / 12), -(5 * math.pi / 12), -(3 * math.pi / 12), -(1 * math.pi / 12),
+                    (1 * math.pi / 12), (3 * math.pi / 12)]
 
 
 class Train:
-    CKPT_NAME = "delta_v9"
-
+    CKPT_NAME = "full_v3_e30"
     MODE = ["eager", "graph"][0]
-    BATCH_SIZE = 2
+    BATCH_SIZE = 1
     TRAINING_PLAN = params.TrainingPlan.A2D2_SIMPLE
+    TESTING_PLAN = params.ValPlan.A2D2_SIMPLE
 
 
 class Loss:
@@ -116,15 +119,29 @@ class Loss:
 
 
 class NMS:
-    MAX_OUT = [100, 100, 100]
-    IOU_THRESH = [0.2, 0.2, 0.2]
-    SCORE_THRESH = [0.3, 0.3, 0.3]
+    MAX_OUT = [3, 4, 3]
+    IOU_THRESH = [0.02, 0.02, 0.02]
+    # SCORE_THRESH = [0.88, 0.96, 0.44]
+    SCORE_THRESH = [0.89, 0.862, 0.9]
+
+    # SCORE_CANDIDATES = np.concatenate(
+    #     [np.arange(0.1, 0.8, 0.1), np.arange(0.8, 1.0, 0.02)])  # 10
+
+    SCORE_CANDIDATES = np.concatenate(
+        [np.arange(0.1, 0.8, 0.1), np.arange(0.8, 0.85, 0.02), np.arange(0.83, 0.87, 0.002),
+         np.arange(0.87, 1.0, 0.02) ])  # 10
+
+    # IOU_CANDIDATES = np.array([0.02, 0.04, 0.06, 0.08, 0.1])
+    IOU_CANDIDATES = np.array([0.02])
+    # MAX_OUT_CANDIDATES = np.arange(3, 7, 1)
+    MAX_OUT_CANDIDATES = np.array([3, 4])
 
 
 class Validation:
-    TP_IOU_THRESH = [0.3, 0.3, 0.3, 0.3]
+    TP_IOU_THRESH = [0.5, 0.5, 0.5, 0.5]
     DISTANCE_LIMIT = 25
     VAL_EPOCH = "latest"
+    MAP_TP_IOU_THRESH = [0.4]
 
 
 class Logging:
@@ -134,6 +151,10 @@ class Logging:
     COLUMNS_TO_MEAN = ["anchor", "category", "ciou_loss", "object_loss", "maj_cat_loss", "dist_loss", "pos_obj",
                        "neg_obj", "iou", "box_hw", "box_yx", "true_class", "false_class"]
     COLUMNS_TO_SUM = ["anchor", "category", "trpo", "grtr", "pred"]
+
+
+class Debug:
+    DEBUG = False
 
 
 def summary(cls):

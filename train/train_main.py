@@ -4,8 +4,8 @@ from typing import Any, Dict, List
 import torch
 import pandas as pd
 
-import config as cfg
 import settings
+import config as cfg
 from model.model_factory import ModelFactory
 from dataloader.loader_factory import get_dataset
 from train.train_val import get_train_val
@@ -42,7 +42,6 @@ def train_by_plan(dataset_name, end_epoch, learning_rate, loss_weights, model_sa
     model_factory = ModelFactory(dataset_name)
     model = model_factory.make_model()
     model = try_load_weights(ckpt_path, model)
-    print(model)
     loss_object = IntegratedLoss(batch_size, loss_weights, valid_category)
     optimizer = build_optimizer(model, learning_rate)
     trainer, validator = get_train_val(model, loss_object, optimizer, start_epoch)
