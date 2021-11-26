@@ -14,7 +14,9 @@ def get_calibration(root_path):
     rot = get_rot_to_global(camera_view)
     transform_V2C = transform_from_to(lidar_view, camera_view)
     transform_C2V = transform_from_to(camera_view, lidar_view)
-    calibriation_dict = {"R0": rot, "V2C": transform_V2C, "C2V": transform_C2V}
+    transform_V = get_transform_to_global(lidar_view)
+    transform_C = get_transform_to_global(camera_view)
+    calibriation_dict = {"R0": rot, "V2C": transform_V2C, "C2V": transform_C2V, "C":transform_C, "V" : transform_V}
     return calibriation_dict
 
 

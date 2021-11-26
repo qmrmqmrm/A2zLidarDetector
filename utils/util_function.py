@@ -5,6 +5,7 @@ import numpy as np
 
 import config as cfg
 import model.submodules.model_util as mu
+import utils.compute_iou as ci
 
 
 def print_progress(status_msg):
@@ -170,46 +171,53 @@ def pairwise_batch_iou(boxes1, boxes2):
     return ious
 
 
-def rotated_iou_per_frame(grtr, pred, frame):
-    print_structure('grtr', grtr)
-    print_structure('pred', pred)
-    height, wight, channel = grtr['image'][frame].shape
-    grtr_bbox3d = grtr['bbox3d'][frame, ..., :4]
-    pred_bbox3d = pred['bbox3d'][frame, ..., :4]
-    grtr_rad = grtr['yaw_rads'][frame, ..., :4] * 180 / np.pi
-    pred_rad = pred['yaw_rads'][frame, ..., :4] * 180 / np.pi
+def rotated_iou_per_frame(grtr_bbox3d, pred_bbox3d, grtr_rad, pred_rad, img_shape):
+    height, wight, channel = img_shape
+    grtr_bbox3d = grtr_bbox3d[..., :4]
+    pred_bbox3d = pred_bbox3d[..., :4]
     grtr_rbox = np.concatenate([grtr_bbox3d, grtr_rad], axis=-1)
     pred_rbox = np.concatenate([pred_bbox3d, pred_rad], axis=-1)
-    grtr_rbox = rotated_cv2(grtr_rbox, (height, wight))
-    pred_rbox = rotated_cv2(pred_rbox, (height, wight))
-    iou = jaccard(grtr_rbox, pred_rbox)
+    grtr_rbox = fillconvex_rotated_box(grtr_rbox, (height, wight))
+    pred_rbox = fillconvex_rotated_box(pred_rbox, (height, wight))
+    iou = comput_rotated_iou(grtr_rbox, pred_rbox)
     return iou
 
 
-def rotated_cv2(boxes, img_shape):
+def fillconvex_rotated_box(boxes, img_shape):
     b_boxes = list(map(lambda x: np.ceil(cv2.boxPoints(((x[0], x[1]), (x[2], x[3]), x[4]))), boxes))
-    b_imgs = torch.from_numpy(
-        np.array([cv2.fillConvexPoly(np.zeros(img_shape, dtype=np.uint8), np.int0(b), 1) for b in b_boxes]).astype(
-            float)).float()
+    print('bbox', b_boxes)
+    b_imgs = np.array([cv2.fillConvexPoly(np.zeros(img_shape, dtype=np.uint8), np.int0(b), 1) for b in b_boxes]).astype(
+        float)
     return b_imgs
 
 
-def jaccard(b_imgs, box_b):
-    intersection = torch.FloatTensor()
-    summation = torch.FloatTensor()
+def comput_rotated_iou(b_imgs, box_b):
+    intersection = None
+    summation = None
     for b_img in b_imgs:
-        intersection = torch.cat([intersection, (b_img * box_b).sum((1, 2)).unsqueeze(0)])
-        summation = torch.cat([summation, (b_img + box_b).sum((1, 2)).unsqueeze(0)])
+        if intersection is None:
+            intersection = np.expand_dims((b_img * box_b).sum((1, 2)), axis=0)
+            summation = np.expand_dims((b_img * box_b).sum((1, 2)), axis=0)
+        else:
+            intersection = np.concatenate([intersection, np.expand_dims((b_img * box_b).sum((1, 2)), axis=0)], axis=0)
+            summation = np.concatenate([summation, np.expand_dims((b_img + box_b).sum((1, 2)), axis=0)], axis=0)
+        print('intersection', intersection)
     return intersection / (summation - intersection + 1.0)
 
 
 def test():
-    box1 = np.array([[100., 100., 50., 50., 45.],[500., 500., 50., 50., 45.]])
-    box2 = np.array([[100., 100., 50., 50., 0.], [500., 500., 50., 50., 90.]])
+    box1 = torch.tensor(
+        [[[100., 100., 100., 40., 40., 20, np.pi / 4],
+          [500., 500., 300., 50., 50., 20, np.pi / 2]],
+         ]
 
-    grtr_rbox = rotated_cv2(box1, (700, 700))
-    pred_rbox = rotated_cv2(box2, (700, 700))
-    iou = jaccard(grtr_rbox, pred_rbox)
+    )
+    box2 = torch.tensor(
+        [[[100., 100., 100., 40., 40., 20, 0],
+          [500., 500., 300., 50., 50., 20, np.pi / 4]],
+         ]
+    )
+    iou = ci.cal_iou_3d(box1, box2)
     print(iou)
 
 

@@ -6,7 +6,7 @@ from timeit import Timer
 import utils.util_function as uf
 
 
-def jaccard(b_imgs, box_b):
+def comput_rotated_iou(b_imgs, box_b):
     # denorm_bbox = torch.cat([box_a[:, :4] * 768, box_a[:, 4].unsqueeze(1) * 90], dim=1)
     # print('denorm_bbox', denorm_bbox.shape)
     # b_boxes = list(map(lambda x: np.ceil(cv2.boxPoints(((x[1], x[0]), (x[2], x[3]), x[4]))), denorm_bbox.numpy()))
@@ -58,15 +58,15 @@ def main():
                                 [0.3040, 0.2904, 0.0101, 0.0157, -0.5000],
                                 [0.0065, 0.2109, 0.0130, 0.0078, -1.0000],
                                 [0.1895, 0.1556, 0.0143, 0.0091, -1.0000]])
-    b_imgs = uf.rotated_cv2(test_tensor,(768,768))
-    # t = Timer(lambda: jaccard(test_tensor, anchor_imgs))
+    b_imgs = uf.fillconvex_rotated_box(test_tensor,(768,768))
+    # t = Timer(lambda: comput_rotated_iou(test_tensor, anchor_imgs))
     # print(
     #     f'Consuming {(len(anchors) * np.dtype(float).itemsize * 768 * 768) / 1000000000} Gb on {"GPU" if anchors.is_cuda else "RAM"}')
     # print(f'Averaging {t.timeit(number=100) / 100} seconds per function call')
     print('b_imgs', b_imgs.shape)
 
 
-    print(jaccard(b_imgs, b_imgs))
+    print(comput_rotated_iou(b_imgs, b_imgs))
 
 
 if __name__ == '__main__':

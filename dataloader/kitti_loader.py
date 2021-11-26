@@ -15,6 +15,8 @@ from utils.util_function import print_progress
 max_box = 512
 
 
+# TODO: rearrange-code-21-11, remove kitti related code
+
 class KittiDataset(DatasetBase):
     def __init__(self, path):
         self.max_box = max_box

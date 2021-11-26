@@ -9,6 +9,36 @@ import config as cfg
 from log.nplog.metric import split_true_false, split_rotated_true_false
 import utils.util_function as uf
 import model.submodules.model_util as mu
+import log.nplog.visul_function as vf
+
+
+# TODO: rearrange-code-21-11
+class VisualLogNew:
+    def __init__(self):
+        self.tf_spliter = TrueFalseSplitter(IouEstimator(), cfg.Validation.TP_IOU_THRESH)
+        self.tf_spliter_rot = TrueFalseSplitter(RotatedIouEstimator(), cfg.Validation.TP_IOU_THRESH)
+
+    def __call__(self, step, grtr, pred, grtr_feat, pred_feat):
+        splits = self.tf_spliter(grtr, pred)
+        splits3d = self.tf_spliter_rot(grtr, pred)
+        splits3d = self.rotate_box3d(splits3d)
+
+        cam_image = self.get_cam_image()
+        bev_image = self.load_image()
+
+        bev_grtr_2d = self.draw_objects(bev_image, splits["grtr_tp"], self.draw_box2d, self.put_text_grtr)
+        bev_grtr_2d = self.draw_objects(bev_grtr_2d, splits["grtr_fn"], self.draw_box2d, self.put_text_grtr)
+        
+        bev_pred_2d = self.draw_objects(bev_image, splits["pred_tp"], self.draw_box2d, self.put_text_pred)
+        bev_pred_2d = self.draw_objects(bev_pred_2d, splits["pred_fp"], self.draw_box2d, self.put_text_pred)
+        self.concat_and_save_image(step, cam_image, bev_grtr_2d, bev_pred_2d, "2d")
+
+        bev_grtr_3d = self.draw_objects(bev_image, splits3d["grtr_tp"], self.draw_box3d, self.put_text_grtr)
+        bev_grtr_3d = self.draw_objects(bev_grtr_3d, splits3d["grtr_fn"], self.draw_box3d, self.put_text_grtr)
+
+        bev_pred_3d = self.draw_objects(bev_image, splits3d["pred_tp"], self.draw_box3d, self.put_text_pred)
+        bev_pred_3d = self.draw_objects(bev_pred_3d, splits3d["pred_fp"], self.draw_box3d, self.put_text_pred)
+        self.concat_and_save_image(step, cam_image, bev_grtr_3d, bev_pred_3d, "3d")
 
 
 class VisualLog:
@@ -63,55 +93,45 @@ class VisualLog:
         print('VisualLog')
         splits = split_true_false(grtr, pred_nms, cfg.Validation.TP_IOU_THRESH)
         splits_rot = split_rotated_true_false(grtr, pred_nms, cfg.Validation.TP_IOU_THRESH)
+        uf.print_structure('splits_rot', splits_rot)
         batch = splits["grtr_tp"]["bbox2d"].shape[0]
 
         for batch_idx in range(batch):
             bev_img = grtr["image"][batch_idx].copy()
             # bev_img = cv2.cvtColor(bev_img, cv2.COLOR_BGR2GRAY) * 255
             # bev_img = cv2.cvtColor(bev_img, cv2.COLOR_GRAY2BGR)
-
-            # filename = op.join(self.vlog_path, f"{step:04d}_{step * batch + batch_idx:05d}_gray.jpg")
-            # cv2.imwrite(filename, bev_img)
-            # grtr_log_keys = ["pred_object", "pred_ctgr_prob", "pred_score", "distance"]
             image_org_file_name = grtr["image_file"][batch_idx].replace('image/', 'camera/')
             image_org = cv2.imread(image_org_file_name)
             image_org = cv2.resize(image_org, (1280, 640))
+
             #
             for key in ['bbox2d']:
                 bbox_image = self.draw_bbox(bev_img, splits, batch_idx, key)
                 vlog_image = np.concatenate([image_org, bbox_image], axis=0)
                 filename = op.join(self.vlog_path, f"{step:04d}_{step * batch + batch_idx:05d}_{key}.jpg")
                 cv2.imwrite(filename, vlog_image)
-            #
-            # # object
-            # gt_obj_imgs = []
-            # pred_obj_imgs = []
-            # for scale_idx, (gt_scale_object, pred_scale_object) in enumerate(
-            #         zip(gt_feature['object'], pred['rpn_feat_objectness'])):
-            #     org_img = bev_img.copy()
-            #     scale = int(640 / cfg.Scales.DEFAULT_FEATURE_SCALES[scale_idx])
-            #     gt_object_per_image = self.convert_img(gt_scale_object[batch_idx], scale, org_img)
-            #     pred_object_per_image = self.convert_img(pred_scale_object[batch_idx], scale, org_img)
-            #     gt_obj_imgs.append(gt_object_per_image)
-            #     pred_obj_imgs.append(pred_object_per_image)
-            # gt_obj_img = np.concatenate(gt_obj_imgs, axis=1)
-            # pred_obj_img = np.concatenate(pred_obj_imgs, axis=1)
-            # obj_img = np.concatenate([gt_obj_img, pred_obj_img], axis=0)
+
+            # object
+            # obj_img = self.draw_object(bev_img, gt_feature['object'], pred['rpn_feat_objectness'], batch_idx)
             # filename = op.join(self.obj_path, f"{step * batch + batch_idx:05d}.jpg")
             # cv2.imwrite(filename, obj_img)
 
             # rotation
-            rotated_img = self.draw_rotated(bev_img,splits, batch_idx)
-            rotated_img = np.concatenate([image_org, rotated_img], axis=0)
-            filename = op.join(self.vlog_path, f"{step:04d}_{step * batch + batch_idx:05d}_rot.jpg")
-            cv2.imwrite(filename, rotated_img)
-            # vlog_image_show = cv2.resize(vlog_image, (920,920))
-            rotated_img = self.draw_rotated(bev_img,splits_rot, batch_idx)
+            # rotated_img = self.draw_rotated(bev_img, splits, batch_idx)
+            # rotated_img = np.concatenate([image_org, rotated_img], axis=0)
+            # filename = op.join(self.vlog_path, f"{step:04d}_{step * batch + batch_idx:05d}_rot.jpg")
+            # cv2.imwrite(filename, rotated_img)
+
+            rotated_img = self.draw_split_rotated(bev_img, splits_rot, batch_idx)
             rotated_img = np.concatenate([image_org, rotated_img], axis=0)
             filename = op.join(self.vlog_path, f"{step:04d}_{step * batch + batch_idx:05d}_rot_iou.jpg")
             cv2.imwrite(filename, rotated_img)
-            cv2.imshow("detection_result", rotated_img)
-            cv2.waitKey(1)
+
+            img_3d = self.draw_grtr_bbox_3d(image_org, splits_rot, batch_idx)
+            filename = op.join(self.vlog_path, f"{step:04d}_{step * batch + batch_idx:05d}_3d.jpg")
+            cv2.imwrite(filename, img_3d)
+            # cv2.imshow("detection_result", rotated_img)
+            # cv2.waitKey(1)
 
     def draw_bbox(self, bev_img, splits, batch_idx, key):
         bev_img_pred = bev_img.copy()
@@ -132,65 +152,28 @@ class VisualLog:
 
         return vlog_image
 
-    def draw_rotated(self, bev_img, splits, batch_idx):
-        rot_bbox3ds = dict()
-        splits_keys = splits.keys()
-        for key in splits_keys:
-            bbox3d_per_image = splits[key]['bbox3d'][batch_idx]
-            yaw_rads_per_image = splits[key]['yaw_rads'][batch_idx]
+    def draw_object(self, bev_img, gt_object_feature, pred_objectness_feat, batch_idx):
+        # object
+        gt_obj_imgs = []
+        pred_obj_imgs = []
+        for scale_idx, (gt_scale_object, pred_scale_object) in enumerate(zip(gt_object_feature, pred_objectness_feat)):
+            org_img = bev_img.copy()
+            scale = int(640 / cfg.Scales.DEFAULT_FEATURE_SCALES[scale_idx])
+            gt_object_per_image = self.convert_img(gt_scale_object[batch_idx], scale, org_img)
+            pred_object_per_image = self.convert_img(pred_scale_object[batch_idx], scale, org_img)
+            gt_obj_imgs.append(gt_object_per_image)
+            pred_obj_imgs.append(pred_object_per_image)
+        gt_obj_img = np.concatenate(gt_obj_imgs, axis=1)
+        pred_obj_img = np.concatenate(pred_obj_imgs, axis=1)
+        obj_img = np.concatenate([gt_obj_img, pred_obj_img], axis=0)
+        return obj_img
 
-            rot_bbox3d_per_img = list()
-
-            for bbox3d, yaw_rads in zip(bbox3d_per_image, yaw_rads_per_image):
-                rot_bbox3d = self.rotated_3d(bbox3d[:4], yaw_rads, batch_idx)
-                rot_bbox3d_per_img.append(rot_bbox3d)
-            rot_bbox3ds[key] = np.stack(rot_bbox3d_per_img, axis=0)
-        image_grtr = bev_img.copy()
-        image_grtr = self.draw_3D_box(image_grtr, rot_bbox3ds["grtr_fn"],
-                                      splits["grtr_fn"]['yaw_cls'][batch_idx],
-                                      splits["grtr_fn"]['yaw_rads'][batch_idx],
-                                      splits["grtr_fn"]['category'][batch_idx],
-                                      val=2)
-        image_grtr = self.draw_3D_box(image_grtr, rot_bbox3ds["grtr_tp"],
-                                      splits["grtr_tp"]['yaw_cls'][batch_idx],
-                                      splits["grtr_tp"]['yaw_rads'][batch_idx],
-                                      splits["grtr_tp"]['category'][batch_idx],
-                                      val=1)
-        image_pred = bev_img.copy()
-        image_pred = self.draw_3D_box(image_pred, rot_bbox3ds["pred_fp"],
-                                      splits["pred_fp"]['yaw_cls_probs'][batch_idx],
-                                      splits["pred_fp"]['yaw_rads'][batch_idx],
-                                      splits["pred_fp"]['ctgr_probs'][batch_idx],
-                                      splits["pred_fp"]['object'][batch_idx],
-                                      val=2)
-        image_pred = self.draw_3D_box(image_pred, rot_bbox3ds["pred_tp"],
-                                      splits["pred_tp"]['yaw_cls_probs'][batch_idx],
-                                      splits["pred_tp"]['yaw_rads'][batch_idx],
-                                      splits["pred_tp"]['ctgr_probs'][batch_idx],
-                                      splits["pred_tp"]['object'][batch_idx],
-                                      val=1)
-
-        vlog_image = np.concatenate([image_pred, image_grtr], axis=1)
-        return vlog_image
-
-    def draw_boxes(self, image, bboxes, frame_idx, color):
-        """
-        all input arguments are numpy arrays
-        :param image: (H, W, 3)
-        :param bboxes: {'yxhw': (B, N, 4), 'category': (B, N, 1), ...}
-        :param frame_idx
-        :param color: box color
-        :return: box drawn image
-        """
-        bbox2d = bboxes[frame_idx]  # (N, 4)
-        valid_mask = bbox2d[:, 2] > 0  # (N,) l>0
-
-        bbox2d = bbox2d[valid_mask, :]
-        bbox2d = mu.convert_box_format_yxhw_to_tlbr(bbox2d)
-        for i in range(bbox2d.shape[0]):
-            y1, x1, y2, x2 = bbox2d[i].astype(np.int32)
-            cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
-        return image
+    def convert_img(self, feature, scale, org_img):
+        feature_imge = feature.reshape((scale, scale, 3)) * 255
+        feature_imge = org_img + cv2.resize(feature_imge, (640, 640), interpolation=cv2.INTER_NEAREST)
+        feature_imge[-1, :] = [255, 255, 255]
+        feature_imge[:, -1] = [255, 255, 255]
+        return feature_imge
 
     def draw_ctgr_boxes(self, image, bboxes, category, frame_idx, val, iou=None):
         """
@@ -224,71 +207,95 @@ class VisualLog:
                 cv2.putText(image, ann, (x1, y1), cv2.FONT_HERSHEY_PLAIN, 1.0, color[int(category[i])], 2)
         return image
 
-    def rotated_3d(self, bboxes_yxlw, yaw_rads, frame_idx):
-        """
-        all input arguments are numpy arrays
-        :param image: (H, W, 3)
-        :param bboxes: {'yxhw': (B, N, 4), 'category': (B, N, 1), ...}
-        :param frame_idx
-        :param color: box color
-        :return: box drawn image
-        """
+    def draw_split_rotated(self, bev_img, splits, batch_idx):
+        rot_bbox3ds = dict()
+        splits_keys = splits.keys()
+        for key in splits_keys:
+            bbox3d_per_image = splits[key]['bbox3d'][batch_idx]
+            yaw_rads_per_image = splits[key]['yaw_rads'][batch_idx]
 
-        bbox3d_yx, bbox3d_lw = bboxes_yxlw[:2], bboxes_yxlw[2:4]
-        bbox3d_xy = np.array([bbox3d_yx[1], bbox3d_yx[0]])
-        corners = np.array([[- bbox3d_lw[1] / 2., - bbox3d_lw[0] / 2.],
-                            [+ bbox3d_lw[1] / 2., - bbox3d_lw[0] / 2.],
-                            [+ bbox3d_lw[1] / 2., + bbox3d_lw[0] / 2.],
-                            [- bbox3d_lw[1] / 2., + bbox3d_lw[0] / 2.]])
-        # yaw = -(yaw_rads[0] + (math.pi / 2))
-        c, s = np.cos(yaw_rads[0]), np.sin(yaw_rads[0])
-        R = np.array([[c, -s],
-                      [-s, -c]])  # image coordinates: flip y
-        rotated_corners = np.dot(corners, R) + bbox3d_xy
-        return rotated_corners
+            rot_bbox3d_per_img = list()
 
-    def draw_3D_box(self, img, corners, bin, rad, category=None, obj_prob=None, val=1):
-        """
-            draw 3D box in image with OpenCV,
-            the order of the corners should be the same with BBox3dProjector
-        """
-        # color = [(255,255,255),(0,0,255),(0,255,0),(255,0,0)]
+            for bbox3d, yaw_rads in zip(bbox3d_per_image, yaw_rads_per_image):
+                rot_bbox3d = vf.rotated_box(bbox3d[:4], yaw_rads)
+                rot_bbox3d_per_img.append(rot_bbox3d)
+
+            rot_bbox3ds[key] = np.stack(rot_bbox3d_per_img, axis=0)
+        uf.print_structure('rot_bbox3ds', rot_bbox3ds)
+        image_grtr = bev_img.copy()
+        print('grtr_fn', splits["grtr_fn"]['iou'][batch_idx])
+        image_grtr = self.draw_rotated_box(image_grtr, rot_bbox3ds["grtr_fn"], 2,
+                                           splits["grtr_fn"]['category'][batch_idx],
+                                           splits["grtr_fn"]['iou'][batch_idx],
+                                           )
+        print('grtr_tp', splits["grtr_tp"]['iou'][batch_idx])
+        image_grtr = self.draw_rotated_box(image_grtr, rot_bbox3ds["grtr_tp"], 1,
+                                           splits["grtr_tp"]['category'][batch_idx],
+                                           splits["grtr_tp"]['iou'][batch_idx],
+                                           )
+        image_pred = bev_img.copy()
+
+        image_pred = self.draw_rotated_box(image_pred, rot_bbox3ds["pred_fp"], 2,
+                                           splits["pred_fp"]['ctgr_probs'][batch_idx],
+                                           )
+        image_pred = self.draw_rotated_box(image_pred, rot_bbox3ds["pred_tp"], 1,
+                                           splits["pred_tp"]['ctgr_probs'][batch_idx],
+                                           )
+
+        vlog_image = np.concatenate([image_pred, image_grtr], axis=1)
+        return vlog_image
+
+    def draw_rotated_box(self, img, corners, val=1, category=None, *args):
         shape = category.shape
 
         if shape[-1] > 1:
             best_cate = np.argmax(category, axis=-1)
             category = np.expand_dims(best_cate, -1)
-        bin = np.argmax(bin, axis=-1)
         color = np.array([(125, 125, 125), (255, 125, 0), (0, 255, 0), (0, 0, 255)]) / val
 
         for idx, corner in enumerate(corners):
-
+            ann = f'data: '
             if int(corner[1][0]) - int(corner[0][0]) == 0 and int(corner[1][1]) - int(corner[0][1]) == 0:
                 continue
-
+            print('corner.shape[0]', corner.shape[0])
+            corner_num = corner.shape[0]
             for corner_idx in range(corner.shape[0]):
-                cv2.line(img, (int(corner[corner_idx][0]), int(corner[corner_idx][1])),
-                         (int(corner[((corner_idx + 1) % 4)][0]), int(corner[((corner_idx + 1) % 4)][1])),
+                cv2.line(img,
+                         (int(corner[corner_idx][0]),
+                          int(corner[corner_idx][1])),
+                         (int(corner[((corner_idx + 1) % corner_num)][0]),
+                          int(corner[((corner_idx + 1) % corner_num)][1])),
                          color[int(category[idx])], 2)
-            # ann = f'{bin[idx]},{rad[idx, 0]:1.3f}'
-            # cv2.putText(img, ann, (int(corner[0][0]), int(corner[0][1])), cv2.FONT_HERSHEY_PLAIN, 1.0, color, 2)
-            # if obj_prob is not None:
-            #     ctgr_idx = np.argmax(category, axis=-1)
-            #     ctgr_prob = np.amax(category, axis=-1)
-            #     cate_ann = f'{ctgr_prob[idx]:3.3f}, {obj_prob[idx, 0]:3.3f}, {int(ctgr_idx[idx])} '
-            #     cv2.putText(img, cate_ann, (int(corner[2][0]), int(corner[2][1])), cv2.FONT_HERSHEY_PLAIN, 1.0,
-            #                 color, 2)
 
+            if args is not None:
+                for arg in args:
+                    ann = ann + f' {arg[idx, 0]:1.3f}'
+                cv2.putText(img, ann, (int(corner[0][0]), int(corner[0][1])), cv2.FONT_HERSHEY_PLAIN, 1.0,
+                            color[int(category[idx])], 2)
         return img
 
-    def one_hot(self, grtr_category, category_shape):
-        one_hot_data = np.eye(category_shape, dtype=np.float32)[grtr_category[..., 0].astype(np.int32)]
-        return one_hot_data
+    def draw_grtr_bbox_3d(self, org_img, splits, batch_idx):
+        bbox_3d = dict()
+        for split in ['grtr_fn', 'grtr_tp']:
+            bbox3d_per_image = splits[split]['bbox3d'][batch_idx]
+            yaw_rads_per_image = splits[split]['yaw_rads'][batch_idx]
+            bbox3d_per_img = list()
+            for bbox3d, yaw_rads in zip(bbox3d_per_image, yaw_rads_per_image):
+                print('bbox3d, yaw_rads', bbox3d.shape, yaw_rads.shape)
+                rot_bbox3d = vf.get_3d_points(bbox3d, yaw_rads)
+                bbox3d_per_img.append(rot_bbox3d)
+            bbox_3d[split] = np.stack(bbox3d_per_img, axis=0)
+        uf.print_structure('bbox_3d', bbox_3d)
+        image_grtr = org_img.copy()
+        image_grtr = self.draw_rotated_box(image_grtr, bbox_3d["grtr_fn"], 2,
+                                           splits["grtr_fn"]['category'][batch_idx],
+                                           splits["grtr_fn"]['iou'][batch_idx],
+                                           )
+        image_grtr = self.draw_rotated_box(image_grtr, bbox_3d["grtr_tp"], 1,
+                                           splits["grtr_tp"]['category'][batch_idx],
+                                           splits["grtr_tp"]['iou'][batch_idx],
+                                           )
+        return image_grtr
 
-    def convert_img(self, feature, scale, org_img):
 
-        feature_imge = feature.reshape((scale, scale, 3)) * 255
-        feature_imge = org_img + cv2.resize(feature_imge, (640, 640), interpolation=cv2.INTER_NEAREST)
-        feature_imge[-1, :] = [255, 255, 255]
-        feature_imge[:, -1] = [255, 255, 255]
-        return feature_imge
+

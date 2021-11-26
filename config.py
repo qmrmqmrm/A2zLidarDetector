@@ -122,7 +122,7 @@ class NMS:
     MAX_OUT = [3, 4, 3]
     IOU_THRESH = [0.02, 0.02, 0.02]
     # SCORE_THRESH = [0.88, 0.96, 0.44]
-    SCORE_THRESH = [0.844, 0.862, 0.9]
+    SCORE_THRESH = [0.89, 0.862, 0.9]
 
     # SCORE_CANDIDATES = np.concatenate(
     #     [np.arange(0.1, 0.8, 0.1), np.arange(0.8, 1.0, 0.02)])  # 10
@@ -138,10 +138,10 @@ class NMS:
 
 
 class Validation:
-    TP_IOU_THRESH = [0.4, 0.4, 0.4, 0.4]
+    TP_IOU_THRESH = [0.5, 0.5, 0.5, 0.5]
     DISTANCE_LIMIT = 25
     VAL_EPOCH = "latest"
-    MAP_TP_IOU_THRESH = [0.5]
+    MAP_TP_IOU_THRESH = [0.4]
 
 
 class Logging:

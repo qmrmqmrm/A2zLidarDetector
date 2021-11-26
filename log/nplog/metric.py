@@ -61,13 +61,13 @@ def count_true_positives_rotated(grtr, pred, num_ctgr, iou_thresh=cfg.Validation
         grtr_fn_count = count_per_class(splits["grtr_fn"], grtr_valid_fn, num_ctgr)
         pred_tp_count = count_per_class_pred(splits["pred_tp"], pred_valid_tp, num_ctgr)
         pred_fp_count = count_per_class_pred(splits["pred_fp"], pred_valid_fp, num_ctgr)
-        return {"trpo_rot": pred_tp_count, "grtr_rot": (grtr_tp_count + grtr_fn_count),
-                "pred_rot": (pred_tp_count + pred_fp_count)}
+        return {"trpo": pred_tp_count, "grtr": (grtr_tp_count + grtr_fn_count),
+                "pred": (pred_tp_count + pred_fp_count)}
     else:
         grtr_count = np.sum(grtr_valid_tp + grtr_valid_fn)
         pred_count = np.sum(pred_valid_tp + pred_valid_fp)
         trpo_count = np.sum(pred_valid_tp)
-        return {"trpo_rot": trpo_count, "grtr_rot": grtr_count, "pred_rot": pred_count}
+        return {"trpo": trpo_count, "grtr": grtr_count, "pred": pred_count}
 
 
 def split_true_false(grtr, pred, iou_thresh):
@@ -169,14 +169,16 @@ def split_rotated_true_false(grtr, pred, iou_thresh):
 def split_rotated_per_category(grtr, grtr_mask, pred, pred_mask, iou_thresh):
     grtr_bbox = grtr["bbox3d"] * grtr_mask
     pred_bbox = pred["bbox3d"] * pred_mask
+    grtr_rad = (grtr['yaw_rads'] * 180 / np.pi) * grtr_mask
+    pred_rad = (pred['yaw_rads'] * 180 / np.pi) * pred_mask
     pred_ctgr = np.argmax(pred["ctgr_probs"], axis=-1)
     pred_ctgr = np.expand_dims(pred_ctgr, -1) * pred_mask
     rotated_ious = list()
     for frame in range(grtr_bbox.shape[0]):
-        print('frame', frame)
-        rotated_iou = uf.rotated_iou_per_frame(grtr, pred, frame)  # (batch, N, M)
+        img_shape = grtr['image'][frame].shape
+        rotated_iou = uf.rotated_iou_per_frame(grtr_bbox[frame], pred_bbox[frame], grtr_rad[frame], pred_rad[frame], img_shape)  # (N, M)
         rotated_ious.append(rotated_iou)
-    rotated_ious = np.stack(rotated_ious,axis=0)
+    rotated_ious = np.stack(rotated_ious, axis=0)
     best_iou = np.max(rotated_ious, axis=-1)  # (batch, N)
     best_idx = np.argmax(rotated_ious, axis=-1)  # (batch, N)
     if len(iou_thresh) > 1:

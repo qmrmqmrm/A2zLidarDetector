@@ -14,21 +14,8 @@ from log.nplog.logfile import LogFile
 import utils.util_function as uf
 
 
-def val_main():
-    end_epoch = 0
-    for dataset_name, epochs, learning_rate, loss_weights, model_save in cfg.Train.TESTING_PLAN:
-        end_epoch += epochs
-        val_by_plan(dataset_name, end_epoch, loss_weights)
-
-
-def get_end_epohcs():
-    end_epochs = 0
-    for dataset_name, epochs, learning_rate, loss_weights, model_save in cfg.Train.TRAINING_PLAN:
-        end_epochs += epochs
-    return end_epochs
-
-
-def val_by_plan(dataset_name, end_epoch, loss_weights):
+# TODO: rearrange-code-21-11
+def validation_main(dataset_name="a2d2", loss_weights=LossComb.BIRDNET):
     batch_size, train_mode = cfg.Train.BATCH_SIZE, cfg.Train.MODE
     ckpt_path = op.join(cfg.Paths.CHECK_POINT, cfg.Train.CKPT_NAME)
     valid_category = cfg.get_valid_category_mask(dataset_name)
@@ -39,13 +26,11 @@ def val_by_plan(dataset_name, end_epoch, loss_weights):
     model = model_factory.make_model()
     model = try_load_weights(ckpt_path, model)
     loss_object = IntegratedLoss(batch_size, loss_weights, valid_category)
-    validator = ModelValidater(model, loss_object, start_epoch)
-    log_file = LogFile(ckpt_path)
-    # for epoch in range(start_epoch, end_epoch):
-    #     print(f"========== Start dataset : {dataset_name} epoch: {epoch + 1}/{end_epoch} ==========")
 
+    validator = ModelValidater(model, loss_object, start_epoch)
     val_result = validator.run_epoch(True, start_epoch+1, test_data_loader)
 
+    log_file = LogFile(ckpt_path)
     log_file.save_val_log(val_result)
 
 
@@ -78,4 +63,4 @@ def try_load_weights(ckpt_path, model, weights_suffix='latest'):
 
 
 if __name__ == '__main__':
-    val_main()
+    validation_main()

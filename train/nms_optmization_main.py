@@ -13,7 +13,25 @@ from model.model_factory import ModelFactory
 from dataloader.loader_factory import get_dataset
 import utils.util_function as uf
 import model.submodules.model_util as mu
-from log.nplog.metric import count_true_positives
+from log.nplog.metric import count_true_positives, count_true_positives_rotated
+
+
+# TODO: rearrange-code-21-11
+class EvaluateNmsParams:
+    """
+    evaluate performance for each param combination
+    -> total_eval_result.csv
+    """
+    pass
+
+
+class FindBestParamByAP:
+    """
+    find the best param combination by AP
+    -> optim_result.csv : best param per class
+        pr_curve_{class}.png
+    """
+    pass
 
 
 def optimize_nms_params():
@@ -84,7 +102,7 @@ def collect_recall_precision(dataset, model, valid_category):
             pred_bboxes = nms(pred, max_box, iou_thresh, score_thresh)
             # pred_bboxes = uf.slice_feature(pred_bboxes, cfg.Model.Output.get_bbox_composition(False))
             pred_bboxes = convert_tensor_to_numpy(pred_bboxes)
-            count_per_class = count_true_positives(grtr_slices, pred_bboxes,
+            count_per_class = count_true_positives_rotated(grtr_slices, pred_bboxes,
                                                    num_categories, iou_thresh=cfg.Validation.MAP_TP_IOU_THRESH,
                                                    per_class=True)
 
@@ -309,7 +327,7 @@ def compute_mAP(result):
 
 
 def compute_ap_all_class():
-    filename = '/media/dolphin/intHDD/birdnet_data/bv_a2d2/result/ckpt/full_v3_e30/nms_param/specific_summary.csv'
+    filename = '/media/dolphin/intHDD/birdnet_data/bv_a2d2/result/ckpt/full_v3_e70/nms_param/specific_summary.csv'
     result = pd.read_csv(filename)
     max_out_vals = result["max_box"].unique()
     iou_vals = result["iou_thresh"].unique()
@@ -322,7 +340,7 @@ def compute_ap_all_class():
                 outputs.append(out)
 
     outputs = pd.DataFrame(outputs)
-    outputs.to_csv('/media/dolphin/intHDD/birdnet_data/bv_a2d2/result/ckpt/full_v3_e30/nms_param/ap.csv', index=False)
+    outputs.to_csv('/media/dolphin/intHDD/birdnet_data/bv_a2d2/result/ckpt/full_v3_e70/nms_param/ap.csv', index=False)
 
 
 def compute_ap(data, max_out, iou, category):
@@ -376,9 +394,9 @@ def draw_ap_curve(recall, precision, max_pre):
 
 if __name__ == "__main__":
     np.set_printoptions(precision=4, suppress=True, linewidth=100)
-    # optimize_nms_params()
-    # compute_ap_all_class()
+    optimize_nms_params()
+    compute_ap_all_class()
     draw_best_ap_curve(0.02, 3, 0)
-    draw_best_ap_curve(0.02, 3, 1)
-    draw_best_ap_curve(0.02, 3, 2)
+    # draw_best_ap_curve(0.02, 3, 1)
+    # draw_best_ap_curve(0.02, 3, 2)
 

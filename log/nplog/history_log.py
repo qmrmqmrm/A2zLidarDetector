@@ -106,13 +106,13 @@ class HistoryLog:
                       "trpo_num": sum_result["trpo"],
                       "grtr_num": sum_result["grtr"],
                       "pred_num": sum_result["pred"],
-                      "recall_rot": sum_result["trpo_rot"] / (sum_result["grtr_rot"] + 1e-5),
-                      "precision_rot": sum_result["trpo_rot"] / (sum_result["pred_rot"] + 1e-5),
-                      "trpo_rot_num": sum_result["trpo_rot"],
-                      "grtr_rot_num": sum_result["grtr_rot"],
-                      "pred_rot_num": sum_result["pred_rot"]
+                      # "recall_rot": sum_result["trpo_rot"] / (sum_result["grtr_rot"] + 1e-5),
+                      # "precision_rot": sum_result["trpo_rot"] / (sum_result["pred_rot"] + 1e-5),
+                      # "trpo_rot_num": sum_result["trpo_rot"],
+                      # "grtr_rot_num": sum_result["grtr_rot"],
+                      # "pred_rot_num": sum_result["pred_rot"]
                       }
-        metric_keys = ["trpo", "grtr", "pred","trpo_rot", "grtr_rot", "pred_rot"]
+        metric_keys = ["trpo", "grtr", "pred"]
 
         summary = {key: val for key, val in mean_result.items() if key not in metric_keys}
         summary.update(sum_result)
