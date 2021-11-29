@@ -3,7 +3,7 @@ import torch
 import pandas as pd
 from timeit import default_timer as timer
 
-from log.nplog.metric import count_true_positives, count_true_positives_rotated
+from log.nplog.metric import count_true_positives, IouEstimator, RotatedIouEstimator
 import utils.util_function as uf
 import config as cfg
 
@@ -47,11 +47,16 @@ class HistoryLog:
         num_ctgr = pred_nms["ctgr_probs"].shape[-1] - 1
         print()
         print('img', grtr['image_file'])
-        metric = count_true_positives(grtr, pred_nms, num_ctgr, per_class=True)
-        metric_rot = count_true_positives_rotated(grtr, pred_nms, num_ctgr, per_class=True)
+        metric = count_true_positives(grtr, pred_nms, num_ctgr, IouEstimator(), per_class=True)
+        metric_rot = count_true_positives(grtr, pred_nms, num_ctgr, RotatedIouEstimator(), per_class=True)
+        metric_rota = dict()
+        for key in metric_rot:
+            new_key = key + "_rot"
+            metric_rota[new_key] = metric_rot[key]
 
+        uf.print_structure('metric_rota', metric_rota)
         batch_data.update(metric)
-        batch_data.update(metric_rot)
+        batch_data.update(metric_rota)
         # pred_cate = torch.softmax(torch.tensor(pred["category"]), dim=-1).to('cpu').detach().numpy()
         batch_data["true_cls"] = self.logtrueclass(gt_aligned, pred["ctgr_probs"])
         batch_data["false_cls"] = self.logfalseclass(gt_aligned, pred["ctgr_probs"])
@@ -106,11 +111,11 @@ class HistoryLog:
                       "trpo_num": sum_result["trpo"],
                       "grtr_num": sum_result["grtr"],
                       "pred_num": sum_result["pred"],
-                      # "recall_rot": sum_result["trpo_rot"] / (sum_result["grtr_rot"] + 1e-5),
-                      # "precision_rot": sum_result["trpo_rot"] / (sum_result["pred_rot"] + 1e-5),
-                      # "trpo_rot_num": sum_result["trpo_rot"],
-                      # "grtr_rot_num": sum_result["grtr_rot"],
-                      # "pred_rot_num": sum_result["pred_rot"]
+                      "recall_rot": sum_result["trpo_rot"] / (sum_result["grtr_rot"] + 1e-5),
+                      "precision_rot": sum_result["trpo_rot"] / (sum_result["pred_rot"] + 1e-5),
+                      "trpo_rot_num": sum_result["trpo_rot"],
+                      "grtr_rot_num": sum_result["grtr_rot"],
+                      "pred_rot_num": sum_result["pred_rot"]
                       }
         metric_keys = ["trpo", "grtr", "pred"]
 

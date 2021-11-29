@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from box_intersection import oriented_box_intersection_2d
+from utils.box_intersection import oriented_box_intersection_2d
 
 
 # from min_enclosing_box import smallest_bounding_box
@@ -55,15 +55,10 @@ def cal_iou(box1: torch.Tensor, box2: torch.Tensor):
     """
     corners1 = box2corners_th(box1)
     corners2 = box2corners_th(box2)
-    print('corners1', corners1)
-    print('corners2', corners2)
     inter_area, _ = oriented_box_intersection_2d(corners1, corners2)  # (B, N)
     inter_area = inter_area.cpu()
     area1 = box1[:, :, 2] * box1[:, :, 3]
     area2 = box2[:, :, 2] * box2[:, :, 3]
-    print(area1)
-    print(area2)
-    print(inter_area)
     u = area1 + area2 - inter_area
     iou = inter_area / u
     return iou, corners1, corners2, u
@@ -271,5 +266,3 @@ if __name__ == "__main__":
     tensor1 = torch.FloatTensor(box3d1).unsqueeze(0).unsqueeze(0).cuda()
     tensor2 = torch.FloatTensor(box3d2).unsqueeze(0).unsqueeze(0).cuda()
     giou_loss, iou = cal_giou_3d(tensor1, tensor1)
-    print(giou_loss)
-    print(iou)

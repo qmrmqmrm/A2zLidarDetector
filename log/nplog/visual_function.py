@@ -6,23 +6,22 @@ import numpy as np
 import cv2
 
 import config as cfg
-from log.nplog.metric import split_true_false, split_rotated_true_false
 import utils.util_function as uf
 import model.submodules.model_util as mu
-import  dataloader.data_util.a2d2_calib_reader as ar
+import dataloader.data_util.a2d2_calib_reader as ar
 
 
 # TODO: rearrange-code-21-11, rename file
 
 def rotated_box2d(bboxes_yxlw, yaw_rads):
     bbox_yx, bbox_lw = bboxes_yxlw[:2], bboxes_yxlw[2:4]
-    bbox_yx = np.array([bbox_yx[1], bbox_yx[0]])
+    bbox_xy = np.array([bbox_yx[1], bbox_yx[0]])
     corners = get_box2d_corner(bbox_lw)
     # yaw = -(yaw_rads[0] + (math.pi / 2))
     c, s = np.cos(yaw_rads[0]), np.sin(yaw_rads[0])
     R = np.array([[c, -s],
                   [-s, -c]])  # image coordinates: flip y
-    rotated_corners = np.dot(corners, R) + bbox_yx
+    rotated_corners = np.dot(corners, R) + bbox_xy
     return rotated_corners
 
 

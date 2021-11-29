@@ -185,7 +185,6 @@ def rotated_iou_per_frame(grtr_bbox3d, pred_bbox3d, grtr_rad, pred_rad, img_shap
 
 def fillconvex_rotated_box(boxes, img_shape):
     b_boxes = list(map(lambda x: np.ceil(cv2.boxPoints(((x[0], x[1]), (x[2], x[3]), x[4]))), boxes))
-    print('bbox', b_boxes)
     b_imgs = np.array([cv2.fillConvexPoly(np.zeros(img_shape, dtype=np.uint8), np.int0(b), 1) for b in b_boxes]).astype(
         float)
     return b_imgs
@@ -201,7 +200,6 @@ def comput_rotated_iou(b_imgs, box_b):
         else:
             intersection = np.concatenate([intersection, np.expand_dims((b_img * box_b).sum((1, 2)), axis=0)], axis=0)
             summation = np.concatenate([summation, np.expand_dims((b_img + box_b).sum((1, 2)), axis=0)], axis=0)
-        print('intersection', intersection)
     return intersection / (summation - intersection + 1.0)
 
 

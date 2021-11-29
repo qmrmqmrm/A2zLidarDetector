@@ -51,3 +51,5 @@ wheels/
 
 !demo/demo_img/*
 !val_images/*
+
+*/splits.py

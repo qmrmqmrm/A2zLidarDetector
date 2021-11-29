@@ -110,13 +110,12 @@ class Train:
     MODE = ["eager", "graph"][0]
     BATCH_SIZE = 1
     TRAINING_PLAN = params.TrainingPlan.A2D2_SIMPLE
-    TESTING_PLAN = params.ValPlan.A2D2_SIMPLE
 
 
 class Loss:
     ALIGN_IOU_THRESHOLD = [0.1, 0.4]
     ANCHOR_IOU_THRESHOLD = [0.1, 0.6]
-
+    TESTING_PLAN = params.LossComb.BIRDNET
 
 class NMS:
     MAX_OUT = [3, 4, 3]

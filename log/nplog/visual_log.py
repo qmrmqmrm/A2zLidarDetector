@@ -6,10 +6,11 @@ import numpy as np
 import cv2
 
 import config as cfg
-from log.nplog.metric import split_true_false, split_rotated_true_false
 import utils.util_function as uf
 import model.submodules.model_util as mu
-import log.nplog.visul_function as vf
+from log.nplog.metric import TrueFalseSplitter, RotatedIouEstimator, IouEstimator
+from log.nplog.splits import split_rotated_true_false, split_true_false
+import log.nplog.visual_function as vf
 
 
 # TODO: rearrange-code-21-11
@@ -21,24 +22,83 @@ class VisualLogNew:
     def __call__(self, step, grtr, pred, grtr_feat, pred_feat):
         splits = self.tf_spliter(grtr, pred)
         splits3d = self.tf_spliter_rot(grtr, pred)
-        splits3d = self.rotate_box3d(splits3d)
 
-        cam_image = self.get_cam_image()
-        bev_image = self.load_image()
+        batch = splits["grtr_tp"]["bbox2d"].shape[0]
+        for batch_idx in range(batch):
+            rot_bbox3ds = self.rotate_box3d(splits3d, batch_idx)
+            cam_image = self.get_cam_image()
+            bev_image = self.load_image()
 
-        bev_grtr_2d = self.draw_objects(bev_image, splits["grtr_tp"], self.draw_box2d, self.put_text_grtr)
-        bev_grtr_2d = self.draw_objects(bev_grtr_2d, splits["grtr_fn"], self.draw_box2d, self.put_text_grtr)
-        
-        bev_pred_2d = self.draw_objects(bev_image, splits["pred_tp"], self.draw_box2d, self.put_text_pred)
-        bev_pred_2d = self.draw_objects(bev_pred_2d, splits["pred_fp"], self.draw_box2d, self.put_text_pred)
-        self.concat_and_save_image(step, cam_image, bev_grtr_2d, bev_pred_2d, "2d")
+            bev_grtr_2d = self.draw_objects(bev_image, splits["grtr_tp"], self.draw_box2d, self.put_text_grtr)
+            bev_grtr_2d = self.draw_objects(bev_grtr_2d, splits["grtr_fn"], self.draw_box2d, self.put_text_grtr)
 
-        bev_grtr_3d = self.draw_objects(bev_image, splits3d["grtr_tp"], self.draw_box3d, self.put_text_grtr)
-        bev_grtr_3d = self.draw_objects(bev_grtr_3d, splits3d["grtr_fn"], self.draw_box3d, self.put_text_grtr)
+            bev_pred_2d = self.draw_objects(bev_image, splits["pred_tp"], self.draw_box2d, self.put_text_pred)
+            bev_pred_2d = self.draw_objects(bev_pred_2d, splits["pred_fp"], self.draw_box2d, self.put_text_pred)
+            self.concat_and_save_image(step, cam_image, bev_grtr_2d, bev_pred_2d, "2d")
 
-        bev_pred_3d = self.draw_objects(bev_image, splits3d["pred_tp"], self.draw_box3d, self.put_text_pred)
-        bev_pred_3d = self.draw_objects(bev_pred_3d, splits3d["pred_fp"], self.draw_box3d, self.put_text_pred)
-        self.concat_and_save_image(step, cam_image, bev_grtr_3d, bev_pred_3d, "3d")
+            bev_grtr_3d = self.draw_objects(bev_image, rot_bbox3ds["grtr_tp"], self.draw_box3d, self.put_text_grtr)
+            bev_grtr_3d = self.draw_objects(bev_grtr_3d, rot_bbox3ds["grtr_fn"], self.draw_box3d, self.put_text_grtr)
+
+            bev_pred_3d = self.draw_objects(bev_image, rot_bbox3ds["pred_tp"], self.draw_box3d, self.put_text_pred)
+            bev_pred_3d = self.draw_objects(bev_pred_3d, rot_bbox3ds["pred_fp"], self.draw_box3d, self.put_text_pred)
+            self.concat_and_save_image(step, cam_image, bev_grtr_3d, bev_pred_3d, "3d")
+
+    def rotate_box3d(self, splits3d, batch_idx):
+        splits_keys = splits3d.keys()
+        for key in splits_keys:
+            bbox3d_per_image = splits3d[key]['bbox3d'][batch_idx]
+            yaw_rads_per_image = splits3d[key]['yaw_rads'][batch_idx]
+
+            rot_bbox3d_per_img = list()
+
+            for bbox3d, yaw_rads in zip(bbox3d_per_image, yaw_rads_per_image):
+                rot_bbox3d = vf.rotated_box2d(bbox3d[:4], yaw_rads)
+                rot_bbox3d_per_img.append(rot_bbox3d)
+
+            splits3d[key]['rot_bbox3d'] = np.stack(rot_bbox3d_per_img, axis=0)
+        return splits3d
+
+    def get_cam_image(self):
+        pass
+
+    def load_image(self):
+        pass
+
+    def draw_objects(self, img, splits, object, put_text):
+        pass
+
+    def draw_box2d(self):
+        pass
+
+    def draw_box3d(self, img, corners, category):
+        shape = category.shape
+
+        if shape[-1] > 1:
+            best_cate = np.argmax(category, axis=-1)
+            category = np.expand_dims(best_cate, -1)
+        color = np.array([(125, 125, 125), (255, 125, 0), (0, 255, 0), (0, 0, 255)]) / val
+
+        for idx, corner in enumerate(corners):
+            if int(corner[1][0]) - int(corner[0][0]) == 0 and int(corner[1][1]) - int(corner[0][1]) == 0:
+                continue
+            corner_num = corner.shape[0]
+            for corner_idx in range(corner.shape[0]):
+                cv2.line(img,
+                         (int(corner[corner_idx][0]),
+                          int(corner[corner_idx][1])),
+                         (int(corner[((corner_idx + 1) % corner_num)][0]),
+                          int(corner[((corner_idx + 1) % corner_num)][1])),
+                         color[int(category[idx])], 2)
+        return img
+
+    def put_text_grtr(self):
+        pass
+
+    def put_text_pred(self):
+        pass
+
+    def concat_and_save_image(self, step, img, grtr, pred, title):
+        pass
 
 
 class VisualLog:
@@ -54,6 +114,8 @@ class VisualLog:
         #     os.makedirs(self.obj_path)
 
         self.categories = {i: ctgr_name for i, ctgr_name in enumerate(cfg.Datasets.Standard.CATEGORY_NAMES)}
+        self.tf_spliter = TrueFalseSplitter(IouEstimator(), cfg.Validation.TP_IOU_THRESH)
+        self.tf_spliter_rot = TrueFalseSplitter(RotatedIouEstimator(), cfg.Validation.TP_IOU_THRESH)
 
     def __call__(self, step, grtr, gt_feature, pred, pred_nms):
         """
@@ -91,9 +153,11 @@ class VisualLog:
             }
         """
         print('VisualLog')
-        splits = split_true_false(grtr, pred_nms, cfg.Validation.TP_IOU_THRESH)
-        splits_rot = split_rotated_true_false(grtr, pred_nms, cfg.Validation.TP_IOU_THRESH)
-        uf.print_structure('splits_rot', splits_rot)
+        splits = self.tf_spliter(grtr, pred)
+        splits_rot = self.tf_spliter_rot(grtr, pred)
+
+        # splits = split_true_false(grtr, pred_nms, cfg.Validation.TP_IOU_THRESH)
+        # splits_rot = split_rotated_true_false(grtr, pred_nms, cfg.Validation.TP_IOU_THRESH)
         batch = splits["grtr_tp"]["bbox2d"].shape[0]
 
         for batch_idx in range(batch):
@@ -221,7 +285,6 @@ class VisualLog:
                 rot_bbox3d_per_img.append(rot_bbox3d)
 
             rot_bbox3ds[key] = np.stack(rot_bbox3d_per_img, axis=0)
-        uf.print_structure('rot_bbox3ds', rot_bbox3ds)
         image_grtr = bev_img.copy()
         print('grtr_fn', splits["grtr_fn"]['iou'][batch_idx])
         image_grtr = self.draw_rotated_box(image_grtr, rot_bbox3ds["grtr_fn"], 2,
@@ -285,7 +348,6 @@ class VisualLog:
                 rot_bbox3d = vf.get_3d_points(bbox3d, yaw_rads)
                 bbox3d_per_img.append(rot_bbox3d)
             bbox_3d[split] = np.stack(bbox3d_per_img, axis=0)
-        uf.print_structure('bbox_3d', bbox_3d)
         image_grtr = org_img.copy()
         image_grtr = self.draw_rotated_box(image_grtr, bbox_3d["grtr_fn"], 2,
                                            splits["grtr_fn"]['category'][batch_idx],
@@ -296,6 +358,3 @@ class VisualLog:
                                            splits["grtr_tp"]['iou'][batch_idx],
                                            )
         return image_grtr
-
-
-

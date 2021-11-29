@@ -146,7 +146,6 @@ def sort_indices(vertices: torch.Tensor, mask: torch.Tensor):
     vertices_normalized = vertices_normalized.cuda()
     mask = mask.cuda()
     num_valid = num_valid.cuda()
-    print(vertices_normalized)
     return sort_v(vertices_normalized, mask, num_valid).long()
 
 
@@ -181,11 +180,9 @@ def oriented_box_intersection_2d(corners1: torch.Tensor, corners2: torch.Tensor)
         selected: (B, N, 9, 2), vertices of polygon with zero padding
     """
     inters, mask_inter = box_intersection_th(corners1, corners2)
-    print('inters', inters)
     c12, c21 = box_in_box_th(corners1, corners2)
     vertices, mask = build_vertices(corners1, corners2, c12, c21, inters, mask_inter)
     vertices = vertices.cuda()
     mask = mask.cuda()
-    print('vvertices',vertices)
     sorted_indices = sort_indices(vertices, mask)
     return calculate_area(sorted_indices, vertices)

@@ -4,7 +4,6 @@ import torch
 from torch.utils.data import DataLoader
 
 from dataloader.a2d2_dataset import A2D2Dataset
-from dataloader.kitti_loader import KittiDataset
 import model.submodules.model_util as mu
 import utils.util_function as uf
 import config as cfg
@@ -14,10 +13,6 @@ def loader_factory(dataset_name, split):
     if dataset_name == "a2d2":
         path = cfg.Datasets.A2D2.PATH
         dataset = A2D2Dataset(path, split)
-        return dataset
-    if dataset_name == "kitti":
-        path = cfg.Datasets.Kitti.PATH
-        dataset = KittiDataset(path, split)
         return dataset
 
 
