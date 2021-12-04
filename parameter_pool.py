@@ -20,10 +20,6 @@ class Anchor:
 
 
 class TrainingPlan:
-    KITTI_SIMPLE = [
-        ("kitti", 10, 0.0001, LossComb.STANDARD, True),
-        ("kitti", 10, 0.00001, LossComb.STANDARD, True)
-    ]
     A2D2_SIMPLE = [
         ('a2d2', 10, 0.0001, LossComb.BIRDNET, True),
         ('a2d2', 10, 0.00001, LossComb.BIRDNET, True),
@@ -34,13 +30,4 @@ class TrainingPlan:
         ('a2d2', 10, 0.000001, LossComb.BIRDNET, True),
 
     ]
-class ValPlan:
-    KITTI_SIMPLE = [
-        ("kitti", 10, 0.0001, LossComb.STANDARD, True),
-        ("kitti", 10, 0.00001, LossComb.STANDARD, True)
-    ]
-    A2D2_SIMPLE = [
-        ('a2d2', 10, 0.0001, LossComb.BIRDNET, True),
 
-
-    ]

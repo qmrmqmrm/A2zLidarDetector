@@ -6,7 +6,6 @@ import numpy as np
 
 class Paths:
     RESULT_ROOT = "/media/dolphin/intHDD/birdnet_data/bv_a2d2/result"
-    TFRECORD = op.join(RESULT_ROOT, "pyloader")
     CHECK_POINT = op.join(RESULT_ROOT, "ckpt")
 
 
@@ -84,13 +83,10 @@ class Model:
     class Output:
         FEATURE_ORDER = ["feature_s", "feature_m", "feature_l"]
         NUM_ANCHORS_PER_SCALE = 3
-        OUT_COMPOSITION = ()  # assigned by set_out_channel()
         WEIGHT_DECAY = 0.0001
         WEIGHT_DECAY_BIAS = 0.0001
         WEIGHT_DECAY_NORM = 0.0
         MOMENTUM = 0.9
-        MAX_ITER = 30000
-        MINOR_CTGR = False
 
     class Structure:
         VP_BINS = 6
@@ -101,8 +97,6 @@ class Model:
         IMAGE_SHAPE = [640, 640]
         STRIDE_SHAPE = Scales.DEFAULT_FEATURE_SCALES
         LOSS_CHANNEL = {'category': 1, 'bbox3d_delta': BOX_DIM, 'yaw_cls': VP_BINS, 'yaw_res': VP_BINS}
-        BIN_EDGE = [-(7 * math.pi / 12), -(5 * math.pi / 12), -(3 * math.pi / 12), -(1 * math.pi / 12),
-                    (1 * math.pi / 12), (3 * math.pi / 12)]
 
 
 class Train:
@@ -121,14 +115,14 @@ class NMS:
     MAX_OUT = [3, 4, 3]
     IOU_THRESH = [0.02, 0.02, 0.02]
     # SCORE_THRESH = [0.88, 0.96, 0.44]
-    SCORE_THRESH = [0.89, 0.862, 0.9]
+    SCORE_THRESH = [0.844, 0.862, 0.9]
 
     # SCORE_CANDIDATES = np.concatenate(
     #     [np.arange(0.1, 0.8, 0.1), np.arange(0.8, 1.0, 0.02)])  # 10
 
     SCORE_CANDIDATES = np.concatenate(
         [np.arange(0.1, 0.8, 0.1), np.arange(0.8, 0.85, 0.02), np.arange(0.83, 0.87, 0.002),
-         np.arange(0.87, 1.0, 0.02) ])  # 10
+         np.arange(0.87, 1.0, 0.02)])  # 10
 
     # IOU_CANDIDATES = np.array([0.02, 0.04, 0.06, 0.08, 0.1])
     IOU_CANDIDATES = np.array([0.02])
@@ -137,7 +131,7 @@ class NMS:
 
 
 class Validation:
-    TP_IOU_THRESH = [0.5, 0.5, 0.5, 0.5]
+    TP_IOU_THRESH = [0.4, 0.4, 0.4, 0.4]
     DISTANCE_LIMIT = 25
     VAL_EPOCH = "latest"
     MAP_TP_IOU_THRESH = [0.4]
@@ -161,7 +155,7 @@ def summary(cls):
     pass
 
 
-def get_img_shape(code="HW", dataset="kitti", scale_div=1):
+def get_img_shape(code="HW", dataset="a2d2", scale_div=1):
     dataset_cfg = Datasets.get_dataset_config(dataset)
     imsize = dataset_cfg.INPUT_RESOLUTION
     code = code.upper()
@@ -181,7 +175,7 @@ def get_img_shape(code="HW", dataset="kitti", scale_div=1):
         assert 0, f"Invalid code: {code}"
 
 
-def get_valid_category_mask(dataset="kitti"):
+def get_valid_category_mask(dataset="a2d2"):
     """
     :param dataset: dataset name
     :return: binary mask e.g. when

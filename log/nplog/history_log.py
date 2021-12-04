@@ -3,7 +3,7 @@ import torch
 import pandas as pd
 from timeit import default_timer as timer
 
-from log.nplog.metric import count_true_positives, IouEstimator, RotatedIouEstimator
+from log.nplog.metric import count_true_positives, IouEstimator, RotatedIouEstimator, Rotated3DIouEstimator
 import utils.util_function as uf
 import config as cfg
 
@@ -41,25 +41,29 @@ class HistoryLog:
         loss_list = [loss_name for loss_name, loss_tensor in loss_by_type.items() if loss_tensor.ndim == 0]
         batch_data = {loss_name: loss_by_type[loss_name] for loss_name in loss_list}
         batch_data["total_loss"] = total_loss
-        box_objectness = self.analyze_box_objectness(gt_feature, pred)
+        box_objectness = self.analyze_box_objectness(gt_feature, pred['fmap'])
         batch_data.update(box_objectness)
 
-        num_ctgr = pred_nms["ctgr_probs"].shape[-1] - 1
+        num_ctgr = pred_nms["category"].shape[-1] - 1
         print()
         print('img', grtr['image_file'])
         metric = count_true_positives(grtr, pred_nms, num_ctgr, IouEstimator(), per_class=True)
         metric_rot = count_true_positives(grtr, pred_nms, num_ctgr, RotatedIouEstimator(), per_class=True)
+        metric_rot_3d = count_true_positives(grtr, pred_nms, num_ctgr, Rotated3DIouEstimator(), per_class=True)
         metric_rota = dict()
         for key in metric_rot:
             new_key = key + "_rot"
             metric_rota[new_key] = metric_rot[key]
-
-        uf.print_structure('metric_rota', metric_rota)
+        metric_rot_3ds = dict()
+        for key in metric_rot:
+            new_key = key + "_3d"
+            metric_rot_3ds[new_key] = metric_rot_3d[key]
         batch_data.update(metric)
         batch_data.update(metric_rota)
+        batch_data.update(metric_rot_3ds)
         # pred_cate = torch.softmax(torch.tensor(pred["category"]), dim=-1).to('cpu').detach().numpy()
-        batch_data["true_cls"] = self.logtrueclass(gt_aligned, pred["ctgr_probs"])
-        batch_data["false_cls"] = self.logfalseclass(gt_aligned, pred["ctgr_probs"])
+        batch_data["true_cls"] = self.logtrueclass(gt_aligned, pred['inst']["category"])
+        batch_data["false_cls"] = self.logfalseclass(gt_aligned, pred['inst']["category"])
 
         batch_data = self.set_precision(batch_data, 5)
         col_order = list(batch_data.keys())
@@ -71,10 +75,10 @@ class HistoryLog:
             print("\n--- batch_data:", batch_data)
             self.check_pred_scales(pred_nms)
 
-    def analyze_box_objectness(self, grtr, pred):
+    def analyze_box_objectness(self, grtr, pred_fmap):
         pos_obj, neg_obj = 0, 0
         pos_obj_sc, neg_obj_sc = self.pos_neg_obj(np.concatenate(grtr["object"], axis=1),
-                                                  np.concatenate(pred["rpn_feat_objectness"], axis=1))
+                                                  np.concatenate(pred_fmap["objectness"], axis=1))
         pos_obj += pos_obj_sc
         neg_obj += neg_obj_sc
         objectness = {"pos_obj": pos_obj, "neg_obj": neg_obj}
@@ -115,7 +119,12 @@ class HistoryLog:
                       "precision_rot": sum_result["trpo_rot"] / (sum_result["pred_rot"] + 1e-5),
                       "trpo_rot_num": sum_result["trpo_rot"],
                       "grtr_rot_num": sum_result["grtr_rot"],
-                      "pred_rot_num": sum_result["pred_rot"]
+                      "pred_rot_num": sum_result["pred_rot"],
+                      "recall_3d": sum_result["trpo_3d"] / (sum_result["grtr_3d"] + 1e-5),
+                      "precision_3d": sum_result["trpo_3d"] / (sum_result["pred_3d"] + 1e-5),
+                      "trpo_3d_num": sum_result["trpo_3d"],
+                      "grtr_3d_num": sum_result["grtr_3d"],
+                      "pred_3d_num": sum_result["pred_3d"],
                       }
         metric_keys = ["trpo", "grtr", "pred"]
 

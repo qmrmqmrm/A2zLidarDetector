@@ -83,7 +83,7 @@ class Box2dRegression(LossBase):
     def cal_delta2d_loss_per_scale(self, pred, auxi, scale_idx):
         gt_object_per_scale = auxi['gt_feature']['object'][scale_idx]
         gt_bbox2d_per_scale = auxi['gt_feature']['bbox2d_delta'][scale_idx] * gt_object_per_scale
-        rpn_bbox2d_per_scale = pred['rpn_feat_bbox2d_delta'][scale_idx] * gt_object_per_scale
+        rpn_bbox2d_per_scale = pred['fmap']['bbox2d_delta'][scale_idx] * gt_object_per_scale
         return F.smooth_l1_loss(rpn_bbox2d_per_scale, gt_bbox2d_per_scale, reduction='sum', beta=0.5)
 
 
@@ -98,8 +98,8 @@ class ObjectClassification(LossBase):
     def cal_obj_loss_per_scale(self, pred, auxi, scale_idx):
         gt_object = auxi['gt_feature']['object'][scale_idx]
         gt_negative = auxi['gt_feature']['negative'][scale_idx]
-        rpn_obj_logit = pred['rpn_feat_object_logits'][scale_idx]
-        rpn_obj_sig = pred['rpn_feat_objectness'][scale_idx]
+        rpn_obj_logit = pred['fmap']['object_logits'][scale_idx]
+        rpn_obj_sig = pred['fmap']['objectness'][scale_idx]
         focal_loss = torch.pow(rpn_obj_sig - gt_object, 2)
 
         ce_loss = F.binary_cross_entropy_with_logits(rpn_obj_logit, gt_object, reduction='none') * focal_loss
@@ -149,7 +149,7 @@ class CategoryClassification(LossBase):
         gt_classes = (auxi["gt_aligned"]["category"]).type(torch.int64).view(-1)  # (batch*512)
         pred_classes = (auxi["pred_select"]["ctgr_logit"]).view(-1, 4)  # (batch*512 , 3)
         ce_loss = F.cross_entropy(pred_classes, gt_classes, reduction="none")
-        ce_loss = ce_loss * pred['zeropad']
+        ce_loss = ce_loss * pred['inst']['zeropad']
 
         bgd_ce = ce_loss * (gt_classes == 0) * 0.001
         tr_ce = ce_loss * (gt_classes > 0)
@@ -163,7 +163,7 @@ class YawClassification(LossBase):
         gt_yaw = (auxi['gt_aligned']['yaw_cls']).view(-1).to(torch.int64)
         pred_yaw = (auxi['pred_select']['yaw_cls_logit']).view(-1, self.bin_num)
         ce_loss = F.cross_entropy(pred_yaw, gt_yaw, reduction="none")
-        ce_loss = ce_loss * pred['zeropad']
+        ce_loss = ce_loss * pred['inst']['zeropad']
         pos_ce = ce_loss * auxi["gt_aligned"]["object"].view(-1)
         loss = torch.sum(pos_ce)
 

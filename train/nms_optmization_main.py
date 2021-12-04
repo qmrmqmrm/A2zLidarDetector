@@ -140,10 +140,10 @@ def to_device(features):
 
 
 def select_best_ctgr_pred(pred):
-    best_ctgr = torch.argmax(pred['ctgr_probs'], dim=-1).unsqueeze(-1)
-    need_key = ['bbox3d', 'yaw_cls_probs', 'yaw_cls_logit', 'yaw_res', 'bbox3d_delta']
+    best_ctgr = torch.argmax(pred['category'], dim=-1).unsqueeze(-1)
+    need_key = ['bbox3d', 'yaw_cls', 'yaw_cls_logit', 'yaw_res', 'bbox3d_delta']
     select_pred = uf.select_category(pred, best_ctgr, need_key)
-    best_yaw_cls_idx = torch.argmax(select_pred['yaw_cls_probs'], dim=-1).unsqueeze(-1)
+    best_yaw_cls_idx = torch.argmax(select_pred['yaw_cls'], dim=-1).unsqueeze(-1)
     select_pred['yaw_res'] = torch.gather(select_pred['yaw_res'], dim=-1,
                                           index=best_yaw_cls_idx)
     select_pred['yaw_rads'] = (best_yaw_cls_idx * (math.pi / cfg.Model.Structure.VP_BINS) - (math.pi / 2) +

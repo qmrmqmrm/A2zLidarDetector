@@ -4,6 +4,7 @@ import utils.util_function as uf
 import model.submodules.model_util as mu
 import config as cfg
 import parameter_pool as pp
+import utils.compute_iou as ci
 
 
 def count_true_positives(grtr, pred, num_ctgr, estimator, tp_iou=cfg.Validation.TP_IOU_THRESH, per_class=False):
@@ -19,8 +20,6 @@ def count_true_positives(grtr, pred, num_ctgr, estimator, tp_iou=cfg.Validation.
     split_key = estimator.split_key
     splits = TrueFalseSplitter(estimator, tp_iou)(grtr, pred)
     # ========== use split instead grtr, pred
-    print(split_key)
-    print(splits["grtr_tp"][split_key].shape)
     grtr_valid_tp = splits["grtr_tp"][split_key][..., 2:3] > 0
     grtr_valid_fn = splits["grtr_fn"][split_key][..., 2:3] > 0
     pred_valid_tp = splits["pred_tp"][split_key][..., 2:3] > 0
@@ -87,7 +86,7 @@ def count_per_class_pred(boxes, mask, num_ctgr):
     # boxes_ctgr = tf.cast(boxes["category"][..., 0], dtype=tf.int32)  # (batch, N')
     # boxes_onehot = tf.one_hot(boxes_ctgr, depth=num_ctgr) * mask  # (batch, N', K)
     # boxes_count = tf.reduce_sum(boxes_onehot, axis=[0, 1])
-    best_inds = np.argmax(boxes["ctgr_probs"], axis=-1)  # (batch, N')
+    best_inds = np.argmax(boxes["category"], axis=-1)  # (batch, N')
     boxes_onehot = one_hot(best_inds, num_ctgr + 1) * mask
     boxes_count = np.sum(boxes_onehot, axis=(0, 1))
     return boxes_count
@@ -127,8 +126,8 @@ class TrueFalseSplitter:
         self.tp_iou = tp_iou
 
     def __call__(self, grtr, pred):
-        batch, M, num_ctgr = pred["ctgr_probs"].shape
-        pred_ctgr = np.argmax(pred["ctgr_probs"], axis=-1)
+        batch, M, num_ctgr = pred["category"].shape
+        pred_ctgr = np.argmax(pred["category"], axis=-1)
         pred_ctgr = np.expand_dims(pred_ctgr, -1)
         pred_object_mask = (pred_ctgr > 0)
         grtr_object_mask = grtr["object"]
@@ -156,7 +155,7 @@ class TrueFalseSplitter:
         return {"pred_tp": pred_tp, "pred_fp": pred_fp, "grtr_tp": grtr_tp, "grtr_fn": grtr_fn}
 
     def split_per_category(self, grtr, grtr_mask, pred, pred_mask, iou_thresh):
-        pred_ctgr = np.argmax(pred["ctgr_probs"], axis=-1)
+        pred_ctgr = np.argmax(pred["category"], axis=-1)
         pred_ctgr = np.expand_dims(pred_ctgr, -1) * pred_mask
         iou = self.estimator(grtr, grtr_mask, pred, pred_mask)
         best_iou = np.max(iou, axis=-1)  # (batch, N)
@@ -197,13 +196,45 @@ class RotatedIouEstimator:
         pred_bbox = pred["bbox3d"] * pred_mask
         grtr_rad = (grtr['yaw_rads'] * 180 / np.pi) * grtr_mask
         pred_rad = (pred['yaw_rads'] * 180 / np.pi) * pred_mask
-        rotated_ious = list()
-        for frame in range(grtr_bbox.shape[0]):
-            img_shape = grtr['image'][frame].shape
-            rotated_iou = uf.rotated_iou_per_frame(grtr_bbox[frame], pred_bbox[frame], grtr_rad[frame],
-                                                   pred_rad[frame], img_shape)  # (N, M)
-            rotated_ious.append(rotated_iou)
-        rotated_ious = np.stack(rotated_ious, axis=0)
+        grtr_rbox = torch.tensor(np.concatenate(
+            [grtr_bbox[..., 1:2], grtr_bbox[..., 0:1], grtr_bbox[..., 3:4], grtr_bbox[..., 2:3], grtr_rad], axis=-1))
+        pred_rbox = torch.tensor(np.concatenate(
+            [pred_bbox[..., 1:2], pred_bbox[..., 0:1], pred_bbox[..., 3:4], pred_bbox[..., 2:3], pred_rad], axis=-1))
+        print('pred_rbox', pred_rbox.shape)
+        grtr_numbox = grtr_rbox.shape[1]
+        pred_numbox = pred_rbox.shape[1]
+        total_num = grtr_numbox * pred_numbox
+        grtr_rbox = grtr_rbox.repeat([1, 1, pred_numbox])
+        pred_rbox = pred_rbox.repeat([1, grtr_numbox, 1])
+        grtr_rbox = grtr_rbox.reshape([grtr_rbox.shape[0], total_num, 5])
+        rotated_ious, _, _, _ = ci.cal_iou(grtr_rbox, pred_rbox)
+        rotated_ious = rotated_ious.reshape(grtr_rbox.shape[0], grtr_numbox, pred_numbox).cpu().numpy()
+        return rotated_ious
+
+
+class Rotated3DIouEstimator:
+    def __init__(self):
+        self.split_key = "bbox3d"
+
+    def __call__(self, grtr, grtr_mask, pred, pred_mask):
+        grtr_bbox = grtr["bbox3d"] * grtr_mask
+        pred_bbox = pred["bbox3d"] * pred_mask
+        grtr_rad = (grtr['yaw_rads'] * 180 / np.pi) * grtr_mask
+        pred_rad = (pred['yaw_rads'] * 180 / np.pi) * pred_mask
+        grtr_rbox = torch.tensor(np.concatenate(
+            [grtr_bbox[..., 1:2], grtr_bbox[..., 0:1],grtr_bbox[..., 4:5]/2, grtr_bbox[..., 3:4], grtr_bbox[..., 2:3],grtr_bbox[..., 4:5], grtr_rad], axis=-1))
+        pred_rbox = torch.tensor(np.concatenate(
+            [pred_bbox[..., 1:2], pred_bbox[..., 0:1],pred_bbox[..., 4:5]/2, pred_bbox[..., 3:4], pred_bbox[..., 2:3], pred_bbox[..., 4:5],pred_rad], axis=-1))
+        print('pred_rbox', pred_rbox.shape)
+        grtr_numbox = grtr_rbox.shape[1]
+        pred_numbox = pred_rbox.shape[1]
+        total_num = grtr_numbox * pred_numbox
+        grtr_rbox = grtr_rbox.repeat([1, 1, pred_numbox])
+        pred_rbox = pred_rbox.repeat([1, grtr_numbox, 1])
+        grtr_rbox = grtr_rbox.reshape([grtr_rbox.shape[0], total_num, 7])
+        rotated_ious = ci.cal_iou_3d(grtr_rbox, pred_rbox)
+        rotated_ious = rotated_ious.reshape(grtr_rbox.shape[0], grtr_numbox, pred_numbox).cpu().numpy()
+        print('rotated_ious', rotated_ious.shape)
         return rotated_ious
 
 

@@ -10,7 +10,7 @@ from model.model_factory import ModelFactory
 from dataloader.loader_factory import get_dataset
 from train.train_val import get_train_val, ModelValidater
 from train.loss_factory import IntegratedLoss
-from log.nplog.logfile import LogFile
+from log.nplog.logger import LogFile
 import utils.util_function as uf
 
 

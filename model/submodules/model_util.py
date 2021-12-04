@@ -245,8 +245,8 @@ class NonMaximumSuppression:
         :return: (batch, max_out, 8), 8: bbox, category, objectness, ctgr_prob, score
         """
         boxes = pred['bbox2d']  # (batch, N, 4(tlbr))
-        categories = torch.argmax(pred['ctgr_probs'], dim=-1)
-        best_probs = torch.amax(pred['ctgr_probs'], dim=-1)
+        categories = torch.argmax(pred['category'], dim=-1)
+        best_probs = torch.amax(pred['category'], dim=-1)
         objectness = pred["object"][..., 0]  # (batch, N)
         scores = objectness * best_probs  # (batch, N)
         batch, numbox = categories.shape

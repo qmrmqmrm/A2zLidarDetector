@@ -127,11 +127,10 @@ class FastRCNNHead(nn.Module):
         pred['bbox3d'] = torch.cat(bbox3d, dim=-2)
         pred['strides'] = strides
         pred['ctgr_logit'] = pred['category'].squeeze(-1)
-        pred['ctgr_probs'] = torch.softmax(pred['ctgr_logit'], dim=-1)
+        pred['category'] = torch.softmax(pred['ctgr_logit'], dim=-1)
         pred['yaw_cls_logit'] = pred['yaw_cls']
-        pred['yaw_cls_probs'] = torch.softmax(pred['yaw_cls'], dim=-1)
+        pred['yaw_cls'] = torch.softmax(pred['yaw_cls'], dim=-1)
         pred['yaw_res'] = torch.sigmoid(pred['yaw_res']) * 0.6 - 0.3
-        del pred['category']
         return pred
 
 

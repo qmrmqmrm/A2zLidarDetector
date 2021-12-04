@@ -139,17 +139,17 @@ class IntegratedLoss:
                         grtr['anc_feat']]
         anchors_yxlw_cat = torch.cat(anchors_yxlw, dim=1)
         auxiliary = dict()
-        auxiliary["gt_aligned"] = self.matched_gt(grtr, pred['bbox2d'], self.align_iou_threshold)
+        auxiliary["gt_aligned"] = self.matched_gt(grtr, pred['inst']['bbox2d'], self.align_iou_threshold)
         auxiliary["gt_feature"] = self.matched_gt(grtr, anchors_yxlw_cat[..., :4], self.anchor_iou_threshold)
         auxiliary["gt_feature"] = self.split_feature(anchors_yxlw, auxiliary["gt_feature"])
         # auxiliary["pred_select"] = self.select_category(auxiliary['gt_aligned'], pred)
         need_key = ['bbox3d', 'yaw_cls_logit', 'yaw_res', 'bbox3d_delta']
-        auxiliary["pred_select"] = uf.select_category(pred, auxiliary['gt_aligned']['category'], need_key)
+        auxiliary["pred_select"] = uf.select_category(pred['inst'], auxiliary['gt_aligned']['category'], need_key)
         auxiliary["pred_select"]['yaw_res'] = torch.gather(auxiliary["pred_select"]['yaw_res'], dim=-1,
                                                            index=auxiliary['gt_aligned']['yaw_cls'])
-        auxiliary["gt_aligned"]['bbox3d_delta'] = mu.get_deltas_3d(pred['bbox2d'], auxiliary["gt_aligned"]['bbox3d'],
+        auxiliary["gt_aligned"]['bbox3d_delta'] = mu.get_deltas_3d(pred['inst']['bbox2d'], auxiliary["gt_aligned"]['bbox3d'],
                                                                    auxiliary["gt_aligned"]['category'],
-                                                                   pred['strides'])
+                                                                   pred['inst']['strides'])
         return auxiliary
 
     def matched_gt(self, grtr, target_box, iou_threshold):

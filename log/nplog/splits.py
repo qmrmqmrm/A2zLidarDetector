@@ -1,8 +1,8 @@
 
 
 def split_true_false(grtr, pred, iou_thresh):
-    batch, M, num_ctgr = pred["ctgr_probs"].shape
-    pred_ctgr = np.argmax(pred["ctgr_probs"], axis=-1)
+    batch, M, num_ctgr = pred["category"].shape
+    pred_ctgr = np.argmax(pred["category"], axis=-1)
     pred_ctgr = np.expand_dims(pred_ctgr, -1)
     pred_object_mask = (pred_ctgr > 0)
     grtr_object_mask = grtr["object"]
@@ -39,7 +39,7 @@ def split_true_false(grtr, pred, iou_thresh):
 def split_per_category(grtr, grtr_mask, pred, pred_mask, iou_thresh):
     grtr_bbox = grtr["bbox2d"] * grtr_mask
     pred_bbox = pred["bbox2d"] * pred_mask
-    pred_ctgr = np.argmax(pred["ctgr_probs"], axis=-1)
+    pred_ctgr = np.argmax(pred["category"], axis=-1)
     pred_ctgr = np.expand_dims(pred_ctgr, -1) * pred_mask
     iou = uf.compute_iou_general(grtr_bbox, pred_bbox)  # (batch, N, M)
     best_iou = np.max(iou, axis=-1)  # (batch, N)
@@ -61,8 +61,8 @@ def split_per_category(grtr, grtr_mask, pred, pred_mask, iou_thresh):
 
 
 def split_rotated_true_false(grtr, pred, iou_thresh):
-    batch, M, num_ctgr = pred["ctgr_probs"].shape
-    pred_ctgr = np.argmax(pred["ctgr_probs"], axis=-1)
+    batch, M, num_ctgr = pred["category"].shape
+    pred_ctgr = np.argmax(pred["category"], axis=-1)
     pred_ctgr = np.expand_dims(pred_ctgr, -1)
     pred_object_mask = (pred_ctgr > 0)
     grtr_object_mask = grtr["object"]
@@ -101,7 +101,7 @@ def split_rotated_per_category(grtr, grtr_mask, pred, pred_mask, iou_thresh):
     pred_bbox = pred["bbox3d"] * pred_mask
     grtr_rad = (grtr['yaw_rads'] * 180 / np.pi) * grtr_mask
     pred_rad = (pred['yaw_rads'] * 180 / np.pi) * pred_mask
-    pred_ctgr = np.argmax(pred["ctgr_probs"], axis=-1)
+    pred_ctgr = np.argmax(pred["category"], axis=-1)
     pred_ctgr = np.expand_dims(pred_ctgr, -1) * pred_mask
     rotated_ious = list()
     for frame in range(grtr_bbox.shape[0]):

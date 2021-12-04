@@ -12,6 +12,7 @@ def test_model(dataset_name="a2d2"):
     data_loader = get_dataset(dataset_name, 'train', batch_size)
     model = ModelFactory(dataset_name)
     model = model.make_model()
+    print(model)
     train_loader_iter = iter(data_loader)
     steps = len(train_loader_iter)
 

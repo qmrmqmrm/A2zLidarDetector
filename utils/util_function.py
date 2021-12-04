@@ -180,6 +180,7 @@ def rotated_iou_per_frame(grtr_bbox3d, pred_bbox3d, grtr_rad, pred_rad, img_shap
     grtr_rbox = fillconvex_rotated_box(grtr_rbox, (height, wight))
     pred_rbox = fillconvex_rotated_box(pred_rbox, (height, wight))
     iou = comput_rotated_iou(grtr_rbox, pred_rbox)
+    print('iou', iou)
     return iou
 
 

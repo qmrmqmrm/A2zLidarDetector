@@ -96,9 +96,10 @@ class GeneralizedRCNN(ModelBase):
         # rpn_proposals /anchor_id torch.Size([2, 512, 1])
 
         head_output = self.roi_heads(neck_features, rpn_proposals)
-        model_output = {key: value for key, value in rpn_proposals.items()}
-        model_output.update({'rpn_feat_' + key: value for key, value in rpn_aux.items()})
-        model_output.update(head_output)
+        model_output = dict()
+        model_output['inst'] = {key: value for key, value in rpn_proposals.items()}
+        model_output['fmap'] = {key: value for key, value in rpn_aux.items()}
+        model_output['inst'].update(head_output)
         # head_output  torch.Size([1024, 93]
         return model_output
 

@@ -60,7 +60,7 @@ def cal_iou(box1: torch.Tensor, box2: torch.Tensor):
     area1 = box1[:, :, 2] * box1[:, :, 3]
     area2 = box2[:, :, 2] * box2[:, :, 3]
     u = area1 + area2 - inter_area
-    iou = inter_area / u
+    iou = inter_area / (u + 1e-10)
     return iou, corners1, corners2, u
 
 
@@ -110,9 +110,9 @@ def cal_iou_3d(box3d1: torch.Tensor, box3d2: torch.Tensor, verbose=False):
     u3d = v1 + v2 - intersection_3d
     if verbose:
         z_range = (torch.max(zmax1, zmax2) - torch.min(zmin1, zmin2)).clamp_min(0.)
-        return intersection_3d / u3d, corners1, corners2, z_range, u3d
+        return intersection_3d / (u3d + 1e-10), corners1, corners2, z_range, u3d
     else:
-        return intersection_3d / u3d
+        return intersection_3d / (u3d + 1e-10)
 
 
 def cal_giou_3d(box3d1: torch.Tensor, box3d2: torch.Tensor, enclosing_type: str = "smallest"):
@@ -261,8 +261,11 @@ def eigenvector_22(x: torch.Tensor):
 
 
 if __name__ == "__main__":
-    box3d1 = np.array([0, 0, 0, 3, 3, 3, 0])
-    box3d2 = np.array([1, 1, 1, 2, 2, 2, np.pi / 3])
-    tensor1 = torch.FloatTensor(box3d1).unsqueeze(0).unsqueeze(0).cuda()
-    tensor2 = torch.FloatTensor(box3d2).unsqueeze(0).unsqueeze(0).cuda()
-    giou_loss, iou = cal_giou_3d(tensor1, tensor1)
+    box3d1 = np.array([[[0, 0, 0, 3, 3, 3, 0], [1, 1, 1, 2, 2, 2, np.pi / 3]]])
+    box3d2 = np.array([[[1, 1, 1, 2, 2, 2, np.pi / 3], [1, 1, 1, 2, 2, 2, np.pi / 3]]])
+    tensor1 = torch.FloatTensor(box3d1)
+    tensor2 = torch.FloatTensor(box3d2)
+    print('tensor1', tensor1.shape)
+    print('tensor2', tensor2.shape)
+    iou = cal_iou_3d(tensor1, tensor2)
+    print(iou)

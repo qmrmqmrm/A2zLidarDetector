@@ -11,10 +11,6 @@ import config as cfg
 
 class ExhaustiveLogger:
     def __init__(self, log_cols):
-        if cfg.Model.Output.MINOR_CTGR:
-            log_cols += ["min_cat_loss"]
-        if cfg.Model.Output.LANE_DET:
-            log_cols += ["pos_lane_obj", "neg_lane_obj"]
         self.analyzer = ExhaustiveAnalyzer(log_cols)
         self.data = pd.DataFrame()
         self.metric_data = pd.DataFrame()
