@@ -29,7 +29,7 @@ def get_end_epohcs():
 
 
 def train_by_plan(dataset_name, end_epoch, learning_rate, loss_weights, model_save):
-    batch_size, train_mode = cfg.Train.BATCH_SIZE, cfg.Train.MODE
+    batch_size = cfg.Train.BATCH_SIZE
     ckpt_path = op.join(cfg.Paths.CHECK_POINT, cfg.Train.CKPT_NAME)
     valid_category = cfg.get_valid_category_mask(dataset_name)
     start_epoch = read_previous_epoch(ckpt_path)

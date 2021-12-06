@@ -8,7 +8,7 @@ import utils.util_function as uf
 
 
 def test_model(dataset_name="a2d2"):
-    batch_size, train_mode = cfg.Train.BATCH_SIZE, cfg.Train.MODE
+    batch_size = cfg.Train.BATCH_SIZE
     data_loader = get_dataset(dataset_name, 'train', batch_size)
     model = ModelFactory(dataset_name)
     model = model.make_model()

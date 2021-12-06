@@ -28,8 +28,8 @@ def count_true_positives(grtr, pred, num_ctgr, estimator, tp_iou=cfg.Validation.
     if per_class:
         grtr_tp_count = count_per_class(splits["grtr_tp"], grtr_valid_tp, num_ctgr)
         grtr_fn_count = count_per_class(splits["grtr_fn"], grtr_valid_fn, num_ctgr)
-        pred_tp_count = count_per_class_pred(splits["pred_tp"], pred_valid_tp, num_ctgr)
-        pred_fp_count = count_per_class_pred(splits["pred_fp"], pred_valid_fp, num_ctgr)
+        pred_tp_count = count_per_class(splits["pred_tp"], pred_valid_tp, num_ctgr, is_gt=False)
+        pred_fp_count = count_per_class(splits["pred_fp"], pred_valid_fp, num_ctgr, is_gt=False)
         return {"trpo": pred_tp_count, "grtr": (grtr_tp_count + grtr_fn_count),
                 "pred": (pred_tp_count + pred_fp_count)}
     else:
@@ -58,7 +58,7 @@ def get_iou_thresh_per_class(grtr_ctgr, tp_iou_thresh):
     return iou_thresh[..., 0]
 
 
-def count_per_class(boxes, mask, num_ctgr):
+def count_per_class(boxes, mask, num_ctgr, is_gt=True):
     # TODO check numpy test
     """
     :param boxes: slices of object info {'yxhw': (batch, N, 4), 'category': (batch, N), ...}
@@ -69,24 +69,10 @@ def count_per_class(boxes, mask, num_ctgr):
     # boxes_ctgr = tf.cast(boxes["category"][..., 0], dtype=tf.int32)  # (batch, N')
     # boxes_onehot = tf.one_hot(boxes_ctgr, depth=num_ctgr) * mask  # (batch, N', K)
     # boxes_count = tf.reduce_sum(boxes_onehot, axis=[0, 1])
-    boxes_ctgr = boxes["category"][..., 0].astype(np.int32)  # (batch, N')
-    boxes_onehot = one_hot(boxes_ctgr, num_ctgr + 1) * mask
-    boxes_count = np.sum(boxes_onehot, axis=(0, 1))
-    return boxes_count
-
-
-def count_per_class_pred(boxes, mask, num_ctgr):
-    # TODO check numpy test
-    """
-    :param boxes: slices of object info {'yxhw': (batch, N, 4), 'category': (batch, N), ...}
-    :param mask: binary validity mask (batch, N')
-    :param num_ctgr: number of categories
-    :return: per-class object counts
-    """
-    # boxes_ctgr = tf.cast(boxes["category"][..., 0], dtype=tf.int32)  # (batch, N')
-    # boxes_onehot = tf.one_hot(boxes_ctgr, depth=num_ctgr) * mask  # (batch, N', K)
-    # boxes_count = tf.reduce_sum(boxes_onehot, axis=[0, 1])
-    best_inds = np.argmax(boxes["category"], axis=-1)  # (batch, N')
+    if is_gt:
+        best_inds = boxes["category"][..., 0].astype(np.int32)  # (batch, N')
+    else:
+        best_inds = np.argmax(boxes["category"], axis=-1)  # (batch, N')
     boxes_onehot = one_hot(best_inds, num_ctgr + 1) * mask
     boxes_count = np.sum(boxes_onehot, axis=(0, 1))
     return boxes_count
@@ -200,7 +186,6 @@ class RotatedIouEstimator:
             [grtr_bbox[..., 1:2], grtr_bbox[..., 0:1], grtr_bbox[..., 3:4], grtr_bbox[..., 2:3], grtr_rad], axis=-1))
         pred_rbox = torch.tensor(np.concatenate(
             [pred_bbox[..., 1:2], pred_bbox[..., 0:1], pred_bbox[..., 3:4], pred_bbox[..., 2:3], pred_rad], axis=-1))
-        print('pred_rbox', pred_rbox.shape)
         grtr_numbox = grtr_rbox.shape[1]
         pred_numbox = pred_rbox.shape[1]
         total_num = grtr_numbox * pred_numbox
@@ -225,7 +210,6 @@ class Rotated3DIouEstimator:
             [grtr_bbox[..., 1:2], grtr_bbox[..., 0:1],grtr_bbox[..., 4:5]/2, grtr_bbox[..., 3:4], grtr_bbox[..., 2:3],grtr_bbox[..., 4:5], grtr_rad], axis=-1))
         pred_rbox = torch.tensor(np.concatenate(
             [pred_bbox[..., 1:2], pred_bbox[..., 0:1],pred_bbox[..., 4:5]/2, pred_bbox[..., 3:4], pred_bbox[..., 2:3], pred_bbox[..., 4:5],pred_rad], axis=-1))
-        print('pred_rbox', pred_rbox.shape)
         grtr_numbox = grtr_rbox.shape[1]
         pred_numbox = pred_rbox.shape[1]
         total_num = grtr_numbox * pred_numbox
@@ -234,7 +218,6 @@ class Rotated3DIouEstimator:
         grtr_rbox = grtr_rbox.reshape([grtr_rbox.shape[0], total_num, 7])
         rotated_ious = ci.cal_iou_3d(grtr_rbox, pred_rbox)
         rotated_ious = rotated_ious.reshape(grtr_rbox.shape[0], grtr_numbox, pred_numbox).cpu().numpy()
-        print('rotated_ious', rotated_ious.shape)
         return rotated_ious
 
 

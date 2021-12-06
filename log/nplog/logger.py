@@ -123,7 +123,7 @@ class Logger:
         total_loss = total_loss.to('cpu').detach().numpy()
         self.history_logger(step, grtr, gt_aligned, gt_feature, pred, pred_slices_nms, total_loss, loss_by_type)
         if self.visual_logger:
-            self.visual_logger(step, grtr, pred_slices_nms, gt_feature, pred)
+            self.visual_logger(step, grtr, pred_slices_nms, gt_feature, pred['fmap'])
         # if self.exhuastive_logger:
         #     self.exhuastive_logger(step, grtr, gt_aligned, pred_slices, loss_by_type, epoch, cfg.Logging.USE_ANCHOR)
 
@@ -151,35 +151,6 @@ class Logger:
                     data.append(feature)
                 numpy_feature[key] = data
         return numpy_feature
-
-    def matched_gt(self, grtr, pred_box, iou_threshold):
-        batch_size = grtr['bbox2d'].shape[0]
-        matched = {key: [] for key in
-                   ['bbox3d', 'category', 'bbox2d', 'yaw_cls', 'yaw_rads', 'anchor_id', 'object', 'negative']}
-        for i in range(batch_size):
-            iou_matrix = uf.pairwise_iou(grtr['bbox2d'][i], pred_box[i])
-            match_ious, match_inds = iou_matrix.max(dim=0)  # (height*width*anchor)
-            positive = (match_ious >= iou_threshold[1]).unsqueeze(-1)
-            negative = (match_ious < iou_threshold[0]).unsqueeze(-1)
-            for key in matched:
-                if key == "negative":
-                    matched["negative"].append(negative)
-                else:
-                    matched[key].append(grtr[key][i, match_inds] * positive)
-        for key in matched:
-            matched[key] = torch.stack(matched[key], dim=0)
-        return matched
-
-    def split_feature(self, anchors, feature):
-        slice_features = {key: [] for key in feature.keys()}
-        for key in feature.keys():
-            last_channel = 0
-            for anchor in anchors:
-                scales = anchor.shape[1] + last_channel
-                slice_feature = feature[key][:, last_channel:scales]
-                last_channel = scales
-                slice_features[key].append(slice_feature)
-        return slice_features
 
     def finalize(self):
         self.history_logger.make_summary()

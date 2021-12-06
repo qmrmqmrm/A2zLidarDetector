@@ -16,6 +16,27 @@ def print_progress(status_msg):
     sys.stdout.flush()
 
 
+def print_structure(title, data, key=""):
+    if isinstance(data, list):
+        for i, datum in enumerate(data):
+            print_structure(title, datum, f"{key}/{i}")
+    elif isinstance(data, dict):
+        for subkey, datum in data.items():
+            print_structure(title, datum, f"{key}/{subkey}")
+    elif isinstance(data, str):
+        print(title, key, data)
+    elif isinstance(data, tuple):
+        for i, datum in enumerate(data):
+            print_structure(title, datum, f"{key}/{i}")
+    elif data is None:
+        print(f'{title} : None')
+    elif isinstance(data, int):
+        print(title, key, data)
+    elif type(data) == np.ndarray:
+        print(title, key, data.shape, type(data))
+    else:
+        print(title, key, data.shape)
+
 def pairwise_intersection(boxes1, boxes2) -> torch.Tensor:
     """
     Given two lists of boxes of size N and M,
@@ -61,47 +82,6 @@ def draw_box(img, bboxes_2d):
     return draw_img
 
 
-def print_structure(title, data, key=""):
-    if isinstance(data, list):
-        for i, datum in enumerate(data):
-            print_structure(title, datum, f"{key}/{i}")
-    elif isinstance(data, dict):
-        for subkey, datum in data.items():
-            print_structure(title, datum, f"{key}/{subkey}")
-    elif isinstance(data, str):
-        print(title, key, data)
-    elif isinstance(data, tuple):
-        for i, datum in enumerate(data):
-            print_structure(title, datum, f"{key}/{i}")
-    elif data is None:
-        print(f'{title} : None')
-    elif isinstance(data, int):
-        print(title, key, data)
-    elif type(data) == np.ndarray:
-        print(title, key, data.shape, type(data))
-    else:
-        print(title, key, data.shape)
-
-
-def merge_and_slice_features(features):
-    num_classes = cfg.Model.Structure.NUM_CLASSES
-    loss_channel = cfg.Model.Structure.LOSS_CHANNEL
-    sliced_features = dict()
-    last_channel = 0
-    for key in features:
-        if key == 'head_output':
-            for loss, dims in loss_channel.items():
-                slice_dim = last_channel + num_classes * dims
-                if loss == 'category':
-                    slice_dim = slice_dim + 1
-                sliced_features[loss] = features[key][..., last_channel:slice_dim]
-                last_channel = slice_dim
-
-        else:
-            sliced_features[key] = features[key]
-    return sliced_features
-
-
 def slice_class(features):
     num_classes = cfg.Model.Structure.NUM_CLASSES
     loss_channel = cfg.Model.Structure.LOSS_CHANNEL
@@ -134,7 +114,7 @@ def select_category(pred, ctgr_inds, key_to_select):
     return select_pred
 
 
-def compute_iou_general(grtr_yxhw, pred_yxhw, grtr_tlbr=None, pred_tlbr=None):
+def compute_iou_general(grtr_yxhw, pred_yxhw):
     """
     :param grtr_yxhw: GT bounding boxes in yxhw format (batch, N1, D1(>4))
     :param pred_yxhw: predicted bounding box in yxhw format (batch, N2, D2(>4))
@@ -143,10 +123,8 @@ def compute_iou_general(grtr_yxhw, pred_yxhw, grtr_tlbr=None, pred_tlbr=None):
     grtr_yxhw = np.expand_dims(grtr_yxhw, axis=-2)  # (batch, N1, 1, D1)
     pred_yxhw = np.expand_dims(pred_yxhw, axis=-3)  # (batch, 1, N2, D2)
 
-    if grtr_tlbr is None:
-        grtr_tlbr = mu.convert_box_format_yxhw_to_tlbr(grtr_yxhw)  # (batch, N1, 1, D1)
-    if pred_tlbr is None:
-        pred_tlbr = mu.convert_box_format_yxhw_to_tlbr(pred_yxhw)  # (batch, 1, N2, D2)
+    grtr_tlbr = mu.convert_box_format_yxhw_to_tlbr(grtr_yxhw)  # (batch, N1, 1, D1)
+    pred_tlbr = mu.convert_box_format_yxhw_to_tlbr(pred_yxhw)  # (batch, 1, N2, D2)
 
     inter_tl = np.maximum(grtr_tlbr[..., :2], pred_tlbr[..., :2])  # (batch, N1, N2, 2)
     inter_br = np.minimum(grtr_tlbr[..., 2:4], pred_tlbr[..., 2:4])  # (batch, N1, N2, 2)
@@ -159,66 +137,3 @@ def compute_iou_general(grtr_yxhw, pred_yxhw, grtr_tlbr=None, pred_tlbr=None):
     iou = inter_area / (pred_area + grtr_area - inter_area + 1e-5)  # (batch, N1, N2)
     return iou
 
-
-def pairwise_batch_iou(boxes1, boxes2):
-    batches = boxes1.shape[0]
-    batch_iou = list()
-    for batch in range(batches):
-        iou = pairwise_iou(boxes1[batch], boxes2[batch])
-        batch_iou.append(iou)
-    ious = torch.stack(batch_iou, dim=0)
-
-    return ious
-
-
-def rotated_iou_per_frame(grtr_bbox3d, pred_bbox3d, grtr_rad, pred_rad, img_shape):
-    height, wight, channel = img_shape
-    grtr_bbox3d = grtr_bbox3d[..., :4]
-    pred_bbox3d = pred_bbox3d[..., :4]
-    grtr_rbox = np.concatenate([grtr_bbox3d, grtr_rad], axis=-1)
-    pred_rbox = np.concatenate([pred_bbox3d, pred_rad], axis=-1)
-    grtr_rbox = fillconvex_rotated_box(grtr_rbox, (height, wight))
-    pred_rbox = fillconvex_rotated_box(pred_rbox, (height, wight))
-    iou = comput_rotated_iou(grtr_rbox, pred_rbox)
-    print('iou', iou)
-    return iou
-
-
-def fillconvex_rotated_box(boxes, img_shape):
-    b_boxes = list(map(lambda x: np.ceil(cv2.boxPoints(((x[0], x[1]), (x[2], x[3]), x[4]))), boxes))
-    b_imgs = np.array([cv2.fillConvexPoly(np.zeros(img_shape, dtype=np.uint8), np.int0(b), 1) for b in b_boxes]).astype(
-        float)
-    return b_imgs
-
-
-def comput_rotated_iou(b_imgs, box_b):
-    intersection = None
-    summation = None
-    for b_img in b_imgs:
-        if intersection is None:
-            intersection = np.expand_dims((b_img * box_b).sum((1, 2)), axis=0)
-            summation = np.expand_dims((b_img * box_b).sum((1, 2)), axis=0)
-        else:
-            intersection = np.concatenate([intersection, np.expand_dims((b_img * box_b).sum((1, 2)), axis=0)], axis=0)
-            summation = np.concatenate([summation, np.expand_dims((b_img + box_b).sum((1, 2)), axis=0)], axis=0)
-    return intersection / (summation - intersection + 1.0)
-
-
-def test():
-    box1 = torch.tensor(
-        [[[100., 100., 100., 40., 40., 20, np.pi / 4],
-          [500., 500., 300., 50., 50., 20, np.pi / 2]],
-         ]
-
-    )
-    box2 = torch.tensor(
-        [[[100., 100., 100., 40., 40., 20, 0],
-          [500., 500., 300., 50., 50., 20, np.pi / 4]],
-         ]
-    )
-    iou = ci.cal_iou_3d(box1, box2)
-    print(iou)
-
-
-if __name__ == '__main__':
-    test()

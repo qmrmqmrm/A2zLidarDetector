@@ -16,9 +16,10 @@ import utils.util_function as uf
 
 # TODO: rearrange-code-21-11
 def validation_main(dataset_name="a2d2", loss_weights=cfg.Loss.TESTING_PLAN):
-    batch_size, train_mode = cfg.Train.BATCH_SIZE, cfg.Train.MODE
+    batch_size = cfg.Train.BATCH_SIZE
     ckpt_path = op.join(cfg.Paths.CHECK_POINT, cfg.Train.CKPT_NAME)
     valid_category = cfg.get_valid_category_mask(dataset_name)
+    print(valid_category)
     start_epoch = read_previous_epoch(ckpt_path)
 
     test_data_loader = get_dataset(dataset_name, 'test', batch_size, False)

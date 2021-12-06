@@ -118,3 +118,11 @@ def bev_box_to_global(bvbox, rad, bvimg_shape, bvres=0.05):
     bvbox_3d_corner = rotated_box3d(bvbox, rad)
     global_box = np.concatenate([(bvrows - bvbox_3d_corner[0]) * bvres, (bvcols / 2 - bvbox_3d_corner[1]) * bvres])
     return global_box
+
+
+def convert_img(feature, scale, org_img):
+    feature_imge = feature.reshape((scale, scale, 3)) * 255
+    feature_imge = org_img + cv2.resize(feature_imge, (640, 640), interpolation=cv2.INTER_NEAREST)
+    feature_imge[-1, :] = [255, 255, 255]
+    feature_imge[:, -1] = [255, 255, 255]
+    return feature_imge
